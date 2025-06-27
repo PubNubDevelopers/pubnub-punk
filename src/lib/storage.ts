@@ -1,8 +1,7 @@
-import { AppSettings, ConnectionStatus } from '@/types/settings';
+import { AppSettings } from '@/types/settings';
 
 const STORAGE_KEYS = {
   SETTINGS: 'pubnub_developer_tools_settings',
-  CONNECTION_STATUS: 'pubnub_connection_status',
 } as const;
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -26,11 +25,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
 };
 
-const DEFAULT_CONNECTION_STATUS: ConnectionStatus = {
-  connected: false,
-  status: 'disconnected',
-  message: 'Not Connected',
-};
 
 export const storage = {
   getSettings(): AppSettings {
@@ -66,30 +60,10 @@ export const storage = {
     }
   },
 
-  getConnectionStatus(): ConnectionStatus {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.CONNECTION_STATUS);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (error) {
-      console.error('Error loading connection status from localStorage:', error);
-    }
-    return DEFAULT_CONNECTION_STATUS;
-  },
-
-  saveConnectionStatus(status: ConnectionStatus): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.CONNECTION_STATUS, JSON.stringify(status));
-    } catch (error) {
-      console.error('Error saving connection status to localStorage:', error);
-    }
-  },
 
   clearAll(): void {
     try {
       localStorage.removeItem(STORAGE_KEYS.SETTINGS);
-      localStorage.removeItem(STORAGE_KEYS.CONNECTION_STATUS);
     } catch (error) {
       console.error('Error clearing localStorage:', error);
     }

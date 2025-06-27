@@ -46,8 +46,3 @@ export interface AppSettings {
   storage: StoragePreferences;
 }
 
-export interface ConnectionStatus {
-  connected: boolean;
-  status: 'connected' | 'connecting' | 'disconnected' | 'error';
-  message?: string;
-}

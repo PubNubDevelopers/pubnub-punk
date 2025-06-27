@@ -270,51 +270,6 @@ export default function SettingsPage() {
     }
   };
 
-  const testConnection = async () => {
-    const formData = form.getValues();
-    
-    // Update connection status to connecting
-    storage.saveConnectionStatus({
-      connected: false,
-      status: 'connecting',
-      message: 'Testing connection...',
-    });
-
-    toast({
-      title: "Testing connection",
-      description: "Validating your PubNub credentials...",
-    });
-
-    // Simulate connection test (in real implementation, this would use PubNub SDK)
-    setTimeout(() => {
-      const hasValidKeys = formData.publishKey && formData.subscribeKey && formData.userId;
-      
-      if (hasValidKeys) {
-        storage.saveConnectionStatus({
-          connected: true,
-          status: 'connected',
-          message: 'Connected successfully',
-        });
-        
-        toast({
-          title: "Connection successful",
-          description: "Your PubNub credentials are valid and working.",
-        });
-      } else {
-        storage.saveConnectionStatus({
-          connected: false,
-          status: 'error',
-          message: 'Invalid credentials',
-        });
-        
-        toast({
-          title: "Connection failed",
-          description: "Please check your PubNub credentials and try again.",
-          variant: "destructive",
-        });
-      }
-    }, 2000);
-  };
 
   return (
     <div className="p-6">
@@ -390,11 +345,6 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                <div className="mt-6">
-                  <Button type="button" onClick={testConnection} className="bg-pubnub-red hover:bg-red-700">
-                    Test Connection
-                  </Button>
-                </div>
               </CardContent>
             </Card>
 

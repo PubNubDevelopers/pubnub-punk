@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/sidebar';
-import { ConnectionStatus } from '@/components/connection-status';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -33,9 +32,6 @@ export function AppShell({ children, pageTitle, pageSubtitle }: AppShellProps) {
               <h2 className="text-xl font-semibold text-pubnub-text">{pageTitle}</h2>
               <p className="text-sm text-gray-600">{pageSubtitle}</p>
             </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <ConnectionStatus />
           </div>
         </header>
 
