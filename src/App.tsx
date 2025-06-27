@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
 import SettingsPage from "@/pages/settings";
 import PubSubPage from "@/pages/pubsub";
+import PubNubPersistencePage from "@/pages/pubnub-persistence";
+import ChannelGroupsPage from "@/pages/channel-groups";
 import MobilePushPage from "@/pages/mobile-push";
 import EventsActionsPage from "@/pages/events-actions";
 import FileSharingPage from "@/pages/file-sharing";
@@ -24,6 +26,14 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
   '/pubsub': {
     title: 'Pub/Sub Tool',
     subtitle: 'Test real-time messaging functionality'
+  },
+  '/pubnub-persistence': {
+    title: 'PubNub Persistence Tool',
+    subtitle: 'Manage message storage and retrieval'
+  },
+  '/channel-groups': {
+    title: 'Channel Groups Tool',
+    subtitle: 'Manage and organize channel groups'
   },
   '/mobile-push': {
     title: 'Mobile Push Tool',
@@ -76,6 +86,8 @@ function Router() {
       <Switch>
         <Route path="/" component={SettingsPage} />
         <Route path="/pubsub" component={PubSubPage} />
+        <Route path="/pubnub-persistence" component={PubNubPersistencePage} />
+        <Route path="/channel-groups" component={ChannelGroupsPage} />
         <Route path="/mobile-push" component={MobilePushPage} />
         <Route path="/events-actions" component={EventsActionsPage} />
         <Route path="/file-sharing" component={FileSharingPage} />

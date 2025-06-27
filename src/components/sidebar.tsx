@@ -15,7 +15,9 @@ import {
   GitBranch,
   Box,
   X,
-  Menu
+  Menu,
+  Archive,
+  Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -42,6 +44,8 @@ const navigationConfig: (NavItem | NavCategory)[] = [
     label: 'Messaging Services',
     items: [
       { id: 'pubsub', label: 'Pub/Sub', icon: MessageCircle, path: '/pubsub' },
+      { id: 'pubnub-persistence', label: 'PubNub Persistence', icon: Archive, path: '/pubnub-persistence' },
+      { id: 'channel-groups', label: 'Channel Groups', icon: Layers, path: '/channel-groups' },
       { id: 'mobile-push', label: 'Mobile Push', icon: Smartphone, path: '/mobile-push' },
       { id: 'events-actions', label: 'Events & Actions', icon: Zap, path: '/events-actions' },
     ],
