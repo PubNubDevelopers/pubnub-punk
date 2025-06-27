@@ -38,6 +38,7 @@ export default function PubSubPage() {
 
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
+  const [presenceEvents, setPresenceEvents] = useState<any[]>([]);
   const [pubnubInstance, setPubnubInstance] = useState<any>(null);
   const [subscription, setSubscription] = useState<any>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -46,8 +47,17 @@ export default function PubSubPage() {
   const [messagesHeight, setMessagesHeight] = useState(200);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [presenceAutoScroll, setPresenceAutoScroll] = useState(true);
+  const [showPresenceScrollButton, setShowPresenceScrollButton] = useState(false);
   const [showRawMessageData, setShowRawMessageData] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<{
+    isVisible: boolean;
+    isSuccess: boolean;
+    timetoken?: string;
+    isFlashing: boolean;
+  }>({ isVisible: false, isSuccess: false, isFlashing: false });
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const presenceContainerRef = useRef<HTMLDivElement>(null);
   const [subscribeFilters, setSubscribeFilters] = useState([{
     id: 1,
     target: 'message',
@@ -107,6 +117,14 @@ export default function PubSubPage() {
     }
   };
 
+  const scrollPresenceToBottom = () => {
+    if (presenceContainerRef.current) {
+      presenceContainerRef.current.scrollTop = presenceContainerRef.current.scrollHeight;
+      setPresenceAutoScroll(true);
+      setShowPresenceScrollButton(false);
+    }
+  };
+
   const handleScroll = () => {
     if (messagesContainerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
@@ -122,12 +140,58 @@ export default function PubSubPage() {
     }
   };
 
+  const handlePresenceScroll = () => {
+    if (presenceContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = presenceContainerRef.current;
+      const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 5; // 5px threshold
+      
+      if (isAtBottom) {
+        setPresenceAutoScroll(true);
+        setShowPresenceScrollButton(false);
+      } else {
+        setPresenceAutoScroll(false);
+        setShowPresenceScrollButton(true);
+      }
+    }
+  };
+
   // Auto-scroll when new messages arrive (only if auto-scroll is enabled)
   useEffect(() => {
     if (autoScroll && messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages, autoScroll]);
+
+  // Maintain scroll position when switching between single/split view
+  useEffect(() => {
+    if (autoScroll && messagesContainerRef.current) {
+      // Small delay to ensure DOM has updated after view change
+      setTimeout(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+  }, [subscribeData.receivePresenceEvents, autoScroll]);
+
+  // Auto-scroll when new presence events arrive (only if auto-scroll is enabled)
+  useEffect(() => {
+    if (presenceAutoScroll && presenceContainerRef.current) {
+      presenceContainerRef.current.scrollTop = presenceContainerRef.current.scrollHeight;
+    }
+  }, [presenceEvents, presenceAutoScroll]);
+
+  // Maintain scroll position for presence window when switching between single/split view
+  useEffect(() => {
+    if (presenceAutoScroll && presenceContainerRef.current && subscribeData.receivePresenceEvents) {
+      // Small delay to ensure DOM has updated after view change
+      setTimeout(() => {
+        if (presenceContainerRef.current) {
+          presenceContainerRef.current.scrollTop = presenceContainerRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+  }, [subscribeData.receivePresenceEvents, presenceAutoScroll]);
 
   // Copy all messages to clipboard (always raw data)
   const copyAllMessages = async () => {
@@ -302,13 +366,34 @@ export default function PubSubPage() {
 
       console.log('Publish successful:', publishResult);
 
-      toast({
-        title: "Message Published",
-        description: `Successfully published to channel "${publishData.channel}" with timetoken ${publishResult.timetoken}`,
+      // Show success indicator
+      setPublishStatus({
+        isVisible: true,
+        isSuccess: true,
+        timetoken: publishResult.timetoken,
+        isFlashing: true
       });
+      
+      // Stop flashing after 500ms
+      setTimeout(() => {
+        setPublishStatus(prev => ({ ...prev, isFlashing: false }));
+      }, 500);
 
     } catch (error) {
       console.error('Publish failed:', error);
+      // Show error indicator and keep the toast for error details
+      setPublishStatus({
+        isVisible: true,
+        isSuccess: false,
+        isFlashing: true
+      });
+      
+      // Stop flashing after 500ms
+      setTimeout(() => {
+        setPublishStatus(prev => ({ ...prev, isFlashing: false }));
+      }, 500);
+      
+      // Show error details in toast
       toast({
         title: "Publish Failed", 
         description: `Failed to publish message: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -462,18 +547,15 @@ export default function PubSubPage() {
           if (subscribeData.receivePresenceEvents) {
             const presenceMessage = {
               channel: presenceEvent.channel,
-              message: {
-                action: presenceEvent.action,
-                occupancy: presenceEvent.occupancy,
-                uuid: presenceEvent.uuid,
-                timestamp: presenceEvent.timestamp
-              },
+              action: presenceEvent.action,
+              occupancy: presenceEvent.occupancy,
+              uuid: presenceEvent.uuid,
+              timestamp: presenceEvent.timestamp,
               timetoken: presenceEvent.timetoken,
-              publisher: 'presence-system',
               messageType: 'presence-event'
             };
 
-            setMessages(prev => [...prev, presenceMessage]);
+            setPresenceEvents(prev => [...prev, presenceMessage]);
           }
         },
 
@@ -564,6 +646,7 @@ export default function PubSubPage() {
 
       setIsSubscribed(false);
       setMessages([]);
+      setPresenceEvents([]);
       
       toast({
         title: "Unsubscribed",
@@ -574,6 +657,7 @@ export default function PubSubPage() {
       // Force cleanup even if there's an error
       setIsSubscribed(false);
       setMessages([]);
+      setPresenceEvents([]);
       setSubscription(null);
       setPubnubInstance(null);
       
@@ -631,15 +715,27 @@ export default function PubSubPage() {
                 </div>
               </div>
               <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2 text-sm">
-                  <Label htmlFor="show-raw-data" className="text-xs font-medium">
-                    Show Raw Message Data
-                  </Label>
-                  <Switch
-                    id="show-raw-data"
-                    checked={showRawMessageData}
-                    onCheckedChange={setShowRawMessageData}
-                  />
+                <div className="flex items-center space-x-6">
+                  <div className="flex items-center space-x-2 text-sm">
+                    <Label htmlFor="receive-presence" className="text-xs font-medium">
+                      Receive Presence Events
+                    </Label>
+                    <Switch
+                      id="receive-presence"
+                      checked={subscribeData.receivePresenceEvents}
+                      onCheckedChange={(value) => handleSubscribeInputChange('receivePresenceEvents', value)}
+                    />
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm">
+                    <Label htmlFor="show-raw-data" className="text-xs font-medium">
+                      Show Raw Message Data
+                    </Label>
+                    <Switch
+                      id="show-raw-data"
+                      checked={showRawMessageData}
+                      onCheckedChange={setShowRawMessageData}
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Button
@@ -668,64 +764,212 @@ export default function PubSubPage() {
           {showMessages && (
             <CardContent>
               <div className="relative">
-                <div 
-                  ref={messagesContainerRef}
-                  onScroll={handleScroll}
-                  className="bg-gray-50 rounded-lg p-4 overflow-y-auto resize-y border-b-2 border-gray-300"
-                  style={{ height: `${messagesHeight}px`, minHeight: '120px', maxHeight: '600px' }}
-                >
-                {messages.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-center">
-                    <div>
-                      <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-sm text-gray-500">
-                        {isSubscribed 
-                          ? "No messages received yet..." 
-                          : "Subscribe to channels to start receiving real-time messages"}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {messages.map((msg, index) => (
-                      <div key={index}>
-                        {showRawMessageData ? (
-                          /* Raw Message Data View - No borders, just data */
-                          <pre className="font-mono text-xs bg-gray-100 p-3 rounded overflow-x-auto whitespace-pre-wrap">
-                            {JSON.stringify({
-                              channel: msg.channel,
-                              timetoken: msg.timetoken,
-                              publisher: msg.publisher || null,
-                              subscription: msg.subscription || null,
-                              messageType: msg.messageType || null,
-                              message: msg.message,
-                              meta: msg.meta || null
-                            }, null, 2)}
-                          </pre>
-                        ) : (
-                          /* Simple Message View - Clean display */
-                          <div className="bg-white rounded border shadow-sm p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                                #{msg.channel}
-                              </span>
-                              <span className="text-xs text-gray-500 font-mono">
-                                {new Date(msg.timetoken / 10000).toLocaleTimeString()}
-                              </span>
+                {subscribeData.receivePresenceEvents ? (
+                  /* Split View - Messages and Presence Events */
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Left Window - Messages */}
+                    <div className="space-y-2 relative">
+                      <h4 className="text-sm font-medium text-gray-700">Messages</h4>
+                      <div 
+                        ref={messagesContainerRef}
+                        onScroll={handleScroll}
+                        className="bg-gray-50 rounded-lg p-4 overflow-y-auto resize-y border-b-2 border-gray-300"
+                        style={{ height: `${messagesHeight}px`, minHeight: '120px', maxHeight: '600px' }}
+                      >
+                        {messages.length === 0 ? (
+                          <div className="flex items-center justify-center h-full text-center">
+                            <div>
+                              <MessageCircle className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                              <p className="text-xs text-gray-500">
+                                {isSubscribed 
+                                  ? "No messages received yet..." 
+                                  : "Subscribe to channels to start receiving messages"}
+                              </p>
                             </div>
-                            <pre className="font-mono text-xs bg-gray-100 p-3 rounded overflow-x-auto whitespace-pre-wrap">
-                              {JSON.stringify(msg.message, null, 2)}
-                            </pre>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {messages.map((msg, index) => (
+                              <div key={index}>
+                                {showRawMessageData ? (
+                                  <pre className="font-mono text-xs bg-gray-100 p-2 rounded overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify({
+                                      channel: msg.channel,
+                                      timetoken: msg.timetoken,
+                                      publisher: msg.publisher || null,
+                                      subscription: msg.subscription || null,
+                                      messageType: msg.messageType || null,
+                                      message: msg.message,
+                                      meta: msg.meta || null
+                                    }, null, 2)}
+                                  </pre>
+                                ) : (
+                                  <div className="bg-white rounded border shadow-sm p-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-xs font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded">
+                                        #{msg.channel}
+                                      </span>
+                                      <span className="text-xs text-gray-500 font-mono">
+                                        {new Date(msg.timetoken / 10000).toLocaleTimeString()}
+                                      </span>
+                                    </div>
+                                    <pre className="font-mono text-xs bg-gray-100 p-2 rounded overflow-x-auto whitespace-pre-wrap">
+                                      {JSON.stringify(msg.message, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
-                    ))}
+                      
+                      {/* Scroll to bottom button for messages window */}
+                      {showScrollButton && (
+                        <Button
+                          onClick={scrollToBottom}
+                          size="sm"
+                          className="absolute bottom-4 right-4 rounded-full w-8 h-8 p-0 shadow-lg bg-blue-500 hover:bg-blue-600 text-white"
+                          title="Scroll to bottom"
+                        >
+                          <ArrowDown className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Right Window - Presence Events */}
+                    <div className="space-y-2 relative">
+                      <h4 className="text-sm font-medium text-gray-700">Presence Events</h4>
+                      <div 
+                        ref={presenceContainerRef}
+                        onScroll={handlePresenceScroll}
+                        className="bg-green-50 rounded-lg p-4 overflow-y-auto resize-y border-b-2 border-green-300"
+                        style={{ height: `${messagesHeight}px`, minHeight: '120px', maxHeight: '600px' }}
+                      >
+                        {presenceEvents.length === 0 ? (
+                          <div className="flex items-center justify-center h-full text-center">
+                            <div>
+                              <MessageCircle className="h-8 w-8 text-green-300 mx-auto mb-2" />
+                              <p className="text-xs text-green-600">
+                                {isSubscribed 
+                                  ? "No presence events received yet..." 
+                                  : "Subscribe to channels to see presence events"}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {presenceEvents.map((event, index) => (
+                              <div key={index}>
+                                {showRawMessageData ? (
+                                  <pre className="font-mono text-xs bg-green-100 p-2 rounded overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify({
+                                      channel: event.channel,
+                                      action: event.action,
+                                      occupancy: event.occupancy,
+                                      uuid: event.uuid,
+                                      timestamp: event.timestamp,
+                                      timetoken: event.timetoken,
+                                      messageType: event.messageType
+                                    }, null, 2)}
+                                  </pre>
+                                ) : (
+                                  <div className="bg-white rounded border border-green-200 shadow-sm p-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-xs font-mono text-green-600 bg-green-100 px-1 py-0.5 rounded">
+                                        #{event.channel}
+                                      </span>
+                                      <span className="text-xs text-gray-500 font-mono">
+                                        {new Date(event.timetoken / 10000).toLocaleTimeString()}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs space-y-1">
+                                      <div><span className="font-semibold">Action:</span> {event.action}</div>
+                                      <div><span className="font-semibold">UUID:</span> {event.uuid}</div>
+                                      <div><span className="font-semibold">Occupancy:</span> {event.occupancy}</div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Scroll to bottom button for presence events window */}
+                      {showPresenceScrollButton && (
+                        <Button
+                          onClick={scrollPresenceToBottom}
+                          size="sm"
+                          className="absolute bottom-4 right-4 rounded-full w-8 h-8 p-0 shadow-lg bg-green-500 hover:bg-green-600 text-white"
+                          title="Scroll to bottom"
+                        >
+                          <ArrowDown className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Single View - Messages Only */
+                  <div 
+                    ref={messagesContainerRef}
+                    onScroll={handleScroll}
+                    className="bg-gray-50 rounded-lg p-4 overflow-y-auto resize-y border-b-2 border-gray-300"
+                    style={{ height: `${messagesHeight}px`, minHeight: '120px', maxHeight: '600px' }}
+                  >
+                    {messages.length === 0 ? (
+                      <div className="flex items-center justify-center h-full text-center">
+                        <div>
+                          <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                          <p className="text-sm text-gray-500">
+                            {isSubscribed 
+                              ? "No messages received yet..." 
+                              : "Subscribe to channels to start receiving real-time messages"}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {messages.map((msg, index) => (
+                          <div key={index}>
+                            {showRawMessageData ? (
+                              /* Raw Message Data View - No borders, just data */
+                              <pre className="font-mono text-xs bg-gray-100 p-3 rounded overflow-x-auto whitespace-pre-wrap">
+                                {JSON.stringify({
+                                  channel: msg.channel,
+                                  timetoken: msg.timetoken,
+                                  publisher: msg.publisher || null,
+                                  subscription: msg.subscription || null,
+                                  messageType: msg.messageType || null,
+                                  message: msg.message,
+                                  meta: msg.meta || null
+                                }, null, 2)}
+                              </pre>
+                            ) : (
+                              /* Simple Message View - Clean display */
+                              <div className="bg-white rounded border shadow-sm p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                    #{msg.channel}
+                                  </span>
+                                  <span className="text-xs text-gray-500 font-mono">
+                                    {new Date(msg.timetoken / 10000).toLocaleTimeString()}
+                                  </span>
+                                </div>
+                                <pre className="font-mono text-xs bg-gray-100 p-3 rounded overflow-x-auto whitespace-pre-wrap">
+                                  {JSON.stringify(msg.message, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-                </div>
                 
-                {/* Scroll to bottom button */}
-                {showScrollButton && (
+                {/* Scroll to bottom button - only in single view */}
+                {!subscribeData.receivePresenceEvents && showScrollButton && (
                   <Button
                     onClick={scrollToBottom}
                     size="sm"
@@ -736,13 +980,21 @@ export default function PubSubPage() {
                   </Button>
                 )}
               </div>
-              {messages.length > 0 && (
+              {(messages.length > 0 || presenceEvents.length > 0) && (
                 <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-                  <span>{messages.length} message{messages.length !== 1 ? 's' : ''} received</span>
+                  <span>
+                    {messages.length} message{messages.length !== 1 ? 's' : ''} received
+                    {subscribeData.receivePresenceEvents && presenceEvents.length > 0 && 
+                      `, ${presenceEvents.length} presence event${presenceEvents.length !== 1 ? 's' : ''}`
+                    }
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setMessages([])}
+                    onClick={() => {
+                      setMessages([]);
+                      setPresenceEvents([]);
+                    }}
                     className="text-red-600 hover:text-red-700"
                   >
                     Clear Messages
@@ -767,14 +1019,39 @@ export default function PubSubPage() {
                   <p className="text-sm text-gray-600">Send messages to PubNub channels</p>
                 </div>
               </div>
-              <Button 
-                onClick={handlePublish}
-                className="shrink-0"
-                style={{ backgroundColor: 'hsl(351, 72%, 47%)' }}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                Publish Message
-              </Button>
+              <div className="flex flex-col items-end space-y-2">
+                <Button 
+                  onClick={handlePublish}
+                  className="shrink-0"
+                  style={{ backgroundColor: 'hsl(351, 72%, 47%)' }}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Publish Message
+                </Button>
+                
+                {/* Publish Status Indicator */}
+                {publishStatus.isVisible && (
+                  <div className="flex items-center space-x-2">
+                    <div 
+                      className={`w-3 h-3 rounded-full transition-colors duration-150 ${
+                        publishStatus.isFlashing
+                          ? publishStatus.isSuccess 
+                            ? 'bg-green-500 animate-pulse' 
+                            : 'bg-red-500 animate-pulse'
+                          : publishStatus.isSuccess
+                            ? 'bg-green-500'
+                            : 'bg-red-500'
+                      } ${!publishStatus.isFlashing ? 'bg-gray-400' : ''}`}
+                    />
+                    <span className="text-xs text-gray-600 font-mono">
+                      {publishStatus.isSuccess 
+                        ? `timetoken=${publishStatus.timetoken}`
+                        : 'Publish Error'
+                      }
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -968,16 +1245,6 @@ export default function PubSubPage() {
                   <p className="text-xs text-gray-500">Comma-separated list of channel groups to subscribe to</p>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Receive Presence Events</Label>
-                    <p className="text-xs text-gray-500">Get notifications when users join/leave channels</p>
-                  </div>
-                  <Switch
-                    checked={subscribeData.receivePresenceEvents}
-                    onCheckedChange={(value) => handleSubscribeInputChange('receivePresenceEvents', value)}
-                  />
-                </div>
               </div>
 
               {/* Subscribe Filters */}
