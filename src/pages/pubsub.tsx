@@ -46,7 +46,7 @@ export default function PubSubPage() {
   const [messagesHeight, setMessagesHeight] = useState(200);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [showMessageMetadata, setShowMessageMetadata] = useState(false);
+  const [showRawMessageData, setShowRawMessageData] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [subscribeFilters, setSubscribeFilters] = useState([{
     id: 1,
@@ -129,7 +129,7 @@ export default function PubSubPage() {
     }
   }, [messages, autoScroll]);
 
-  // Copy all messages to clipboard
+  // Copy all messages to clipboard (always raw data)
   const copyAllMessages = async () => {
     if (messages.length === 0) {
       toast({
@@ -141,33 +141,23 @@ export default function PubSubPage() {
     }
 
     try {
-      const messageText = messages.map((msg, index) => {
-        const timestamp = new Date(msg.timetoken / 10000).toLocaleString();
-        const channel = msg.channel;
-        const publisher = msg.publisher ? ` (from: ${msg.publisher})` : '';
-        const messageType = msg.messageType ? ` [${msg.messageType}]` : '';
-        const messageContent = JSON.stringify(msg.message, null, 2);
-        const metadata = msg.meta ? `\nMetadata: ${JSON.stringify(msg.meta, null, 2)}` : '';
-        
-        return `Message ${index + 1}:
-Channel: #${channel}${publisher}${messageType}
-Time: ${timestamp}
-Content:
-${messageContent}${metadata}`;
-      }).join('\n\n' + '─'.repeat(50) + '\n\n');
+      const rawMessages = messages.map(msg => ({
+        channel: msg.channel,
+        timetoken: msg.timetoken,
+        publisher: msg.publisher || null,
+        subscription: msg.subscription || null,
+        messageType: msg.messageType || null,
+        message: msg.message,
+        meta: msg.meta || null
+      }));
 
-      const fullText = `PubNub Real-Time Messages (${messages.length} messages)
-Generated: ${new Date().toLocaleString()}
-
-${'─'.repeat(50)}
-
-${messageText}`;
+      const fullText = JSON.stringify(rawMessages, null, 2);
 
       await navigator.clipboard.writeText(fullText);
       
       toast({
-        title: "Messages Copied",
-        description: `Successfully copied ${messages.length} message${messages.length !== 1 ? 's' : ''} to clipboard`,
+        title: "Raw Messages Copied",
+        description: `Successfully copied ${messages.length} raw message${messages.length !== 1 ? 's' : ''} to clipboard`,
       });
     } catch (error) {
       console.error('Failed to copy messages:', error);
@@ -642,13 +632,13 @@ ${messageText}`;
               </div>
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2 text-sm">
-                  <Label htmlFor="show-metadata" className="text-xs font-medium">
-                    Show Message Metadata
+                  <Label htmlFor="show-raw-data" className="text-xs font-medium">
+                    Show Raw Message Data
                   </Label>
                   <Switch
-                    id="show-metadata"
-                    checked={showMessageMetadata}
-                    onCheckedChange={setShowMessageMetadata}
+                    id="show-raw-data"
+                    checked={showRawMessageData}
+                    onCheckedChange={setShowRawMessageData}
                   />
                 </div>
                 <div className="flex items-center space-x-2">
@@ -698,85 +688,36 @@ ${messageText}`;
                 ) : (
                   <div className="space-y-3">
                     {messages.map((msg, index) => (
-                      <div key={index} className="bg-white rounded border shadow-sm">
-                        {/* Message Header - Always Visible */}
-                        <div className="p-3 border-b border-gray-100">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center space-x-2 flex-wrap">
+                      <div key={index}>
+                        {showRawMessageData ? (
+                          /* Raw Message Data View - No borders, just data */
+                          <pre className="font-mono text-xs bg-gray-100 p-3 rounded overflow-x-auto whitespace-pre-wrap">
+                            {JSON.stringify({
+                              channel: msg.channel,
+                              timetoken: msg.timetoken,
+                              publisher: msg.publisher || null,
+                              subscription: msg.subscription || null,
+                              messageType: msg.messageType || null,
+                              message: msg.message,
+                              meta: msg.meta || null
+                            }, null, 2)}
+                          </pre>
+                        ) : (
+                          /* Simple Message View - Clean display */
+                          <div className="bg-white rounded border shadow-sm p-3">
+                            <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
                                 #{msg.channel}
                               </span>
-                              {showMessageMetadata && msg.messageType && (
-                                <span className="text-xs font-mono text-purple-600 bg-purple-50 px-2 py-1 rounded">
-                                  type: {msg.messageType}
-                                </span>
-                              )}
-                              {showMessageMetadata && msg.publisher && (
-                                <span className="text-xs font-mono text-green-600 bg-green-50 px-2 py-1 rounded">
-                                  from: {msg.publisher}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-xs text-gray-500 font-mono">
-                              {new Date(msg.timetoken / 10000).toLocaleTimeString()}
-                            </span>
-                          </div>
-                          
-                          {/* Additional Metadata Row */}
-                          {showMessageMetadata && (
-                            <div className="flex items-center space-x-4 text-xs text-gray-500">
-                              <span className="font-mono">
-                                timetoken: {msg.timetoken}
+                              <span className="text-xs text-gray-500 font-mono">
+                                {new Date(msg.timetoken / 10000).toLocaleTimeString()}
                               </span>
-                              {msg.subscription && (
-                                <span className="font-mono">
-                                  subscription: {msg.subscription}
-                                </span>
-                              )}
                             </div>
-                          )}
-                        </div>
-
-                        {/* Message Body */}
-                        <div className="p-3">
-                          <div className="text-sm">
-                            <div className="mb-2">
-                              <span className="text-xs font-medium text-gray-700 block mb-1">Message Content:</span>
-                              <pre className="font-mono text-xs bg-gray-100 p-3 rounded overflow-x-auto whitespace-pre-wrap border">
-                                {JSON.stringify(msg.message, null, 2)}
-                              </pre>
-                            </div>
-                            
-                            {/* Metadata Section */}
-                            {showMessageMetadata && msg.meta && (
-                              <div className="mt-3">
-                                <span className="text-xs font-medium text-amber-700 block mb-1">Metadata:</span>
-                                <pre className="font-mono text-xs bg-amber-50 p-3 rounded overflow-x-auto whitespace-pre-wrap border border-amber-200">
-                                  {JSON.stringify(msg.meta, null, 2)}
-                                </pre>
-                              </div>
-                            )}
-                            
-                            {/* Raw Message Data (when metadata is shown) */}
-                            {showMessageMetadata && (
-                              <div className="mt-3">
-                                <span className="text-xs font-medium text-slate-700 block mb-1">Raw Message Data:</span>
-                                <pre className="font-mono text-xs bg-slate-50 p-3 rounded overflow-x-auto whitespace-pre-wrap border border-slate-200">
-                                  {JSON.stringify({
-                                    channel: msg.channel,
-                                    timetoken: msg.timetoken,
-                                    publisher: msg.publisher || null,
-                                    subscription: msg.subscription || null,
-                                    messageType: msg.messageType || null,
-                                    message: msg.message,
-                                    meta: msg.meta || null
-                                  }, null, 2)}
-                                </pre>
-                              </div>
-                            )}
-
+                            <pre className="font-mono text-xs bg-gray-100 p-3 rounded overflow-x-auto whitespace-pre-wrap">
+                              {JSON.stringify(msg.message, null, 2)}
+                            </pre>
                           </div>
-                        </div>
+                        )}
                       </div>
                     ))}
                   </div>
