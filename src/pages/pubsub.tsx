@@ -68,6 +68,68 @@ export default function PubSubPage() {
   }]);
   const [filterLogic, setFilterLogic] = useState('&&');
 
+  // Page Settings Object - Comprehensive capture of all user inputs
+  const [pageSettings, setPageSettings] = useState({
+    // Publish Panel Settings
+    publish: {
+      channel: 'hello_world',
+      message: '{"text": "Hello, World!", "sender": "PubNub Developer Tools"}',
+      storeInHistory: true,
+      sendByPost: false,
+      ttl: '',
+      customMessageType: 'text-message',
+      meta: ''
+    },
+    // Subscribe Panel Settings
+    subscribe: {
+      channels: 'hello_world',
+      channelGroups: '',
+      receivePresenceEvents: false,
+      cursor: {
+        timetoken: '',
+        region: ''
+      },
+      withPresence: false,
+      heartbeat: 300,
+      restoreOnReconnect: true
+    },
+    // UI State Settings
+    ui: {
+      showAdvanced: false,
+      showFilters: false,
+      showMessages: true,
+      messagesHeight: 200,
+      showRawMessageData: false
+    },
+    // Filter Settings
+    filters: {
+      logic: '&&',
+      conditions: [{
+        id: 1,
+        target: 'message',
+        field: '',
+        operator: '==',
+        value: '',
+        type: 'string'
+      }]
+    }
+  });
+
+  // Function to update page settings and log changes
+  const updatePageSettings = (section: string, updates: any) => {
+    setPageSettings(prev => {
+      const newSettings = {
+        ...prev,
+        [section]: {
+          ...prev[section as keyof typeof prev],
+          ...updates
+        }
+      };
+      console.log('🔧 PubSub Page Settings Updated:', newSettings);
+      return newSettings;
+    });
+  };
+
   // Copy to clipboard function
   const copyToClipboard = async (text: string, type: string) => {
     try {
@@ -96,16 +158,60 @@ export default function PubSubPage() {
       type: 'string'
     };
     setSubscribeFilters(prev => [...prev, newFilter]);
+    
+    // Update page settings
+    updatePageSettings('filters', { 
+      conditions: [...pageSettings.filters.conditions, newFilter] 
+    });
   };
 
   const removeFilter = (id: number) => {
     setSubscribeFilters(prev => prev.filter(f => f.id !== id));
+    
+    // Update page settings
+    const updatedConditions = pageSettings.filters.conditions.filter(f => f.id !== id);
+    updatePageSettings('filters', { conditions: updatedConditions });
+  };
+
+  // UI State Management Functions with Settings Updates
+  const handleShowAdvancedToggle = () => {
+    const newValue = !showAdvanced;
+    setShowAdvanced(newValue);
+    updatePageSettings('ui', { showAdvanced: newValue });
+  };
+
+  const handleShowFiltersToggle = () => {
+    const newValue = !showFilters;
+    setShowFilters(newValue);
+    updatePageSettings('ui', { showFilters: newValue });
+  };
+
+  const handleShowMessagesToggle = () => {
+    const newValue = !showMessages;
+    setShowMessages(newValue);
+    updatePageSettings('ui', { showMessages: newValue });
+  };
+
+  const handleShowRawMessageDataToggle = (value: boolean) => {
+    setShowRawMessageData(value);
+    updatePageSettings('ui', { showRawMessageData: value });
+  };
+
+  const handleFilterLogicChange = (value: string) => {
+    setFilterLogic(value);
+    updatePageSettings('filters', { logic: value });
   };
 
   const updateFilter = (id: number, field: string, value: any) => {
     setSubscribeFilters(prev => prev.map(f => 
       f.id === id ? { ...f, [field]: value } : f
     ));
+    
+    // Update page settings
+    const updatedConditions = pageSettings.filters.conditions.map(f => 
+      f.id === id ? { ...f, [field]: value } : f
+    );
+    updatePageSettings('filters', { conditions: updatedConditions });
   };
 
   // Scroll handling functions
@@ -228,6 +334,46 @@ export default function PubSubPage() {
       toast({
         title: "Copy Failed",
         description: "Failed to copy messages to clipboard",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Copy all presence events to clipboard (always raw data)
+  const copyAllPresenceEvents = async () => {
+    if (presenceEvents.length === 0) {
+      toast({
+        title: "No Presence Events",
+        description: "No presence events to copy",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const rawPresenceEvents = presenceEvents.map(event => ({
+        channel: event.channel,
+        action: event.action,
+        occupancy: event.occupancy,
+        uuid: event.uuid,
+        timestamp: event.timestamp,
+        timetoken: event.timetoken,
+        messageType: event.messageType
+      }));
+
+      const fullText = JSON.stringify(rawPresenceEvents, null, 2);
+
+      await navigator.clipboard.writeText(fullText);
+      
+      toast({
+        title: "Raw Presence Events Copied",
+        description: `Successfully copied ${presenceEvents.length} raw presence event${presenceEvents.length !== 1 ? 's' : ''} to clipboard`,
+      });
+    } catch (error) {
+      console.error('Failed to copy presence events:', error);
+      toast({
+        title: "Copy Failed",
+        description: "Failed to copy presence events to clipboard",
         variant: "destructive",
       });
     }
@@ -407,6 +553,9 @@ export default function PubSubPage() {
       ...prev,
       [field]: value
     }));
+    
+    // Update page settings
+    updatePageSettings('publish', { [field]: value });
   };
 
   const handleSubscribeInputChange = (field: string, value: any) => {
@@ -419,11 +568,22 @@ export default function PubSubPage() {
           [child]: value
         }
       }));
+      
+      // Update page settings for nested field
+      updatePageSettings('subscribe', {
+        [parent]: {
+          ...pageSettings.subscribe[parent as keyof typeof pageSettings.subscribe],
+          [child]: value
+        }
+      });
     } else {
       setSubscribeData(prev => ({
         ...prev,
         [field]: value
       }));
+      
+      // Update page settings
+      updatePageSettings('subscribe', { [field]: value });
     }
   };
 
@@ -733,25 +893,28 @@ export default function PubSubPage() {
                     <Switch
                       id="show-raw-data"
                       checked={showRawMessageData}
-                      onCheckedChange={setShowRawMessageData}
+                      onCheckedChange={handleShowRawMessageDataToggle}
                     />
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
+                  {/* Show copy button only when presence events are disabled */}
+                  {!subscribeData.receivePresenceEvents && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyAllMessages}
+                      disabled={messages.length === 0}
+                      className="flex items-center space-x-1"
+                      title="Copy all messages to clipboard"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={copyAllMessages}
-                    disabled={messages.length === 0}
-                    className="flex items-center space-x-1"
-                    title="Copy all messages to clipboard"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowMessages(!showMessages)}
+                    onClick={handleShowMessagesToggle}
                     className="flex items-center space-x-2"
                   >
                     {showMessages ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -769,7 +932,19 @@ export default function PubSubPage() {
                   <div className="grid grid-cols-2 gap-4">
                     {/* Left Window - Messages */}
                     <div className="space-y-2 relative">
-                      <h4 className="text-sm font-medium text-gray-700">Messages</h4>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-gray-700">Messages</h4>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={copyAllMessages}
+                          disabled={messages.length === 0}
+                          className="h-6 px-2"
+                          title="Copy all messages to clipboard"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
                       <div 
                         ref={messagesContainerRef}
                         onScroll={handleScroll}
@@ -839,7 +1014,19 @@ export default function PubSubPage() {
 
                     {/* Right Window - Presence Events */}
                     <div className="space-y-2 relative">
-                      <h4 className="text-sm font-medium text-gray-700">Presence Events</h4>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-gray-700">Presence Events</h4>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={copyAllPresenceEvents}
+                          disabled={presenceEvents.length === 0}
+                          className="h-6 px-2"
+                          title="Copy all presence events to clipboard"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
                       <div 
                         ref={presenceContainerRef}
                         onScroll={handlePresenceScroll}
@@ -1252,7 +1439,7 @@ export default function PubSubPage() {
                 <Button 
                   variant="outline" 
                   className="w-full justify-between bg-blue-50 hover:bg-blue-100 border-blue-200"
-                  onClick={() => setShowFilters(!showFilters)}
+                  onClick={handleShowFiltersToggle}
                 >
                   Subscribe Filters
                   {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -1370,7 +1557,7 @@ export default function PubSubPage() {
                     {subscribeFilters.length > 1 && (
                       <div className="space-y-2">
                         <Label className="text-sm">Logic Between Filters</Label>
-                        <Select value={filterLogic} onValueChange={setFilterLogic}>
+                        <Select value={filterLogic} onValueChange={handleFilterLogicChange}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -1403,7 +1590,7 @@ export default function PubSubPage() {
                 <Button 
                   variant="outline" 
                   className="w-full justify-between bg-gray-50 hover:bg-gray-100 border-gray-200"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  onClick={handleShowAdvancedToggle}
                 >
                   Advanced Options
                   {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}

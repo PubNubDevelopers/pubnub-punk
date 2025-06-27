@@ -9,7 +9,9 @@ This application provides a modern, scalable UI framework for PubNub developer t
 ### Core Services
 
 **Messaging Services**
-- Pub/Sub
+- Pub/Sub (Advanced real-time messaging tool with presence events, filtering, and split-view display)
+- PubNub Persistence (Message storage and retrieval management)
+- Channel Groups (Channel organization and grouping)
 - Mobile Push
 - Events & Actions
 
@@ -73,7 +75,9 @@ This is a client-side only application built with:
 
 ### Storage
 - Settings and preferences are stored in localStorage
+- Page-specific configurations maintained in real-time JSON objects
 - Uses PubNub App Context for any data that needs to be persisted across sessions
+- Advanced configuration versioning system planned for future releases
 
 ### Design System
 - Uses PubNub brand colors:
@@ -100,6 +104,21 @@ This is a client-side only application built with:
 └── vite.config.ts
 ```
 
+## Key Features
+
+### PubSub Tool (Advanced)
+- **Real-time Messaging**: Publish and subscribe to PubNub channels
+- **Presence Events**: Split-view display for messages and presence events
+- **Advanced Filtering**: Server-side message filtering with expression builder
+- **Configuration Management**: Real-time JSON settings capture for all user inputs
+- **Copy Functionality**: Separate copy buttons for messages and presence events
+- **Status Indicators**: Visual publish feedback with timetoken display
+
+### Settings System
+- **Real-time Updates**: All page configurations update immediately in JSON format
+- **Console Logging**: Complete settings object logged on every change
+- **Future-Ready**: Prepared for persistence, versioning, and configuration sharing
+
 ## Adding New Tools
 
 To add a new tool page:
@@ -108,3 +127,22 @@ To add a new tool page:
 2. Add the route to `App.tsx`
 3. Add the page configuration to the `pageConfig` object
 4. Update the sidebar navigation in `components/sidebar.tsx`
+
+### Implementing Page Settings (Recommended)
+For new tools, consider implementing the page settings pattern:
+
+```typescript
+// Maintain comprehensive settings object
+const [pageSettings, setPageSettings] = useState({
+  // Tool-specific configuration sections
+});
+
+// Update function with console logging
+const updatePageSettings = (section, updates) => {
+  setPageSettings(prev => {
+    const newSettings = { ...prev, [section]: { ...prev[section], ...updates } };
+    console.log('🔧 Page Settings Updated:', newSettings);
+    return newSettings;
+  });
+};
+```
