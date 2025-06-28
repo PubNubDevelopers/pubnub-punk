@@ -21,7 +21,9 @@ import {
   Copy,
   ChevronUp,
   ChevronDown,
-  ChevronsUpDown
+  ChevronsUpDown,
+  Grid3X3,
+  List
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -208,6 +210,7 @@ export default function FileSharingPage() {
   const searchTerm = pageSettings?.files?.searchTerm || FIELD_DEFINITIONS['files.searchTerm'].default;
   const sortBy = pageSettings?.files?.sortBy || FIELD_DEFINITIONS['files.sortBy'].default;
   const sortOrder = pageSettings?.files?.sortOrder || FIELD_DEFINITIONS['files.sortOrder'].default;
+  const viewMode = pageSettings?.files?.viewMode || FIELD_DEFINITIONS['files.viewMode'].default;
   const pageSize = pageSettings?.files?.pageSize || FIELD_DEFINITIONS['files.pageSize'].default;
   const currentPage = pageSettings?.files?.currentPage || FIELD_DEFINITIONS['files.currentPage'].default;
 
@@ -1185,22 +1188,44 @@ export default function FileSharingPage() {
             {/* File List */}
             <Card className="flex-1 flex flex-col">
               <CardHeader className="space-y-4">
-                {/* Upload Button */}
-                <div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
+                {/* Upload Button and View Mode Toggle */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="bg-pubnub-red hover:bg-pubnub-red/90"
+                      size="sm"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      {uploading ? 'Uploading...' : 'Upload File'}
+                    </Button>
+                  </div>
+                  
+                  {/* View Mode Toggle */}
                   <Button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    className="bg-pubnub-red hover:bg-pubnub-red/90"
+                    variant="outline"
                     size="sm"
+                    onClick={() => updateField('files.viewMode', viewMode === 'list' ? 'gallery' : 'list')}
+                    className="flex items-center gap-2"
                   >
-                    <Upload className="w-4 h-4 mr-2" />
-                    {uploading ? 'Uploading...' : 'Upload File'}
+                    {viewMode === 'list' ? (
+                      <>
+                        <Grid3X3 className="w-4 h-4" />
+                        Gallery Mode
+                      </>
+                    ) : (
+                      <>
+                        <List className="w-4 h-4" />
+                        List Mode
+                      </>
+                    )}
                   </Button>
                 </div>
 
@@ -1398,7 +1423,7 @@ export default function FileSharingPage() {
                       </p>
                     </div>
                   </div>
-                ) : (
+                ) : viewMode === 'list' ? (
                   <div className="flex-1 flex flex-col">
                     <div className="grid grid-cols-[auto,1fr,100px,150px,auto] gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-600">
                       <div className="flex items-center">
@@ -1545,11 +1570,188 @@ export default function FileSharingPage() {
                       ))}
                     </div>
                   </div>
+                ) : (
+                  // Gallery View
+                  <div className="flex-1 flex flex-col">
+                    {/* Gallery Header with selection controls */}
+                    <div className="p-4 border-b bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <Checkbox
+                            checked={allVisibleSelected}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                selectAllVisible();
+                              } else {
+                                clearSelection();
+                              }
+                            }}
+                            className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
+                          />
+                          <span className="text-sm font-medium text-gray-600">
+                            {selectedFiles.size > 0 ? `${selectedFiles.size} selected` : 'Select All'}
+                          </span>
+                        </div>
+                        
+                        {/* Sort controls for gallery */}
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-gray-500">Sort by:</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleSort('name')}
+                            className={`text-xs ${sortBy === 'name' ? 'text-pubnub-blue' : 'text-gray-600'}`}
+                          >
+                            Name {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleSort('created')}
+                            className={`text-xs ${sortBy === 'created' ? 'text-pubnub-blue' : 'text-gray-600'}`}
+                          >
+                            Date {sortBy === 'created' && (sortOrder === 'asc' ? '↑' : '↓')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleSort('size')}
+                            className={`text-xs ${sortBy === 'size' ? 'text-pubnub-blue' : 'text-gray-600'}`}
+                          >
+                            Size {sortBy === 'size' && (sortOrder === 'asc' ? '↑' : '↓')}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top Pagination Controls for Gallery */}
+                    {filteredAndSortedFiles.length > pageSize && (
+                      <div className="border-b p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-gray-500">
+                            Page {currentPage} of {totalPages}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateField('files.currentPage', Math.max(1, currentPage - 1))}
+                              disabled={currentPage === 1}
+                            >
+                              <ChevronDown className="w-4 h-4 rotate-90" />
+                              Previous
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateField('files.currentPage', Math.min(totalPages, currentPage + 1))}
+                              disabled={currentPage === totalPages}
+                            >
+                              Next
+                              <ChevronDown className="w-4 h-4 -rotate-90" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Gallery Grid */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                        {paginatedFiles.map((file) => (
+                          <div
+                            key={file.id}
+                            className={`relative group border rounded-lg p-3 transition-all duration-200 cursor-pointer ${
+                              selectedFiles.has(file.id)
+                                ? 'border-pubnub-blue bg-blue-50 shadow-md'
+                                : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                            }`}
+                            onClick={(e) => {
+                              // Only toggle if not clicking on file name link or copy button
+                              const target = e.target as HTMLElement;
+                              const fileNameLink = target.closest('a[data-file-link]');
+                              const copyButton = target.closest('button[title="Copy file URL"]');
+                              if (!fileNameLink && !copyButton) {
+                                toggleFileSelection(file.id);
+                              }
+                            }}
+                          >
+                            {/* Selection Checkbox */}
+                            <div className="absolute top-2 left-2 z-10">
+                              <Checkbox
+                                checked={selectedFiles.has(file.id)}
+                                onCheckedChange={() => toggleFileSelection(file.id)}
+                                className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue bg-white/90 border-gray-300"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
+
+                            {/* Copy Button */}
+                            <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  copyUrl(file);
+                                }}
+                                title="Copy file URL"
+                                className="h-6 w-6 p-0 bg-white/90 hover:bg-white border border-gray-200"
+                              >
+                                <Copy className="w-3 h-3 text-gray-500 hover:text-gray-700" />
+                              </Button>
+                            </div>
+
+                            {/* File Preview/Icon */}
+                            <div className="aspect-square mb-2 flex items-center justify-center bg-gray-50 rounded border overflow-hidden">
+                              {file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? (
+                                <img
+                                  src={file.url}
+                                  alt={file.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    // Fallback to file icon if image fails to load
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    target.nextElementSibling?.classList.remove('hidden');
+                                  }}
+                                />
+                              ) : null}
+                              <div className={`flex items-center justify-center w-full h-full ${file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? 'hidden' : ''}`}>
+                                <File className="w-8 h-8 text-gray-400" />
+                              </div>
+                            </div>
+
+                            {/* File Info */}
+                            <div className="space-y-1">
+                              <a
+                                href={file.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                data-file-link
+                                className="block text-sm font-medium text-pubnub-blue hover:text-pubnub-blue/80 hover:underline truncate"
+                                onClick={(e) => e.stopPropagation()}
+                                title={file.name}
+                              >
+                                {file.name}
+                              </a>
+                              <div className="text-xs text-gray-500">
+                                {formatFileSize(file.size)}
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                {formatDate(file.created)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </CardContent>
               
-              {/* Pagination Controls */}
-              {filteredAndSortedFiles.length > pageSize && (
+              {/* Pagination Controls - List Mode Only */}
+              {viewMode === 'list' && filteredAndSortedFiles.length > pageSize && (
                 <div className="border-t p-4">
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-500">
