@@ -17,6 +17,7 @@ export interface VersionedConfig {
   metadata: {
     description?: string;
     tags?: string[];
+    name?: string;
   };
 }
 
@@ -61,7 +62,8 @@ export class ConfigurationService {
     configType: string,
     data: any,
     description?: string,
-    tags?: string[]
+    tags?: string[],
+    name?: string
   ): VersionedConfig {
     const settings = storage.getSettings();
     const existingVersions = this.getLocalVersionCount(configType);
@@ -74,7 +76,8 @@ export class ConfigurationService {
       data,
       metadata: {
         description,
-        tags
+        tags,
+        name
       }
     };
   }
@@ -99,7 +102,8 @@ export class ConfigurationService {
     configType: string,
     configData: any,
     description?: string,
-    tags?: string[]
+    tags?: string[],
+    name?: string
   ): Promise<{ success: boolean; version?: VersionedConfig; error?: string }> {
     try {
       const settings = storage.getSettings();
@@ -120,7 +124,7 @@ export class ConfigurationService {
         };
       }
 
-      const versionedConfig = this.createVersionedConfig(configType, configData, description, tags);
+      const versionedConfig = this.createVersionedConfig(configType, configData, description, tags, name);
       const channelName = this.getChannelName(configType);
 
       // Initialize PubNub instance from global CDN
@@ -177,10 +181,13 @@ export class ConfigurationService {
 
           console.log('Final custom data to store:', updatedCustom);
 
+          // Use custom name or fallback to default
+          const channelName = name || 'PubNub DevTools Configuration Storage';
+          
           await pubnub.objects.setChannelMetadata({
             channel: this.APP_CONTEXT_CHANNEL,
             data: {
-              name: 'PubNub DevTools Configuration Storage',
+              name: channelName,
               description: 'Latest configuration versions for PubNub DevTools',
               custom: updatedCustom
             },

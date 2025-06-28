@@ -2,6 +2,7 @@ import { Switch, Route, useLocation } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
+import { ConfigProvider } from "@/contexts/config-context";
 import SettingsPage from "@/pages/settings";
 import PubSubPage from "@/pages/pubsub";
 import PubNubPersistencePage from "@/pages/pubnub-persistence";
@@ -107,8 +108,10 @@ function Router() {
 function App() {
   return (
     <TooltipProvider>
-      <Toaster />
-      <Router />
+      <ConfigProvider>
+        <Toaster />
+        <Router />
+      </ConfigProvider>
     </TooltipProvider>
   );
 }

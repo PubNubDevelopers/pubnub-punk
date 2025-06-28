@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { MessageCircle, Send, Play, Square, ChevronDown, ChevronUp, Copy, ArrowDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,9 +9,161 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { storage } from '@/lib/storage';
+import { useConfig } from '@/contexts/config-context';
+
+// Schema-driven field definitions for bidirectional sync
+const FIELD_DEFINITIONS = {
+  // Publish Panel
+  'publish.channel': { section: 'publish', field: 'channel', type: 'string', default: 'hello_world' },
+  'publish.message': { section: 'publish', field: 'message', type: 'string', default: '{"text": "Hello, World!", "sender": "PubNub Developer Tools"}' },
+  'publish.storeInHistory': { section: 'publish', field: 'storeInHistory', type: 'boolean', default: true },
+  'publish.sendByPost': { section: 'publish', field: 'sendByPost', type: 'boolean', default: false },
+  'publish.ttl': { section: 'publish', field: 'ttl', type: 'string', default: '' },
+  'publish.customMessageType': { section: 'publish', field: 'customMessageType', type: 'string', default: 'text-message' },
+  'publish.meta': { section: 'publish', field: 'meta', type: 'string', default: '' },
+  
+  // Subscribe Panel
+  'subscribe.channels': { section: 'subscribe', field: 'channels', type: 'string', default: 'hello_world' },
+  'subscribe.channelGroups': { section: 'subscribe', field: 'channelGroups', type: 'string', default: '' },
+  'subscribe.receivePresenceEvents': { section: 'subscribe', field: 'receivePresenceEvents', type: 'boolean', default: false },
+  'subscribe.cursor.timetoken': { section: 'subscribe', field: 'cursor.timetoken', type: 'string', default: '' },
+  'subscribe.cursor.region': { section: 'subscribe', field: 'cursor.region', type: 'string', default: '' },
+  'subscribe.withPresence': { section: 'subscribe', field: 'withPresence', type: 'boolean', default: false },
+  'subscribe.heartbeat': { section: 'subscribe', field: 'heartbeat', type: 'number', default: 300 },
+  'subscribe.restoreOnReconnect': { section: 'subscribe', field: 'restoreOnReconnect', type: 'boolean', default: true },
+  
+  // UI State
+  'ui.showAdvanced': { section: 'ui', field: 'showAdvanced', type: 'boolean', default: false },
+  'ui.showFilters': { section: 'ui', field: 'showFilters', type: 'boolean', default: false },
+  'ui.showMessages': { section: 'ui', field: 'showMessages', type: 'boolean', default: true },
+  'ui.messagesHeight': { section: 'ui', field: 'messagesHeight', type: 'number', default: 200 },
+  'ui.showRawMessageData': { section: 'ui', field: 'showRawMessageData', type: 'boolean', default: false },
+  
+  // Filter Settings
+  'filters.logic': { section: 'filters', field: 'logic', type: 'string', default: '&&' },
+} as const;
+
+// Current config version
+const CURRENT_CONFIG_VERSION = 1;
+
+// Migration functions for version compatibility
+const CONFIG_MIGRATIONS: Record<number, (config: any) => any> = {
+  1: (config: any) => config, // Initial version, no migration needed
+  // Future migrations will be added here as:
+  // 2: (config: any) => ({ ...config, newField: defaultValue }),
+};
+
+// Utility to get nested value safely
+const getNestedValue = (obj: any, path: string): any => {
+  return path.split('.').reduce((current, key) => current?.[key], obj);
+};
+
+// Utility to set nested value
+const setNestedValue = (obj: any, path: string, value: any): void => {
+  const keys = path.split('.');
+  const lastKey = keys.pop()!;
+  const target = keys.reduce((current, key) => {
+    if (!current[key]) current[key] = {};
+    return current[key];
+  }, obj);
+  target[lastKey] = value;
+};
+
+// Deep merge utility for config restoration
+const deepMerge = (target: any, source: any): any => {
+  const result = { ...target };
+  for (const key in source) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      result[key] = deepMerge(target[key] || {}, source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
+};
+
+// Convert individual state objects to pageSettings structure
+const stateToPageSettings = (publishData: any, subscribeData: any, uiState: any, filterState: any) => {
+  const pageSettings: any = { 
+    publish: {}, 
+    subscribe: { cursor: {} }, 
+    ui: {}, 
+    filters: { conditions: filterState.conditions || [] }
+  };
+  
+  // Map publish data
+  Object.entries(publishData).forEach(([key, value]) => {
+    pageSettings.publish[key] = value;
+  });
+  
+  // Map subscribe data
+  Object.entries(subscribeData).forEach(([key, value]) => {
+    if (key === 'cursor') {
+      pageSettings.subscribe.cursor = value;
+    } else {
+      pageSettings.subscribe[key] = value;
+    }
+  });
+  
+  // Map UI state
+  pageSettings.ui = { ...uiState };
+  
+  // Map filter state
+  pageSettings.filters.logic = filterState.logic;
+  
+  pageSettings._version = CURRENT_CONFIG_VERSION;
+  return pageSettings;
+};
+
+// Migrate config to current version
+const migrateConfig = (config: any): any => {
+  const configVersion = config._version || 1;
+  let migratedConfig = { ...config };
+  
+  // Apply migrations sequentially
+  for (let v = configVersion; v < CURRENT_CONFIG_VERSION; v++) {
+    const migration = CONFIG_MIGRATIONS[v + 1];
+    if (migration) {
+      migratedConfig = migration(migratedConfig);
+    }
+  }
+  
+  // Add current version
+  migratedConfig._version = CURRENT_CONFIG_VERSION;
+  return migratedConfig;
+};
+
+// Create default config structure
+const createDefaultPageSettings = () => {
+  const defaultSettings: any = { 
+    publish: {}, 
+    subscribe: { cursor: {} }, 
+    ui: {}, 
+    filters: { conditions: [{ id: 1, target: 'message', field: '', operator: '==', value: '', type: 'string' }] }
+  };
+  
+  // Set defaults from field definitions
+  Object.entries(FIELD_DEFINITIONS).forEach(([fullPath, definition]) => {
+    const pathParts = fullPath.split('.');
+    if (pathParts.length === 2) {
+      const [section, field] = pathParts;
+      if (!defaultSettings[section]) defaultSettings[section] = {};
+      defaultSettings[section][field] = definition.default;
+    } else if (pathParts.length === 3) {
+      const [section, subsection, field] = pathParts;
+      if (!defaultSettings[section]) defaultSettings[section] = {};
+      if (!defaultSettings[section][subsection]) defaultSettings[section][subsection] = {};
+      defaultSettings[section][subsection][field] = definition.default;
+    }
+  });
+  
+  defaultSettings._version = CURRENT_CONFIG_VERSION;
+  return defaultSettings;
+};
 
 export default function PubSubPage() {
   const { toast } = useToast();
+  const { setPageSettings: setConfigPageSettings, setConfigType } = useConfig();
   const [publishData, setPublishData] = useState({
     channel: 'hello_world',
     message: '{"text": "Hello, World!", "sender": "PubNub Developer Tools"}',
@@ -68,67 +220,105 @@ export default function PubSubPage() {
   }]);
   const [filterLogic, setFilterLogic] = useState('&&');
 
-  // Page Settings Object - Comprehensive capture of all user inputs
-  const [pageSettings, setPageSettings] = useState({
-    // Publish Panel Settings
-    publish: {
-      channel: 'hello_world',
-      message: '{"text": "Hello, World!", "sender": "PubNub Developer Tools"}',
-      storeInHistory: true,
-      sendByPost: false,
-      ttl: '',
-      customMessageType: 'text-message',
-      meta: ''
-    },
-    // Subscribe Panel Settings
-    subscribe: {
-      channels: 'hello_world',
-      channelGroups: '',
-      receivePresenceEvents: false,
-      cursor: {
-        timetoken: '',
-        region: ''
-      },
-      withPresence: false,
-      heartbeat: 300,
-      restoreOnReconnect: true
-    },
-    // UI State Settings
-    ui: {
-      showAdvanced: false,
-      showFilters: false,
-      showMessages: true,
-      messagesHeight: 200,
-      showRawMessageData: false
-    },
-    // Filter Settings
-    filters: {
-      logic: '&&',
-      conditions: [{
-        id: 1,
-        target: 'message',
-        field: '',
-        operator: '==',
-        value: '',
-        type: 'string'
-      }]
-    }
-  });
+  // Schema-driven page settings - auto-synced with state changes
+  const [pageSettings, setPageSettings] = useState(() => createDefaultPageSettings());
 
-  // Function to update page settings and log changes
-  const updatePageSettings = (section: string, updates: any) => {
-    setPageSettings(prev => {
-      const newSettings = {
-        ...prev,
-        [section]: {
-          ...prev[section as keyof typeof prev],
-          ...updates
+  // Config restoration function
+  const restoreFromConfig = (config: any) => {
+    try {
+      // Migrate config to current version
+      const migratedConfig = migrateConfig(config);
+      
+      // Merge with defaults for graceful degradation
+      const defaultSettings = createDefaultPageSettings();
+      const safeConfig = deepMerge(defaultSettings, migratedConfig);
+      
+      // Update individual state objects from config
+      if (safeConfig.publish) {
+        setPublishData(safeConfig.publish);
+      }
+      if (safeConfig.subscribe) {
+        setSubscribeData(safeConfig.subscribe);
+      }
+      if (safeConfig.ui) {
+        setShowAdvanced(safeConfig.ui.showAdvanced || false);
+        setShowFilters(safeConfig.ui.showFilters || false);
+        setShowMessages(safeConfig.ui.showMessages !== false);
+        setMessagesHeight(safeConfig.ui.messagesHeight || 200);
+        setShowRawMessageData(safeConfig.ui.showRawMessageData || false);
+      }
+      if (safeConfig.filters) {
+        setFilterLogic(safeConfig.filters.logic || '&&');
+        if (safeConfig.filters.conditions) {
+          setSubscribeFilters(safeConfig.filters.conditions);
         }
-      };
-      console.log('🔧 PubSub Page Settings Updated:', newSettings);
-      return newSettings;
-    });
+      }
+      
+      // Update page settings
+      setPageSettings(safeConfig);
+      
+      console.log('🔧 PubSub Page Settings Restored:', safeConfig);
+      return true;
+    } catch (error) {
+      console.error('Failed to restore config:', error);
+      return false;
+    }
   };
+
+  // Auto-sync: Create pageSettings from current state
+  const currentPageSettings = useMemo(() => {
+    const uiState = {
+      showAdvanced,
+      showFilters,
+      showMessages,
+      messagesHeight,
+      showRawMessageData
+    };
+    const filterState = {
+      logic: filterLogic,
+      conditions: subscribeFilters
+    };
+    
+    return stateToPageSettings(publishData, subscribeData, uiState, filterState);
+  }, [
+    // Publish data dependencies
+    publishData.channel,
+    publishData.message,
+    publishData.storeInHistory,
+    publishData.sendByPost,
+    publishData.ttl,
+    publishData.customMessageType,
+    publishData.meta,
+    // Subscribe data dependencies
+    subscribeData.channels,
+    subscribeData.channelGroups,
+    subscribeData.receivePresenceEvents,
+    subscribeData.cursor.timetoken,
+    subscribeData.cursor.region,
+    subscribeData.withPresence,
+    subscribeData.heartbeat,
+    subscribeData.restoreOnReconnect,
+    // UI state dependencies
+    showAdvanced,
+    showFilters,
+    showMessages,
+    messagesHeight,
+    showRawMessageData,
+    // Filter dependencies
+    filterLogic,
+    JSON.stringify(subscribeFilters) // Use JSON for array comparison
+  ]);
+  
+  useEffect(() => {
+    setPageSettings(currentPageSettings);
+    setConfigPageSettings(currentPageSettings);
+    console.log('🔧 PubSub Page Settings Updated:', currentPageSettings);
+  }, [currentPageSettings, setConfigPageSettings]);
+
+  // Set config type on mount
+  useEffect(() => {
+    setConfigType('PUBSUB');
+  }, [setConfigType]);
 
   // Copy to clipboard function
   const copyToClipboard = async (text: string, type: string) => {
@@ -147,7 +337,7 @@ export default function PubSubPage() {
     }
   };
 
-  // Filter management functions
+  // Filter management functions (auto-sync via useMemo)
   const addFilter = () => {
     const newFilter = {
       id: Date.now(),
@@ -158,60 +348,37 @@ export default function PubSubPage() {
       type: 'string'
     };
     setSubscribeFilters(prev => [...prev, newFilter]);
-    
-    // Update page settings
-    updatePageSettings('filters', { 
-      conditions: [...pageSettings.filters.conditions, newFilter] 
-    });
   };
 
   const removeFilter = (id: number) => {
     setSubscribeFilters(prev => prev.filter(f => f.id !== id));
-    
-    // Update page settings
-    const updatedConditions = pageSettings.filters.conditions.filter(f => f.id !== id);
-    updatePageSettings('filters', { conditions: updatedConditions });
   };
 
-  // UI State Management Functions with Settings Updates
+  // UI State Management Functions (auto-sync via useMemo)
   const handleShowAdvancedToggle = () => {
-    const newValue = !showAdvanced;
-    setShowAdvanced(newValue);
-    updatePageSettings('ui', { showAdvanced: newValue });
+    setShowAdvanced(!showAdvanced);
   };
 
   const handleShowFiltersToggle = () => {
-    const newValue = !showFilters;
-    setShowFilters(newValue);
-    updatePageSettings('ui', { showFilters: newValue });
+    setShowFilters(!showFilters);
   };
 
   const handleShowMessagesToggle = () => {
-    const newValue = !showMessages;
-    setShowMessages(newValue);
-    updatePageSettings('ui', { showMessages: newValue });
+    setShowMessages(!showMessages);
   };
 
   const handleShowRawMessageDataToggle = (value: boolean) => {
     setShowRawMessageData(value);
-    updatePageSettings('ui', { showRawMessageData: value });
   };
 
   const handleFilterLogicChange = (value: string) => {
     setFilterLogic(value);
-    updatePageSettings('filters', { logic: value });
   };
 
   const updateFilter = (id: number, field: string, value: any) => {
     setSubscribeFilters(prev => prev.map(f => 
       f.id === id ? { ...f, [field]: value } : f
     ));
-    
-    // Update page settings
-    const updatedConditions = pageSettings.filters.conditions.map(f => 
-      f.id === id ? { ...f, [field]: value } : f
-    );
-    updatePageSettings('filters', { conditions: updatedConditions });
   };
 
   // Scroll handling functions
@@ -553,9 +720,6 @@ export default function PubSubPage() {
       ...prev,
       [field]: value
     }));
-    
-    // Update page settings
-    updatePageSettings('publish', { [field]: value });
   };
 
   const handleSubscribeInputChange = (field: string, value: any) => {
@@ -568,22 +732,11 @@ export default function PubSubPage() {
           [child]: value
         }
       }));
-      
-      // Update page settings for nested field
-      updatePageSettings('subscribe', {
-        [parent]: {
-          ...pageSettings.subscribe[parent as keyof typeof pageSettings.subscribe],
-          [child]: value
-        }
-      });
     } else {
       setSubscribeData(prev => ({
         ...prev,
         [field]: value
       }));
-      
-      // Update page settings
-      updatePageSettings('subscribe', { [field]: value });
     }
   };
 

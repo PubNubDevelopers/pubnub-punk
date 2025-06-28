@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ import { AppSettings } from '@/types/settings';
 import { configService } from '@/lib/config-service';
 import { VersionHistoryPanel } from '@/components/config-versions/VersionHistoryPanel';
 import { DeleteAllConfigDialog } from '@/components/config-versions/DeleteAllConfigDialog';
+import { useConfig } from '@/contexts/config-context';
 
 const settingsSchema = z.object({
   publishKey: z.string().min(1, 'Publish key is required'),
@@ -34,12 +35,169 @@ const settingsSchema = z.object({
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
 
+// Schema-driven field definitions for bidirectional sync
+const FIELD_DEFINITIONS = {
+  publishKey: { section: 'credentials', type: 'string', default: '' },
+  subscribeKey: { section: 'credentials', type: 'string', default: '' },
+  secretKey: { section: 'credentials', type: 'string', default: '' },
+  userId: { section: 'credentials', type: 'string', default: '' },
+  origin: { section: 'environment', type: 'string', default: 'ps.pndsn.com' },
+  ssl: { section: 'environment', type: 'boolean', default: true },
+  logVerbosity: { section: 'environment', type: 'string', default: 'info' },
+  heartbeatInterval: { section: 'environment', type: 'number', default: 300 },
+  storeMessageHistory: { section: 'storage', type: 'boolean', default: false },
+  autoSaveToPubNub: { section: 'storage', type: 'boolean', default: true },
+  saveVersionHistory: { section: 'storage', type: 'boolean', default: true },
+  maxVersionsToKeep: { section: 'storage', type: 'number', default: 50 },
+} as const;
+
+// Current config version
+const CURRENT_CONFIG_VERSION = 1;
+
+// Migration functions for version compatibility
+const CONFIG_MIGRATIONS: Record<number, (config: any) => any> = {
+  1: (config: any) => config, // Initial version, no migration needed
+  // Future migrations will be added here as:
+  // 2: (config: any) => ({ ...config, newField: defaultValue }),
+};
+
+// Utility to get nested value safely
+const getNestedValue = (obj: any, path: string): any => {
+  return path.split('.').reduce((current, key) => current?.[key], obj);
+};
+
+// Utility to set nested value
+const setNestedValue = (obj: any, path: string, value: any): void => {
+  const keys = path.split('.');
+  const lastKey = keys.pop()!;
+  const target = keys.reduce((current, key) => {
+    if (!current[key]) current[key] = {};
+    return current[key];
+  }, obj);
+  target[lastKey] = value;
+};
+
+// Deep merge utility for config restoration
+const deepMerge = (target: any, source: any): any => {
+  const result = { ...target };
+  for (const key in source) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      result[key] = deepMerge(target[key] || {}, source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
+};
+
+// Convert form data to pageSettings structure
+const formDataToPageSettings = (formData: any) => {
+  const pageSettings: any = { credentials: {}, environment: {}, storage: {} };
+  
+  Object.entries(FIELD_DEFINITIONS).forEach(([fieldName, definition]) => {
+    const value = formData[fieldName] ?? definition.default;
+    setNestedValue(pageSettings, `${definition.section}.${fieldName}`, value);
+  });
+  
+  return pageSettings;
+};
+
+// Convert pageSettings to form data
+const pageSettingsToFormData = (pageSettings: any) => {
+  const formData: any = {};
+  
+  Object.entries(FIELD_DEFINITIONS).forEach(([fieldName, definition]) => {
+    const value = getNestedValue(pageSettings, `${definition.section}.${fieldName}`);
+    formData[fieldName] = value ?? definition.default;
+  });
+  
+  return formData;
+};
+
+// Migrate config to current version
+const migrateConfig = (config: any): any => {
+  const configVersion = config._version || 1;
+  let migratedConfig = { ...config };
+  
+  // Apply migrations sequentially
+  for (let v = configVersion; v < CURRENT_CONFIG_VERSION; v++) {
+    const migration = CONFIG_MIGRATIONS[v + 1];
+    if (migration) {
+      migratedConfig = migration(migratedConfig);
+    }
+  }
+  
+  // Add current version
+  migratedConfig._version = CURRENT_CONFIG_VERSION;
+  return migratedConfig;
+};
+
+// Create default config structure
+const createDefaultPageSettings = () => {
+  const defaultSettings: any = { credentials: {}, environment: {}, storage: {} };
+  
+  Object.entries(FIELD_DEFINITIONS).forEach(([fieldName, definition]) => {
+    setNestedValue(defaultSettings, `${definition.section}.${fieldName}`, definition.default);
+  });
+  
+  defaultSettings._version = CURRENT_CONFIG_VERSION;
+  return defaultSettings;
+};
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>(storage.getSettings());
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false);
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
+  const { setPageSettings: setConfigPageSettings, setConfigType } = useConfig();
+
+  // Schema-driven page settings - auto-synced with form
+  const [pageSettings, setPageSettings] = useState(() => {
+    // Initialize with current settings, merged with defaults
+    const defaultSettings = createDefaultPageSettings();
+    const currentFormData = {
+      publishKey: settings.credentials.publishKey,
+      subscribeKey: settings.credentials.subscribeKey,
+      secretKey: settings.credentials.secretKey || '',
+      userId: settings.credentials.userId,
+      origin: settings.environment.origin,
+      ssl: settings.environment.ssl,
+      logVerbosity: settings.environment.logVerbosity,
+      heartbeatInterval: settings.environment.heartbeatInterval,
+      storeMessageHistory: settings.storage.storeMessageHistory || false,
+      autoSaveToPubNub: settings.storage.autoSaveToPubNub ?? true,
+      saveVersionHistory: settings.storage.saveVersionHistory ?? true,
+      maxVersionsToKeep: settings.storage.maxVersionsToKeep || 50,
+    };
+    const initialPageSettings = formDataToPageSettings(currentFormData);
+    return deepMerge(defaultSettings, initialPageSettings);
+  });
+
+  // Config restoration function
+  const restoreFromConfig = (config: any) => {
+    try {
+      // Migrate config to current version
+      const migratedConfig = migrateConfig(config);
+      
+      // Merge with defaults for graceful degradation
+      const defaultSettings = createDefaultPageSettings();
+      const safeConfig = deepMerge(defaultSettings, migratedConfig);
+      
+      // Convert to form data and restore form
+      const formData = pageSettingsToFormData(safeConfig);
+      form.reset(formData);
+      
+      // Update page settings
+      setPageSettings(safeConfig);
+      
+      console.log('🔧 Settings Page Settings Restored:', safeConfig);
+      return true;
+    } catch (error) {
+      console.error('Failed to restore config:', error);
+      return false;
+    }
+  };
 
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
@@ -96,7 +254,41 @@ export default function SettingsPage() {
     }
   };
 
-  // Watch for changes in publish and subscribe keys
+  // Auto-sync: Watch all form values and update pageSettings automatically
+  const watchedValues = form.watch();
+  
+  // Memoize the pageSettings to avoid unnecessary updates
+  const currentPageSettings = useMemo(() => {
+    const newPageSettings = formDataToPageSettings(watchedValues);
+    newPageSettings._version = CURRENT_CONFIG_VERSION;
+    return newPageSettings;
+  }, [
+    watchedValues.publishKey,
+    watchedValues.subscribeKey,
+    watchedValues.secretKey,
+    watchedValues.userId,
+    watchedValues.origin,
+    watchedValues.ssl,
+    watchedValues.logVerbosity,
+    watchedValues.heartbeatInterval,
+    watchedValues.storeMessageHistory,
+    watchedValues.autoSaveToPubNub,
+    watchedValues.saveVersionHistory,
+    watchedValues.maxVersionsToKeep,
+  ]);
+  
+  useEffect(() => {
+    setPageSettings(currentPageSettings);
+    setConfigPageSettings(currentPageSettings);
+    console.log('🔧 Settings Page Settings Updated:', currentPageSettings);
+  }, [currentPageSettings, setConfigPageSettings]);
+
+  // Set config type on mount
+  useEffect(() => {
+    setConfigType('SETTINGS');
+  }, [setConfigType]);
+
+  // Watch for changes in publish and subscribe keys (for auto-load functionality)
   const publishKey = form.watch('publishKey');
   const subscribeKey = form.watch('subscribeKey');
 

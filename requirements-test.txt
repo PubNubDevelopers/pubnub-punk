@@ -1,0 +1,2 @@
+# Requirements for PubNub file upload test script
+pubnub>=7.0.0
