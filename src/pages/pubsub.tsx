@@ -645,11 +645,18 @@ export default function PubSubPage() {
       }
 
       // Initialize PubNub instance from global CDN
-      const pubnub = new window.PubNub({
+      const pubnubConfig: any = {
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         userId: settings.credentials.userId || 'pubsub-page-user'
-      });
+      };
+      
+      // Add PAM token if available
+      if (settings.credentials.pamToken) {
+        pubnubConfig.authKey = settings.credentials.pamToken;
+      }
+      
+      const pubnub = new window.PubNub(pubnubConfig);
 
       // Prepare publish parameters
       const publishParams: any = {
@@ -766,13 +773,20 @@ export default function PubSubPage() {
 
     try {
       // Initialize PubNub instance from global CDN
-      const pubnub = new window.PubNub({
+      const pubnubConfig: any = {
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         userId: settings.credentials.userId || 'pubsub-page-user',
         heartbeatInterval: subscribeData.heartbeat,
         restoreMessages: subscribeData.restoreOnReconnect
-      });
+      };
+      
+      // Add PAM token if available
+      if (settings.credentials.pamToken) {
+        pubnubConfig.authKey = settings.credentials.pamToken;
+      }
+      
+      const pubnub = new window.PubNub(pubnubConfig);
 
       setPubnubInstance(pubnub);
 

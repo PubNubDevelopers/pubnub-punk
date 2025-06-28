@@ -128,11 +128,18 @@ export class ConfigurationService {
       const channelName = this.getChannelName(configType);
 
       // Initialize PubNub instance from global CDN
-      const pubnub = new window.PubNub({
+      const pubnubConfig: any = {
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         userId: settings.credentials.userId || 'config-service-user'
-      });
+      };
+      
+      // Add PAM token if available
+      if (settings.credentials.pamToken) {
+        pubnubConfig.authKey = settings.credentials.pamToken;
+      }
+      
+      const pubnub = new window.PubNub(pubnubConfig);
 
       try {
         // 1. Publish version to Persistence (History) channel
@@ -256,11 +263,18 @@ export class ConfigurationService {
       }
 
       // Initialize PubNub instance from global CDN
-      const pubnub = new window.PubNub({
+      const pubnubConfig: any = {
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         userId: settings.credentials.userId || 'config-service-user'
-      });
+      };
+      
+      // Add PAM token if available
+      if (settings.credentials.pamToken) {
+        pubnubConfig.authKey = settings.credentials.pamToken;
+      }
+      
+      const pubnub = new window.PubNub(pubnubConfig);
 
       try {
         // Get latest configuration from App Context
@@ -372,11 +386,18 @@ export class ConfigurationService {
       const channelName = this.getChannelName(configType);
       
       // Initialize PubNub instance from global CDN
-      const pubnub = new window.PubNub({
+      const pubnubConfig: any = {
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         userId: settings.credentials.userId || 'config-service-user'
-      });
+      };
+      
+      // Add PAM token if available
+      if (settings.credentials.pamToken) {
+        pubnubConfig.authKey = settings.credentials.pamToken;
+      }
+      
+      const pubnub = new window.PubNub(pubnubConfig);
 
       try {
         // Fetch message history from PubNub Persistence
@@ -498,12 +519,19 @@ export class ConfigurationService {
       const channelName = this.getChannelName(configType);
       
       // Initialize PubNub instance with secret key for deletion from global CDN
-      const pubnub = new window.PubNub({
+      const pubnubConfig: any = {
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         secretKey: settings.credentials.secretKey,
         userId: settings.credentials.userId || 'config-service-user'
-      });
+      };
+      
+      // Add PAM token if available
+      if (settings.credentials.pamToken) {
+        pubnubConfig.authKey = settings.credentials.pamToken;
+      }
+      
+      const pubnub = new window.PubNub(pubnubConfig);
 
       try {
         // Delete specific message from PubNub History
@@ -638,12 +666,19 @@ export class ConfigurationService {
       // Only proceed with PubNub operations if we have valid credentials
       if (settings.storage.autoSaveToPubNub && settings.credentials.publishKey && settings.credentials.subscribeKey) {
         // Initialize PubNub instance with secret key
-        const pubnub = new window.PubNub({
+        const pubnubConfig: any = {
           publishKey: settings.credentials.publishKey,
           subscribeKey: settings.credentials.subscribeKey,
           secretKey: settings.credentials.secretKey,
           userId: settings.credentials.userId || 'config-service-user'
-        });
+        };
+        
+        // Add PAM token if available
+        if (settings.credentials.pamToken) {
+          pubnubConfig.authKey = settings.credentials.pamToken;
+        }
+        
+        const pubnub = new window.PubNub(pubnubConfig);
 
         // 2. Delete App Context channel metadata
         try {

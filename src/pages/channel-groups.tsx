@@ -108,11 +108,18 @@ export default function ChannelGroupsPage() {
         try {
           const settings = storage.getSettings();
           if (settings?.credentials?.publishKey && settings?.credentials?.subscribeKey) {
-            const instance = new window.PubNub({
+            const pubnubConfig: any = {
               publishKey: settings.credentials.publishKey,
               subscribeKey: settings.credentials.subscribeKey,
               userId: settings.credentials.userId || 'channel-groups-manager-user'
-            });
+            };
+            
+            // Add PAM token if available
+            if (settings.credentials.pamToken) {
+              pubnubConfig.authKey = settings.credentials.pamToken;
+            }
+            
+            const instance = new window.PubNub(pubnubConfig);
             setPubnub(instance);
           }
         } catch (error) {

@@ -3,6 +3,7 @@ export interface PubNubCredentials {
   subscribeKey: string;
   secretKey?: string;
   userId: string;
+  pamToken?: string;
 }
 
 export interface EnvironmentSettings {

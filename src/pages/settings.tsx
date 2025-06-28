@@ -23,6 +23,7 @@ const settingsSchema = z.object({
   subscribeKey: z.string().min(1, 'Subscribe key is required'),
   secretKey: z.string().optional(),
   userId: z.string().min(1, 'User ID is required'),
+  pamToken: z.string().optional(),
   origin: z.string().min(1, 'Origin is required'),
   ssl: z.boolean(),
   logVerbosity: z.enum(['debug', 'info', 'error', 'none']),
@@ -41,6 +42,7 @@ const FIELD_DEFINITIONS = {
   subscribeKey: { section: 'credentials', type: 'string', default: '' },
   secretKey: { section: 'credentials', type: 'string', default: '' },
   userId: { section: 'credentials', type: 'string', default: '' },
+  pamToken: { section: 'credentials', type: 'string', default: '' },
   origin: { section: 'environment', type: 'string', default: 'ps.pndsn.com' },
   ssl: { section: 'environment', type: 'boolean', default: true },
   logVerbosity: { section: 'environment', type: 'string', default: 'info' },
@@ -161,6 +163,7 @@ export default function SettingsPage() {
       subscribeKey: settings.credentials.subscribeKey,
       secretKey: settings.credentials.secretKey || '',
       userId: settings.credentials.userId,
+      pamToken: settings.credentials.pamToken || '',
       origin: settings.environment.origin,
       ssl: settings.environment.ssl,
       logVerbosity: settings.environment.logVerbosity,
@@ -206,6 +209,7 @@ export default function SettingsPage() {
       subscribeKey: settings.credentials.subscribeKey,
       secretKey: settings.credentials.secretKey || '',
       userId: settings.credentials.userId,
+      pamToken: settings.credentials.pamToken || '',
       origin: settings.environment.origin,
       ssl: settings.environment.ssl,
       logVerbosity: settings.environment.logVerbosity,
@@ -230,6 +234,7 @@ export default function SettingsPage() {
           subscribeKey: latestConfig.credentials.subscribeKey,
           secretKey: latestConfig.credentials.secretKey || '',
           userId: latestConfig.credentials.userId,
+          pamToken: latestConfig.credentials.pamToken || '',
           origin: latestConfig.environment.origin,
           ssl: latestConfig.environment.ssl,
           logVerbosity: latestConfig.environment.logVerbosity,
@@ -267,6 +272,7 @@ export default function SettingsPage() {
     watchedValues.subscribeKey,
     watchedValues.secretKey,
     watchedValues.userId,
+    watchedValues.pamToken,
     watchedValues.origin,
     watchedValues.ssl,
     watchedValues.logVerbosity,
@@ -346,6 +352,7 @@ export default function SettingsPage() {
         subscribeKey: data.subscribeKey,
         secretKey: data.secretKey,
         userId: data.userId,
+        pamToken: data.pamToken,
       },
       environment: {
         origin: data.origin,
@@ -404,6 +411,7 @@ export default function SettingsPage() {
       subscribeKey: restoredConfig.credentials.subscribeKey,
       secretKey: restoredConfig.credentials.secretKey || '',
       userId: restoredConfig.credentials.userId,
+      pamToken: restoredConfig.credentials.pamToken || '',
       origin: restoredConfig.environment.origin,
       ssl: restoredConfig.environment.ssl,
       logVerbosity: restoredConfig.environment.logVerbosity,
@@ -531,6 +539,22 @@ export default function SettingsPage() {
                         <FormControl>
                           <Input placeholder="unique-user-id" {...field} />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="pamToken"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>PAM Token (Optional)</FormLabel>
+                        <FormControl>
+                          <Input type="password" placeholder="Access Manager Token" {...field} />
+                        </FormControl>
+                        <FormDescription className="text-xs text-gray-500">
+                          Access Manager token for authenticated API calls
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}

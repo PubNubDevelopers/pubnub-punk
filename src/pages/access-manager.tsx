@@ -220,12 +220,19 @@ export default function AccessManagerPage() {
       if (typeof window !== 'undefined' && window.PubNub) {
         setPubnubReady(true);
         try {
-          const pubnubInstance = new window.PubNub({
+          const pubnubConfig: any = {
             publishKey: appSettings.credentials.publishKey || 'demo',
             subscribeKey: appSettings.credentials.subscribeKey || 'demo',
             userId: appSettings.credentials.userId || 'access-manager-user',
             secretKey: secretKey || 'demo',
-          });
+          };
+          
+          // Add PAM token if available
+          if (appSettings.credentials.pamToken) {
+            pubnubConfig.authKey = appSettings.credentials.pamToken;
+          }
+          
+          const pubnubInstance = new window.PubNub(pubnubConfig);
           setPubnub(pubnubInstance);
         } catch (error) {
           console.error('Error creating PubNub instance:', error);
@@ -355,12 +362,19 @@ export default function AccessManagerPage() {
       }
 
       // Create PubNub instance with secret key
-      const pubnubWithSecret = new window.PubNub({
+      const pubnubConfig: any = {
         publishKey: appSettings.credentials.publishKey || 'demo',
         subscribeKey: appSettings.credentials.subscribeKey || 'demo',
         userId: 'access-manager-server',
         secretKey: secretKey,
-      });
+      };
+      
+      // Add PAM token if available
+      if (appSettings.credentials.pamToken) {
+        pubnubConfig.authKey = appSettings.credentials.pamToken;
+      }
+      
+      const pubnubWithSecret = new window.PubNub(pubnubConfig);
 
       const grantRequest: any = {
         ttl: grantForm.ttl,
@@ -489,12 +503,19 @@ export default function AccessManagerPage() {
     setIsRevoking(true);
     try {
       // Create PubNub instance with secret key
-      const pubnubWithSecret = new window.PubNub({
+      const pubnubConfig: any = {
         publishKey: appSettings.credentials.publishKey || 'demo',
         subscribeKey: appSettings.credentials.subscribeKey || 'demo',
         userId: 'access-manager-server',
         secretKey: secretKey,
-      });
+      };
+      
+      // Add PAM token if available
+      if (appSettings.credentials.pamToken) {
+        pubnubConfig.authKey = appSettings.credentials.pamToken;
+      }
+      
+      const pubnubWithSecret = new window.PubNub(pubnubConfig);
 
       await pubnubWithSecret.revokeToken(revokeTokenInput.trim());
       
@@ -539,12 +560,15 @@ export default function AccessManagerPage() {
     setIsTesting(true);
     try {
       // Create PubNub instance with the token
-      const testPubnub = new window.PubNub({
+      const testPubnubConfig: any = {
         publishKey: appSettings.credentials.publishKey || 'demo',
         subscribeKey: appSettings.credentials.subscribeKey || 'demo',
         userId: 'token-test-user',
         authKey: testTokenInput.trim(),
-      });
+      };
+      
+      // Note: For token testing, we use the test token as authKey, not the settings PAM token
+      const testPubnub = new window.PubNub(testPubnubConfig);
 
       let success = false;
       let message = '';
