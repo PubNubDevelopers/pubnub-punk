@@ -92,6 +92,7 @@ export default function FileSharingPage() {
   const { toast } = useToast();
   const { pageSettings, setPageSettings, setConfigType } = useConfig();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const deleteCancelledRef = useRef(false);
   
   // State for PubNub availability and instance
   const [mounted, setMounted] = useState(false);
@@ -182,10 +183,12 @@ export default function FileSharingPage() {
   const [deleteResults, setDeleteResults] = useState<{
     successful: number;
     failed: number;
+    cancelled: number;
     errors: string[];
     fullLog: string;
-  }>({ successful: 0, failed: 0, errors: [], fullLog: '' });
+  }>({ successful: 0, failed: 0, cancelled: 0, errors: [], fullLog: '' });
   const [deleting, setDeleting] = useState(false);
+  const [deleteCancelled, setDeleteCancelled] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
     current: number;
     total: number;
@@ -445,6 +448,8 @@ export default function FileSharingPage() {
     if (!pubnub || !selectedChannel || selectedFiles.size === 0) return;
 
     setDeleting(true);
+    setDeleteCancelled(false);
+    deleteCancelledRef.current = false;
     const selectedFilesList = channelFiles.filter(file => selectedFiles.has(file.id));
     
     // Initialize progress
@@ -465,6 +470,68 @@ export default function FileSharingPage() {
 
     try {
       for (let i = 0; i < selectedFilesList.length; i++) {
+        // Check for cancellation before processing each file
+        if (deleteCancelledRef.current) {
+          const remainingCount = selectedFilesList.length - i;
+          fullLog.push('');
+          fullLog.push(`Operation cancelled by user at: ${new Date().toISOString()}`);
+          fullLog.push(`Files processed before cancellation: ${i}`);
+          fullLog.push(`Files cancelled (not processed): ${remainingCount}`);
+          
+          // Calculate cancelled count and break immediately
+          const cancelled = remainingCount;
+          
+          // Update in-memory structure - remove only successfully deleted files
+          const deletedFileIds = new Set<string>();
+          for (let j = 0; j < successful; j++) {
+            deletedFileIds.add(selectedFilesList[j].id);
+          }
+
+          setAllFiles(prev => ({
+            ...prev,
+            [selectedChannel]: (prev[selectedChannel] || []).filter(f => !deletedFileIds.has(f.id))
+          }));
+
+          // Update channel stats
+          const remainingFiles = (allFiles[selectedChannel] || []).filter(f => !deletedFileIds.has(f.id));
+          const stats: ChannelStats = {
+            totalFiles: remainingFiles.length,
+            totalSize: remainingFiles.reduce((sum, f) => sum + f.size, 0),
+            lastActivity: remainingFiles.length > 0 
+              ? remainingFiles.reduce((latest, f) => {
+                  return new Date(f.created) > new Date(latest) ? f.created : latest;
+                }, remainingFiles[0].created)
+              : 'No files'
+          };
+          
+          setChannelStats(prev => ({
+            ...prev,
+            [selectedChannel]: stats
+          }));
+
+          // Show results immediately
+          fullLog.push('');
+          fullLog.push(`Operation cancelled at: ${new Date().toISOString()}`);
+          fullLog.push(`Total files selected: ${selectedFilesList.length}`);
+          fullLog.push(`Successfully deleted: ${successful}`);
+          fullLog.push(`Failed to delete: ${failed}`);
+          fullLog.push(`Cancelled (not processed): ${cancelled}`);
+
+          setDeleteResults({
+            successful,
+            failed,
+            cancelled,
+            errors,
+            fullLog: fullLog.join('\n')
+          });
+          
+          // Clear selection and show results
+          setSelectedFiles(new Set());
+          setShowDeleteResults(true);
+          setShowDeleteConfirm(false);
+          return;
+        }
+        
         const file = selectedFilesList[i];
         
         // Update progress
@@ -484,6 +551,68 @@ export default function FileSharingPage() {
           
           successful++;
           fullLog.push(`✓ Successfully deleted: ${file.name}`);
+          
+          // Check for cancellation after each successful delete
+          if (deleteCancelledRef.current) {
+            const remainingCount = selectedFilesList.length - (i + 1);
+            fullLog.push('');
+            fullLog.push(`Operation cancelled by user at: ${new Date().toISOString()}`);
+            fullLog.push(`Files processed before cancellation: ${i + 1}`);
+            fullLog.push(`Files cancelled (not processed): ${remainingCount}`);
+            
+            // Calculate cancelled count and break immediately
+            const cancelled = remainingCount;
+            
+            // Update in-memory structure - remove only successfully deleted files
+            const deletedFileIds = new Set<string>();
+            for (let j = 0; j < successful; j++) {
+              deletedFileIds.add(selectedFilesList[j].id);
+            }
+
+            setAllFiles(prev => ({
+              ...prev,
+              [selectedChannel]: (prev[selectedChannel] || []).filter(f => !deletedFileIds.has(f.id))
+            }));
+
+            // Update channel stats
+            const remainingFiles = (allFiles[selectedChannel] || []).filter(f => !deletedFileIds.has(f.id));
+            const stats: ChannelStats = {
+              totalFiles: remainingFiles.length,
+              totalSize: remainingFiles.reduce((sum, f) => sum + f.size, 0),
+              lastActivity: remainingFiles.length > 0 
+                ? remainingFiles.reduce((latest, f) => {
+                    return new Date(f.created) > new Date(latest) ? f.created : latest;
+                  }, remainingFiles[0].created)
+                : 'No files'
+            };
+            
+            setChannelStats(prev => ({
+              ...prev,
+              [selectedChannel]: stats
+            }));
+
+            // Show results immediately
+            fullLog.push('');
+            fullLog.push(`Operation cancelled at: ${new Date().toISOString()}`);
+            fullLog.push(`Total files selected: ${selectedFilesList.length}`);
+            fullLog.push(`Successfully deleted: ${successful}`);
+            fullLog.push(`Failed to delete: ${failed}`);
+            fullLog.push(`Cancelled (not processed): ${cancelled}`);
+
+            setDeleteResults({
+              successful,
+              failed,
+              cancelled,
+              errors,
+              fullLog: fullLog.join('\n')
+            });
+            
+            // Clear selection and show results
+            setSelectedFiles(new Set());
+            setShowDeleteResults(true);
+            setShowDeleteConfirm(false);
+            return;
+          }
           
         } catch (error) {
           failed++;
@@ -526,22 +655,25 @@ export default function FileSharingPage() {
       // Clear selection
       setSelectedFiles(new Set());
 
-      // Show results
-      fullLog.push('');
-      fullLog.push(`Operation completed at: ${new Date().toISOString()}`);
-      fullLog.push(`Total files processed: ${selectedFilesList.length}`);
-      fullLog.push(`Successfully deleted: ${successful}`);
-      fullLog.push(`Failed to delete: ${failed}`);
+      // Show results (only if not cancelled - cancellation handling is above)
+      if (!deleteCancelledRef.current) {
+        fullLog.push('');
+        fullLog.push(`Operation completed at: ${new Date().toISOString()}`);
+        fullLog.push(`Total files processed: ${successful + failed}`);
+        fullLog.push(`Successfully deleted: ${successful}`);
+        fullLog.push(`Failed to delete: ${failed}`);
 
-      setDeleteResults({
-        successful,
-        failed,
-        errors,
-        fullLog: fullLog.join('\n')
-      });
-      
-      setShowDeleteResults(true);
-      setShowDeleteConfirm(false);
+        setDeleteResults({
+          successful,
+          failed,
+          cancelled: 0,
+          errors,
+          fullLog: fullLog.join('\n')
+        });
+        
+        setShowDeleteResults(true);
+        setShowDeleteConfirm(false);
+      }
 
     } catch (error) {
       console.error('Bulk delete operation failed:', error);
@@ -552,6 +684,8 @@ export default function FileSharingPage() {
       });
     } finally {
       setDeleting(false);
+      setDeleteCancelled(false);
+      deleteCancelledRef.current = false;
     }
   };
 
@@ -1099,26 +1233,11 @@ export default function FileSharingPage() {
                   </div>
                   
                   <div className="flex items-center gap-6">
-                    {/* Stats */}
+                    {/* Last Activity */}
                     {channelStats[selectedChannel] && (
-                      <div className="flex items-center gap-6 text-sm text-gray-600">
-                        <div className="flex items-center gap-2">
-                          <File className={`w-4 h-4 ${searchTerm ? 'text-pubnub-blue' : ''}`} />
-                          <span className={searchTerm ? 'text-pubnub-blue font-medium' : ''}>
-                            {searchTerm ? 
-                              `${filteredAndSortedFiles.length} of ${channelStats[selectedChannel].totalFiles} files` :
-                              `${channelStats[selectedChannel].totalFiles} files`
-                            }
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <HardDrive className="w-4 h-4" />
-                          <span>{formatFileSize(channelStats[selectedChannel].totalSize)}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4" />
-                          <span>Last activity: {formatDate(channelStats[selectedChannel].lastActivity)}</span>
-                        </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Calendar className="w-4 h-4" />
+                        <span>Last activity: {formatDate(channelStats[selectedChannel].lastActivity)}</span>
                       </div>
                     )}
                     
@@ -1230,6 +1349,30 @@ export default function FileSharingPage() {
                       </DropdownMenu>
                     </div>
                   </div>
+                  
+                  {/* File and MB counters */}
+                  {channelStats[selectedChannel] && (
+                    <div className="flex items-center gap-6 text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <File className={`w-4 h-4 ${searchTerm ? 'text-pubnub-blue' : ''}`} />
+                        <span className={searchTerm ? 'text-pubnub-blue font-medium' : ''}>
+                          {searchTerm ? 
+                            `${filteredAndSortedFiles.length} of ${channelStats[selectedChannel].totalFiles} files` :
+                            `${channelStats[selectedChannel].totalFiles} files`
+                          }
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <HardDrive className={`w-4 h-4 ${searchTerm ? 'text-pubnub-blue' : ''}`} />
+                        <span className={searchTerm ? 'text-pubnub-blue font-medium' : ''}>
+                          {searchTerm ? 
+                            `${formatFileSize(filteredAndSortedFiles.reduce((sum, file) => sum + file.size, 0))} of ${formatFileSize(channelStats[selectedChannel].totalSize)}` :
+                            formatFileSize(channelStats[selectedChannel].totalSize)
+                          }
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Selection count */}
                   {selectedFiles.size > 0 && (
@@ -1345,10 +1488,11 @@ export default function FileSharingPage() {
                               : 'bg-white hover:bg-gray-50'
                           }`}
                           onClick={(e) => {
-                            // Only toggle if not clicking on copy button
+                            // Only toggle if not clicking on copy button or file name link
                             const target = e.target as HTMLElement;
                             const copyButton = target.closest('button[title="Copy file URL"]');
-                            if (!copyButton) {
+                            const fileNameLink = target.closest('a[data-file-link]');
+                            if (!copyButton && !fileNameLink) {
                               toggleFileSelection(file.id);
                             }
                           }}
@@ -1367,7 +1511,16 @@ export default function FileSharingPage() {
                           </div>
                           <div className="flex items-center gap-3 min-w-0">
                             <File className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                            <span className="truncate font-medium">{file.name}</span>
+                            <a 
+                              href={file.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              data-file-link
+                              className="truncate font-medium text-pubnub-blue hover:text-pubnub-blue/80 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {file.name}
+                            </a>
                           </div>
                           <div className="text-sm text-gray-600">
                             {formatFileSize(file.size)}
@@ -1484,7 +1637,14 @@ export default function FileSharingPage() {
           )}
           
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>
+            <Button variant="outline" onClick={() => {
+              if (deleting) {
+                setDeleteCancelled(true);
+                deleteCancelledRef.current = true;
+              } else {
+                setShowDeleteConfirm(false);
+              }
+            }}>
               Cancel
             </Button>
             <Button 
@@ -1520,7 +1680,9 @@ export default function FileSharingPage() {
           
           <div className="space-y-4">
             {/* Summary */}
-            <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+            <div className={`grid gap-4 p-4 bg-gray-50 rounded-lg ${
+              deleteResults.cancelled > 0 ? 'grid-cols-4' : 'grid-cols-3'
+            }`}>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">{deleteResults.successful}</div>
                 <div className="text-sm text-gray-600">Successful</div>
@@ -1529,8 +1691,14 @@ export default function FileSharingPage() {
                 <div className="text-2xl font-bold text-red-600">{deleteResults.failed}</div>
                 <div className="text-sm text-gray-600">Failed</div>
               </div>
+              {deleteResults.cancelled > 0 && (
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-orange-600">{deleteResults.cancelled}</div>
+                  <div className="text-sm text-gray-600">Cancelled</div>
+                </div>
+              )}
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-600">{deleteResults.successful + deleteResults.failed}</div>
+                <div className="text-2xl font-bold text-gray-600">{deleteResults.successful + deleteResults.failed + deleteResults.cancelled}</div>
                 <div className="text-sm text-gray-600">Total</div>
               </div>
             </div>
