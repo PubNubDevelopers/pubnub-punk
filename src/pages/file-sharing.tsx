@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import JSZip from 'jszip';
 import { 
   Upload, 
   Folder, 
@@ -89,7 +90,7 @@ declare global {
 
 export default function FileSharingPage() {
   const { toast } = useToast();
-  const { pageSettings, setPageSettings } = useConfig();
+  const { pageSettings, setPageSettings, setConfigType } = useConfig();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // State for PubNub availability and instance
@@ -101,6 +102,30 @@ export default function FileSharingPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Set config type for the config service
+  useEffect(() => {
+    setConfigType('FILES');
+    
+    // Initialize page settings with the expected files structure
+    setPageSettings({
+      files: {
+        channels: FIELD_DEFINITIONS['files.channels'].default,
+        selectedChannel: FIELD_DEFINITIONS['files.selectedChannel'].default,
+        searchTerm: FIELD_DEFINITIONS['files.searchTerm'].default,
+        sortBy: FIELD_DEFINITIONS['files.sortBy'].default,
+        sortOrder: FIELD_DEFINITIONS['files.sortOrder'].default,
+        viewMode: FIELD_DEFINITIONS['files.viewMode'].default,
+        pageSize: FIELD_DEFINITIONS['files.pageSize'].default,
+        currentPage: FIELD_DEFINITIONS['files.currentPage'].default,
+      },
+      // Add simplified config for saving (only channels)
+      configForSaving: {
+        channels: FIELD_DEFINITIONS['files.channels'].default,
+        timestamp: new Date().toISOString(),
+      }
+    });
+  }, [setConfigType, setPageSettings]);
   
   // Check for PubNub availability on mount and create instance
   useEffect(() => {
@@ -153,6 +178,7 @@ export default function FileSharingPage() {
   const [showSelectAllWarning, setShowSelectAllWarning] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDeleteResults, setShowDeleteResults] = useState(false);
+  const [showDownloadProgress, setShowDownloadProgress] = useState(false);
   const [deleteResults, setDeleteResults] = useState<{
     successful: number;
     failed: number;
@@ -165,6 +191,13 @@ export default function FileSharingPage() {
     total: number;
     currentFile: string;
   }>({ current: 0, total: 0, currentFile: '' });
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    current: number;
+    total: number;
+    currentFile: string;
+    phase: string; // 'downloading' or 'zipping'
+  }>({ current: 0, total: 0, currentFile: '', phase: 'downloading' });
 
   // Computed values from pageSettings (with null safety)
   const selectedChannel = pageSettings?.files?.selectedChannel || FIELD_DEFINITIONS['files.selectedChannel'].default;
@@ -522,6 +555,149 @@ export default function FileSharingPage() {
     }
   };
 
+  // Handle bulk download with ZIP creation
+  const handleBulkDownload = async () => {
+    if (!pubnub || !selectedChannel || selectedFiles.size === 0) return;
+
+    // Validate 100-file limit
+    if (selectedFiles.size > 100) {
+      toast({
+        title: "Too many files selected",
+        description: `Please select up to 100 files for bulk download. You have ${selectedFiles.size} files selected.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedFilesList = channelFiles.filter(file => selectedFiles.has(file.id));
+    
+    // If only one file selected, download it directly (no ZIP needed)
+    if (selectedFilesList.length === 1) {
+      const file = selectedFilesList[0];
+      await downloadFile(file);
+      
+      // Clear selection
+      setSelectedFiles(new Set());
+      
+      toast({
+        title: "Download started",
+        description: `Downloading ${file.name}`,
+      });
+      return;
+    }
+
+    setDownloading(true);
+    setShowDownloadProgress(true);
+    
+    // Initialize progress
+    setDownloadProgress({
+      current: 0,
+      total: selectedFilesList.length,
+      currentFile: '',
+      phase: 'downloading'
+    });
+
+    try {
+      const zip = new JSZip();
+      let successful = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      // Download all files and add to ZIP
+      for (let i = 0; i < selectedFilesList.length; i++) {
+        const file = selectedFilesList[i];
+        
+        // Update progress
+        setDownloadProgress({
+          current: i + 1,
+          total: selectedFilesList.length,
+          currentFile: file.name,
+          phase: 'downloading'
+        });
+
+        try {
+          const downloadedFile = await pubnub.downloadFile({
+            channel: selectedChannel,
+            id: file.id,
+            name: file.name
+          });
+
+          const blob = await downloadedFile.toBlob();
+          zip.file(file.name, blob);
+          successful++;
+        } catch (error) {
+          failed++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`${file.name}: ${errorMsg}`);
+          console.error(`Failed to download ${file.name}:`, error);
+        }
+      }
+
+      if (successful === 0) {
+        toast({
+          title: "Download failed",
+          description: "No files could be downloaded. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Create ZIP file
+      setDownloadProgress({
+        current: selectedFilesList.length,
+        total: selectedFilesList.length,
+        currentFile: '',
+        phase: 'zipping'
+      });
+
+      const zipBlob = await zip.generateAsync({type: "blob"});
+
+      // Generate filename: PubNub_Files_[channel]_[YYYY-MM-DD_HH:MM:SS].zip
+      const now = new Date();
+      const date = now.toISOString().split('T')[0]; // YYYY-MM-DD
+      const time = now.toTimeString().split(' ')[0]; // HH:MM:SS in military time
+      const zipFileName = `PubNub_Files_${selectedChannel}_${date}_${time}.zip`;
+
+      // Download the ZIP file
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = zipFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Show success message
+      if (failed === 0) {
+        toast({
+          title: "Download completed",
+          description: `Successfully downloaded ${successful} files as ${zipFileName}`,
+        });
+      } else {
+        toast({
+          title: "Download completed with errors",
+          description: `Downloaded ${successful} files, ${failed} failed. Check console for details.`,
+          variant: "destructive",
+        });
+      }
+
+      // Clear selection
+      setSelectedFiles(new Set());
+
+    } catch (error) {
+      console.error('Bulk download operation failed:', error);
+      toast({
+        title: "Download failed",
+        description: error instanceof Error ? error.message : "Failed to create ZIP file",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+      setShowDownloadProgress(false);
+    }
+  };
+
   // Handle file download
   const downloadFile = async (file: FileItem) => {
     if (!pubnub || !selectedChannel) return;
@@ -582,6 +758,16 @@ export default function FileSharingPage() {
     const updatedChannels = [...channels, newChannelName.trim()];
     updateField('files.channels', updatedChannels);
     updateField('files.selectedChannel', newChannelName.trim());
+    
+    // Also update the simplified config for saving
+    setPageSettings(prev => ({
+      ...prev,
+      configForSaving: {
+        channels: updatedChannels,
+        timestamp: new Date().toISOString(),
+      }
+    }));
+    
     setNewChannelName('');
     setShowNewChannelDialog(false);
 
@@ -793,6 +979,9 @@ export default function FileSharingPage() {
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle>Add Channel</DialogTitle>
+                        <DialogDescription>
+                          Enter a channel name to add to your file management list.
+                        </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4">
                         <div>
@@ -1032,13 +1221,10 @@ export default function FileSharingPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             disabled={selectedFiles.size === 0}
+                            onClick={handleBulkDownload}
                           >
                             <Download className="w-4 h-4 mr-2" />
                             Download Selected ({selectedFiles.size})
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <File className="w-4 h-4 mr-2" />
-                            Export CSV
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -1402,6 +1588,56 @@ export default function FileSharingPage() {
             <Button onClick={() => setShowDeleteResults(false)}>
               Close
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Download Progress Dialog */}
+      <Dialog open={showDownloadProgress} onOpenChange={() => {}}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Downloading Files</DialogTitle>
+            <DialogDescription>
+              {downloadProgress.phase === 'downloading' 
+                ? `Downloading ${selectedFiles.size} files and creating ZIP archive...`
+                : 'Creating ZIP archive...'
+              }
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>
+                  {downloadProgress.phase === 'downloading' ? 'Download Progress' : 'Creating ZIP'}
+                </span>
+                <span>{downloadProgress.current} of {downloadProgress.total}</span>
+              </div>
+              <Progress 
+                value={(downloadProgress.current / downloadProgress.total) * 100} 
+                className="w-full"
+              />
+            </div>
+            
+            {downloadProgress.currentFile && downloadProgress.phase === 'downloading' && (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Currently downloading:</div>
+                <div className="text-sm text-gray-600 truncate">{downloadProgress.currentFile}</div>
+              </div>
+            )}
+
+            {downloadProgress.phase === 'zipping' && (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Creating ZIP archive...</div>
+                <div className="text-sm text-gray-600">Please wait while we package your files.</div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <div className="text-sm text-gray-500">
+              Please do not close this window during download.
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
