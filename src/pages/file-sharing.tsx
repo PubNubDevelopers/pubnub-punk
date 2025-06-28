@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
 import { storage } from '@/lib/storage';
@@ -46,6 +47,12 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface FileItem {
   id: string;
@@ -144,6 +151,20 @@ export default function FileSharingPage() {
   const [newChannelName, setNewChannelName] = useState('');
   const [showNewChannelDialog, setShowNewChannelDialog] = useState(false);
   const [showSelectAllWarning, setShowSelectAllWarning] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDeleteResults, setShowDeleteResults] = useState(false);
+  const [deleteResults, setDeleteResults] = useState<{
+    successful: number;
+    failed: number;
+    errors: string[];
+    fullLog: string;
+  }>({ successful: 0, failed: 0, errors: [], fullLog: '' });
+  const [deleting, setDeleting] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState<{
+    current: number;
+    total: number;
+    currentFile: string;
+  }>({ current: 0, total: 0, currentFile: '' });
 
   // Computed values from pageSettings (with null safety)
   const selectedChannel = pageSettings?.files?.selectedChannel || FIELD_DEFINITIONS['files.selectedChannel'].default;
@@ -386,6 +407,121 @@ export default function FileSharingPage() {
     }
   };
 
+  // Handle bulk delete with confirmation and detailed results
+  const handleBulkDelete = async () => {
+    if (!pubnub || !selectedChannel || selectedFiles.size === 0) return;
+
+    setDeleting(true);
+    const selectedFilesList = channelFiles.filter(file => selectedFiles.has(file.id));
+    
+    // Initialize progress
+    setDeleteProgress({
+      current: 0,
+      total: selectedFilesList.length,
+      currentFile: ''
+    });
+    
+    let successful = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const fullLog: string[] = [];
+    
+    fullLog.push(`Starting bulk delete operation for ${selectedFilesList.length} files on channel: ${selectedChannel}`);
+    fullLog.push(`Operation started at: ${new Date().toISOString()}`);
+    fullLog.push('');
+
+    try {
+      for (let i = 0; i < selectedFilesList.length; i++) {
+        const file = selectedFilesList[i];
+        
+        // Update progress
+        setDeleteProgress({
+          current: i + 1,
+          total: selectedFilesList.length,
+          currentFile: file.name
+        });
+        try {
+          fullLog.push(`Attempting to delete: ${file.name} (ID: ${file.id})`);
+          
+          await pubnub.deleteFile({
+            channel: selectedChannel,
+            id: file.id,
+            name: file.name
+          });
+          
+          successful++;
+          fullLog.push(`✓ Successfully deleted: ${file.name}`);
+          
+        } catch (error) {
+          failed++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`${file.name}: ${errorMsg}`);
+          fullLog.push(`✗ Failed to delete ${file.name}: ${errorMsg}`);
+        }
+      }
+
+      // Update in-memory structure - remove only successfully deleted files
+      const deletedFileIds = new Set<string>();
+      for (let i = 0; i < selectedFilesList.length; i++) {
+        if (i < successful) { // Assuming successful deletions happened in order
+          deletedFileIds.add(selectedFilesList[i].id);
+        }
+      }
+
+      setAllFiles(prev => ({
+        ...prev,
+        [selectedChannel]: (prev[selectedChannel] || []).filter(f => !deletedFileIds.has(f.id))
+      }));
+
+      // Update channel stats
+      const remainingFiles = (allFiles[selectedChannel] || []).filter(f => !deletedFileIds.has(f.id));
+      const stats: ChannelStats = {
+        totalFiles: remainingFiles.length,
+        totalSize: remainingFiles.reduce((sum, f) => sum + f.size, 0),
+        lastActivity: remainingFiles.length > 0 
+          ? remainingFiles.reduce((latest, f) => {
+              return new Date(f.created) > new Date(latest) ? f.created : latest;
+            }, remainingFiles[0].created)
+          : 'No files'
+      };
+      
+      setChannelStats(prev => ({
+        ...prev,
+        [selectedChannel]: stats
+      }));
+
+      // Clear selection
+      setSelectedFiles(new Set());
+
+      // Show results
+      fullLog.push('');
+      fullLog.push(`Operation completed at: ${new Date().toISOString()}`);
+      fullLog.push(`Total files processed: ${selectedFilesList.length}`);
+      fullLog.push(`Successfully deleted: ${successful}`);
+      fullLog.push(`Failed to delete: ${failed}`);
+
+      setDeleteResults({
+        successful,
+        failed,
+        errors,
+        fullLog: fullLog.join('\n')
+      });
+      
+      setShowDeleteResults(true);
+      setShowDeleteConfirm(false);
+
+    } catch (error) {
+      console.error('Bulk delete operation failed:', error);
+      toast({
+        title: "Bulk delete failed",
+        description: error instanceof Error ? error.message : "Failed to complete bulk delete operation",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Handle file download
   const downloadFile = async (file: FileItem) => {
     if (!pubnub || !selectedChannel) return;
@@ -540,8 +676,8 @@ export default function FileSharingPage() {
   };
 
   const selectAllFiles = () => {
-    const allFileIds = new Set(channelFiles.map(f => f.id));
-    setSelectedFiles(allFileIds);
+    const allFilteredFileIds = new Set(filteredAndSortedFiles.map(f => f.id));
+    setSelectedFiles(allFilteredFileIds);
     setShowSelectAllWarning(false);
   };
 
@@ -680,31 +816,41 @@ export default function FileSharingPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-1">
-                {channels.map((channel) => (
-                  <div
-                    key={channel}
-                    className={`p-2 rounded cursor-pointer flex items-center justify-between group ${
-                      selectedChannel === channel 
-                        ? 'bg-pubnub-blue text-white hover:bg-pubnub-blue/90' 
-                        : 'hover:bg-gray-50'
-                    }`}
-                    onClick={() => updateField('files.selectedChannel', channel)}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {selectedChannel === channel ? (
-                        <FolderOpen className="w-4 h-4 flex-shrink-0" />
-                      ) : (
-                        <Folder className="w-4 h-4 flex-shrink-0" />
+                <TooltipProvider>
+                  {channels.map((channel) => (
+                    <Tooltip key={channel}>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={`p-2 rounded cursor-pointer flex items-center justify-between group ${
+                            selectedChannel === channel 
+                              ? 'bg-pubnub-blue text-white hover:bg-pubnub-blue/90' 
+                              : 'hover:bg-gray-50'
+                          }`}
+                          onClick={() => updateField('files.selectedChannel', channel)}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {selectedChannel === channel ? (
+                              <FolderOpen className="w-4 h-4 flex-shrink-0" />
+                            ) : (
+                              <Folder className="w-4 h-4 flex-shrink-0" />
+                            )}
+                            <span className="text-sm truncate">{channel}</span>
+                          </div>
+                          {channelStats[channel] && (
+                            <span className={`text-xs ${selectedChannel === channel ? 'text-blue-200' : 'text-gray-500'}`}>
+                              {channelStats[channel].totalFiles}
+                            </span>
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      {channel.length > 20 && (
+                        <TooltipContent side="right">
+                          <p>{channel}</p>
+                        </TooltipContent>
                       )}
-                      <span className="text-sm truncate">{channel}</span>
-                    </div>
-                    {channelStats[channel] && (
-                      <span className={`text-xs ${selectedChannel === channel ? 'text-blue-200' : 'text-gray-500'}`}>
-                        {channelStats[channel].totalFiles}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                    </Tooltip>
+                  ))}
+                </TooltipProvider>
               </CardContent>
             </Card>
           </div>
@@ -712,39 +858,6 @@ export default function FileSharingPage() {
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col min-w-0">
 
-            {/* Stats Bar */}
-            {channelStats[selectedChannel] && (
-              <Card className="mb-4">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-6 text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <File className="w-4 h-4" />
-                        <span>
-                          {searchTerm ? 
-                            `${filteredAndSortedFiles.length} of ${channelStats[selectedChannel].totalFiles} files` :
-                            `${channelStats[selectedChannel].totalFiles} files`
-                          }
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <HardDrive className="w-4 h-4" />
-                        <span>{formatFileSize(channelStats[selectedChannel].totalSize)}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4" />
-                        <span>Last activity: {formatDate(channelStats[selectedChannel].lastActivity)}</span>
-                      </div>
-                    </div>
-                    {filteredAndSortedFiles.length > pageSize && (
-                      <div className="text-sm text-gray-600">
-                        Showing {startIndex + 1}-{Math.min(endIndex, filteredAndSortedFiles.length)} of {filteredAndSortedFiles.length}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
 
             {/* File List */}
             <Card className="flex-1 flex flex-col">
@@ -769,7 +882,7 @@ export default function FileSharingPage() {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0 max-w-xs">
                     {/* Refresh Button */}
                     <Button
                       variant="outline"
@@ -780,28 +893,66 @@ export default function FileSharingPage() {
                       <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                     </Button>
                     
-                    <CardTitle className="text-lg">Files in {selectedChannel}</CardTitle>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <CardTitle className="text-lg truncate">
+                            Files in {selectedChannel}
+                          </CardTitle>
+                        </TooltipTrigger>
+                        {selectedChannel.length > 5 && (
+                          <TooltipContent>
+                            <p>Files in {selectedChannel}</p>
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                   
-                  {/* Page Size Selector */}
-                  <div className="flex flex-col items-center">
-                    <Select
-                      value={pageSize.toString()}
-                      onValueChange={(value) => {
-                        updateField('files.pageSize', parseInt(value));
-                        updateField('files.currentPage', 1); // Reset to first page
-                      }}
-                    >
-                      <SelectTrigger className="w-[70px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="10">10</SelectItem>
-                        <SelectItem value="50">50</SelectItem>
-                        <SelectItem value="100">100</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <span className="text-xs text-gray-500 mt-1">files per page</span>
+                  <div className="flex items-center gap-6">
+                    {/* Stats */}
+                    {channelStats[selectedChannel] && (
+                      <div className="flex items-center gap-6 text-sm text-gray-600">
+                        <div className="flex items-center gap-2">
+                          <File className={`w-4 h-4 ${searchTerm ? 'text-pubnub-blue' : ''}`} />
+                          <span className={searchTerm ? 'text-pubnub-blue font-medium' : ''}>
+                            {searchTerm ? 
+                              `${filteredAndSortedFiles.length} of ${channelStats[selectedChannel].totalFiles} files` :
+                              `${channelStats[selectedChannel].totalFiles} files`
+                            }
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <HardDrive className="w-4 h-4" />
+                          <span>{formatFileSize(channelStats[selectedChannel].totalSize)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4" />
+                          <span>Last activity: {formatDate(channelStats[selectedChannel].lastActivity)}</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Page Size Selector */}
+                    <div className="flex flex-col items-center">
+                      <Select
+                        value={pageSize.toString()}
+                        onValueChange={(value) => {
+                          updateField('files.pageSize', parseInt(value));
+                          updateField('files.currentPage', 1); // Reset to first page
+                        }}
+                      >
+                        <SelectTrigger className="w-[70px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="text-xs text-gray-500 mt-1">files per page</span>
+                    </div>
                   </div>
                 </div>
 
@@ -846,8 +997,14 @@ export default function FileSharingPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setShowSelectAllWarning(true)}
-                        disabled={channelFiles.length === 0}
+                        onClick={() => {
+                          if (filteredAndSortedFiles.length > pageSize) {
+                            setShowSelectAllWarning(true);
+                          } else {
+                            selectAllFiles();
+                          }
+                        }}
+                        disabled={filteredAndSortedFiles.length === 0}
                       >
                         Select All
                       </Button>
@@ -868,6 +1025,7 @@ export default function FileSharingPage() {
                           <DropdownMenuItem
                             disabled={selectedFiles.size === 0}
                             className="text-red-600"
+                            onClick={() => setShowDeleteConfirm(true)}
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
                             Delete Selected ({selectedFiles.size})
@@ -1001,17 +1159,23 @@ export default function FileSharingPage() {
                               : 'bg-white hover:bg-gray-50'
                           }`}
                           onClick={(e) => {
-                            // Don't toggle if clicking on the copy button
+                            // Only toggle if not clicking on copy button
                             const target = e.target as HTMLElement;
-                            if (!target.closest('button') || target.closest('[role="checkbox"]')) {
+                            const copyButton = target.closest('button[title="Copy file URL"]');
+                            if (!copyButton) {
                               toggleFileSelection(file.id);
                             }
                           }}
                         >
-                          <div className="flex items-center">
+                          <div 
+                            className="flex items-center"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFileSelection(file.id);
+                            }}
+                          >
                             <Checkbox
                               checked={selectedFiles.has(file.id)}
-                              onCheckedChange={() => toggleFileSelection(file.id)}
                               className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
                             />
                           </div>
@@ -1084,9 +1248,9 @@ export default function FileSharingPage() {
       <Dialog open={showSelectAllWarning} onOpenChange={setShowSelectAllWarning}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Select All Files?</DialogTitle>
+            <DialogTitle>Select All {searchTerm ? 'Filtered ' : ''}Files?</DialogTitle>
             <DialogDescription>
-              This will select all {channelFiles.length} files in the "{selectedChannel}" channel, not just the {paginatedFiles.length} files displayed on this page.
+              This will select all {filteredAndSortedFiles.length} {searchTerm ? 'filtered ' : ''}files{searchTerm ? ` matching "${searchTerm}"` : ` in the "${selectedChannel}" channel`}, not just the {paginatedFiles.length} files displayed on this page.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1094,7 +1258,149 @@ export default function FileSharingPage() {
               Cancel
             </Button>
             <Button onClick={selectAllFiles} className="bg-pubnub-red hover:bg-pubnub-red/90">
-              Select All {channelFiles.length} Files
+              Select All {filteredAndSortedFiles.length} Files
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Selected Files?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete {selectedFiles.size} selected file{selectedFiles.size === 1 ? '' : 's'} from the "{selectedChannel}" channel. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Progress Section - Only show when deleting */}
+          {deleting && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Progress</span>
+                  <span>{deleteProgress.current} of {deleteProgress.total}</span>
+                </div>
+                <Progress 
+                  value={(deleteProgress.current / deleteProgress.total) * 100} 
+                  className="w-full"
+                />
+              </div>
+              
+              {deleteProgress.currentFile && (
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Currently deleting:</div>
+                  <div className="text-sm text-gray-600 truncate">{deleteProgress.currentFile}</div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleBulkDelete} 
+              className="bg-red-600 hover:bg-red-700" 
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting... ({deleteProgress.current}/{deleteProgress.total})
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete {selectedFiles.size} File{selectedFiles.size === 1 ? '' : 's'}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Results Modal */}
+      <Dialog open={showDeleteResults} onOpenChange={setShowDeleteResults}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Delete Operation Results</DialogTitle>
+            <DialogDescription>
+              Results of bulk delete operation on "{selectedChannel}" channel
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Summary */}
+            <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">{deleteResults.successful}</div>
+                <div className="text-sm text-gray-600">Successful</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">{deleteResults.failed}</div>
+                <div className="text-sm text-gray-600">Failed</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-600">{deleteResults.successful + deleteResults.failed}</div>
+                <div className="text-sm text-gray-600">Total</div>
+              </div>
+            </div>
+
+            {/* Error Details */}
+            {deleteResults.errors.length > 0 && (
+              <div>
+                <h4 className="font-medium mb-2 text-red-600">Failed Deletions:</h4>
+                <div className="max-h-32 overflow-y-auto bg-red-50 p-3 rounded border">
+                  {deleteResults.errors.map((error, index) => (
+                    <div key={index} className="text-sm text-red-700 mb-1">
+                      • {error}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Full Log */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-medium">Full Operation Log:</h4>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(deleteResults.fullLog);
+                      toast({
+                        title: "Copied to clipboard",
+                        description: "Full operation log copied to clipboard",
+                      });
+                    } catch (error) {
+                      toast({
+                        title: "Copy failed",
+                        description: "Failed to copy log to clipboard",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Copy Log
+                </Button>
+              </div>
+              <textarea
+                value={deleteResults.fullLog}
+                readOnly
+                className="w-full h-64 p-3 text-sm font-mono bg-gray-50 border rounded resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setShowDeleteResults(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
