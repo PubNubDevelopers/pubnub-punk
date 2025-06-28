@@ -18,7 +18,8 @@ import {
   X,
   Menu,
   Archive,
-  Layers
+  Layers,
+  Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -58,6 +59,12 @@ const navigationConfig: (NavItem | NavCategory)[] = [
       { id: 'presence', label: 'Presence', icon: Users, path: '/presence' },
       { id: 'functions', label: 'Functions', icon: Code, path: '/functions' },
       { id: 'app-context', label: 'App Context', icon: Database, path: '/app-context' },
+    ],
+  },
+  {
+    label: 'Security',
+    items: [
+      { id: 'access-manager', label: 'Access Manager', icon: Shield, path: '/access-manager' },
     ],
   },
   {

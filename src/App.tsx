@@ -15,6 +15,7 @@ import FunctionsPage from "@/pages/functions";
 import AppContextPage from "@/pages/app-context";
 import IlluminatePage from "@/pages/illuminate";
 import InsightsPage from "@/pages/insights";
+import AccessManagerPage from "@/pages/access-manager";
 import StreamGeneratorPage from "@/pages/stream-generator";
 import EventWorkflowPage from "@/pages/event-workflow";
 import NotFound from "@/pages/not-found";
@@ -68,6 +69,10 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
     title: 'Insights Tool',
     subtitle: 'Historical analytics and reporting'
   },
+  '/access-manager': {
+    title: 'Access Manager Tool',
+    subtitle: 'Manage permissions and access control'
+  },
   '/stream-generator': {
     title: 'Stream Generator',
     subtitle: 'Generate test data streams'
@@ -97,6 +102,7 @@ function Router() {
         <Route path="/app-context" component={AppContextPage} />
         <Route path="/illuminate" component={IlluminatePage} />
         <Route path="/insights" component={InsightsPage} />
+        <Route path="/access-manager" component={AccessManagerPage} />
         <Route path="/stream-generator" component={StreamGeneratorPage} />
         <Route path="/event-workflow" component={EventWorkflowPage} />
         <Route component={NotFound} />
