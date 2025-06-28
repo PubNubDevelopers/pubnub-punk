@@ -711,91 +711,6 @@ export default function FileSharingPage() {
 
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Toolbar */}
-            <Card className="mb-4">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-4 flex-1">
-                    {/* Upload Button */}
-                    <div>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                      <Button
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploading}
-                        className="bg-pubnub-red hover:bg-pubnub-red/90"
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        {uploading ? 'Uploading...' : 'Upload File'}
-                      </Button>
-                    </div>
-
-                    {/* Search */}
-                    <div className="relative flex-1 max-w-md">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                      <Input
-                        placeholder="Search files..."
-                        value={searchTerm}
-                        onChange={(e) => {
-                          updateField('files.searchTerm', e.target.value);
-                          updateField('files.currentPage', 1); // Reset to first page on search
-                        }}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Selection buttons and refresh */}
-                  <div className="flex items-center gap-2">
-                    {selectedFiles.size > 0 && (
-                      <>
-                        <span className="text-sm text-gray-600 mr-2">
-                          {selectedFiles.size} selected
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={clearSelection}
-                        >
-                          Clear
-                        </Button>
-                      </>
-                    )}
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={selectAllVisible}
-                      disabled={filteredAndSortedFiles.length === 0}
-                    >
-                      Select Visible
-                    </Button>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowSelectAllWarning(true)}
-                      disabled={channelFiles.length === 0}
-                    >
-                      Select All
-                    </Button>
-
-                    {/* Refresh Button */}
-                    <Button
-                      variant="outline"
-                      onClick={() => loadFiles()}
-                      disabled={loading}
-                    >
-                      <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
 
             {/* Stats Bar */}
             {channelStats[selectedChannel] && (
@@ -833,9 +748,40 @@ export default function FileSharingPage() {
 
             {/* File List */}
             <Card className="flex-1 flex flex-col">
-              <CardHeader>
+              <CardHeader className="space-y-4">
+                {/* Upload Button */}
+                <div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="bg-pubnub-red hover:bg-pubnub-red/90"
+                    size="sm"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {uploading ? 'Uploading...' : 'Upload File'}
+                  </Button>
+                </div>
+
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Files in {selectedChannel}</CardTitle>
+                  <div className="flex items-center gap-2">
+                    {/* Refresh Button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => loadFiles()}
+                      disabled={loading}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    </Button>
+                    
+                    <CardTitle className="text-lg">Files in {selectedChannel}</CardTitle>
+                  </div>
                   
                   {/* Page Size Selector */}
                   <div className="flex flex-col items-center">
@@ -858,6 +804,96 @@ export default function FileSharingPage() {
                     <span className="text-xs text-gray-500 mt-1">files per page</span>
                   </div>
                 </div>
+
+                {/* Search and Controls Row */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-4">
+                    {/* Search */}
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                      <Input
+                        placeholder="Search files..."
+                        value={searchTerm}
+                        onChange={(e) => {
+                          updateField('files.searchTerm', e.target.value);
+                          updateField('files.currentPage', 1); // Reset to first page on search
+                        }}
+                        className="pl-10"
+                      />
+                    </div>
+
+                    {/* Selection buttons and actions */}
+                    <div className="flex items-center gap-2">
+                      {selectedFiles.size > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={clearSelection}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={selectAllVisible}
+                        disabled={filteredAndSortedFiles.length === 0}
+                      >
+                        Select Visible
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowSelectAllWarning(true)}
+                        disabled={channelFiles.length === 0}
+                      >
+                        Select All
+                      </Button>
+
+                      {/* Actions Dropdown */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={selectedFiles.size === 0}
+                          >
+                            Actions
+                            <ChevronDown className="w-4 h-4 ml-2" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            disabled={selectedFiles.size === 0}
+                            className="text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete Selected ({selectedFiles.size})
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={selectedFiles.size === 0}
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            Download Selected ({selectedFiles.size})
+                          </DropdownMenuItem>
+                          <DropdownMenuItem>
+                            <File className="w-4 h-4 mr-2" />
+                            Export CSV
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  
+                  {/* Selection count */}
+                  {selectedFiles.size > 0 && (
+                    <div className="text-sm text-gray-600 ml-auto text-right">
+                      {selectedFiles.size} {selectedFiles.size === 1 ? 'file' : 'files'} selected
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-0 flex-1 flex flex-col">
                 {loading ? (
@@ -877,38 +913,7 @@ export default function FileSharingPage() {
                   </div>
                 ) : (
                   <div className="flex-1 flex flex-col">
-                    {/* Top Pagination Controls */}
-                    {filteredAndSortedFiles.length > pageSize && (
-                      <div className="border-t border-b p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm text-gray-500">
-                            Page {currentPage} of {totalPages}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => updateField('files.currentPage', Math.max(1, currentPage - 1))}
-                              disabled={currentPage === 1}
-                            >
-                              <ChevronDown className="w-4 h-4 rotate-90" />
-                              Previous
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => updateField('files.currentPage', Math.min(totalPages, currentPage + 1))}
-                              disabled={currentPage === totalPages}
-                            >
-                              Next
-                              <ChevronDown className="w-4 h-4 -rotate-90" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="grid grid-cols-[auto,1fr,100px,150px,80px] gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-600">
+                    <div className="grid grid-cols-[auto,1fr,100px,150px,auto] gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-600">
                       <div className="flex items-center">
                         <Checkbox
                           checked={allVisibleSelected}
@@ -952,11 +957,57 @@ export default function FileSharingPage() {
                         )}
                         {sortBy !== 'created' && <ChevronsUpDown className="w-4 h-4 opacity-50" />}
                       </button>
-                      <div>Actions</div>
+                      <div className="w-10"></div>
                     </div>
+                    
+                    {/* Top Pagination Controls */}
+                    {filteredAndSortedFiles.length > pageSize && (
+                      <div className="border-b p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-gray-500">
+                            Page {currentPage} of {totalPages}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateField('files.currentPage', Math.max(1, currentPage - 1))}
+                              disabled={currentPage === 1}
+                            >
+                              <ChevronDown className="w-4 h-4 rotate-90" />
+                              Previous
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateField('files.currentPage', Math.min(totalPages, currentPage + 1))}
+                              disabled={currentPage === totalPages}
+                            >
+                              Next
+                              <ChevronDown className="w-4 h-4 -rotate-90" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="flex-1 divide-y overflow-y-auto">
                       {paginatedFiles.map((file) => (
-                        <div key={file.id} className="grid grid-cols-[auto,1fr,100px,150px,80px] gap-4 p-4 items-center hover:bg-gray-50">
+                        <div 
+                          key={file.id} 
+                          className={`grid grid-cols-[auto,1fr,100px,150px,auto] gap-4 p-4 items-center transition-colors cursor-pointer ${
+                            selectedFiles.has(file.id) 
+                              ? 'bg-blue-50 hover:bg-blue-100' 
+                              : 'bg-white hover:bg-gray-50'
+                          }`}
+                          onClick={(e) => {
+                            // Don't toggle if clicking on the copy button
+                            const target = e.target as HTMLElement;
+                            if (!target.closest('button') || target.closest('[role="checkbox"]')) {
+                              toggleFileSelection(file.id);
+                            }
+                          }}
+                        >
                           <div className="flex items-center">
                             <Checkbox
                               checked={selectedFiles.has(file.id)}
@@ -974,38 +1025,18 @@ export default function FileSharingPage() {
                           <div className="text-sm text-gray-600">
                             {formatDate(file.created)}
                           </div>
-                          <div className="flex items-center gap-1">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreVertical className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => downloadFile(file)}>
-                                  <Download className="w-4 h-4 mr-2" />
-                                  Download
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => copyUrl(file)}>
-                                  <Copy className="w-4 h-4 mr-2" />
-                                  Copy URL
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => window.open(file.url, '_blank')}
-                                  className="text-blue-600"
-                                >
-                                  <ExternalLink className="w-4 h-4 mr-2" />
-                                  Open
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => deleteFile(file)}
-                                  className="text-red-600"
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                          <div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyUrl(file);
+                              }}
+                              title="Copy file URL"
+                            >
+                              <Copy className="w-4 h-4 text-gray-500 hover:text-gray-700" />
+                            </Button>
                           </div>
                         </div>
                       ))}
