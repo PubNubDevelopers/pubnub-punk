@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
+import { EasterEgg } from './easter-egg';
 import { 
   Settings, 
   MessageCircle, 
@@ -82,6 +83,7 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [location] = useLocation();
+  const [showEasterEgg, setShowEasterEgg] = useState(false);
   
   const isActive = (path: string) => {
     if (path === '/' && location === '/') return true;
@@ -146,7 +148,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white">PubNub</h1>
-                <p className="text-sm text-white/80">Developer Tools</p>
+                <button 
+                  onClick={() => setShowEasterEgg(true)}
+                  className="text-sm text-white/80 hover:text-white hover:underline transition-colors cursor-pointer text-left"
+                >
+                  Ultimate Ninja Kit
+                </button>
               </div>
             </div>
             <Button
@@ -198,6 +205,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           </div>
         </div>
       </aside>
+      
+      {/* Easter Egg */}
+      <EasterEgg 
+        isActive={showEasterEgg} 
+        onComplete={() => setShowEasterEgg(false)} 
+      />
     </>
   );
 }

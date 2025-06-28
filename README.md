@@ -1,4 +1,4 @@
-# PubNub Developer Tools
+# PubNub Ultimate Ninja Kit
 
 A client-side HTML-based collection of canonical developer tools for making it easier to learn, use, and test all of the PubNub Services.
 
