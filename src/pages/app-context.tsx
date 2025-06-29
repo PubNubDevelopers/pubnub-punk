@@ -1774,10 +1774,6 @@ export default function AppContextPage() {
     <div className="p-6 h-full">
       <div className="max-w-7xl mx-auto h-full flex flex-col">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-pubnub-text mb-2">PubNub App Context Manager</h1>
-          <p className="text-gray-600">Administer users, channels, and memberships in your PubNub application</p>
-        </div>
 
         {/* Main Layout */}
         <div className="flex-1 flex flex-col min-h-0">

@@ -1,92 +1,334 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Code, 
-  Play, 
-  Square, 
-  Send, 
   Clock, 
   Globe, 
   Settings, 
-  ChevronDown, 
-  ChevronUp, 
-  Copy, 
-  RefreshCw,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  FileText,
-  Zap,
   Database,
-  Key,
   ArrowRight,
   Monitor,
-  Activity
+  Activity,
+  Zap,
+  ExternalLink,
+  Book,
+  X,
+  Copy
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { useToast } from '@/hooks/use-toast';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle,
+  DialogDescription 
+} from '@/components/ui/dialog';
 import { useConfig } from '@/contexts/config-context';
 import { storage } from '@/lib/storage';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
 
 // Field definitions for config management
 const FIELD_DEFINITIONS = {
   'functions.selectedFunction': { section: 'functions', field: 'selectedFunction', type: 'string', default: 'message-enricher' },
-  'functions.functionType': { section: 'functions', field: 'functionType', type: 'string', default: 'before-publish' },
-  'functions.channel': { section: 'functions', field: 'channel', type: 'string', default: 'test-channel' },
-  'functions.channelPattern': { section: 'functions', field: 'channelPattern', type: 'string', default: '' },
-  'functions.code': { section: 'functions', field: 'code', type: 'string', default: '' },
-  'functions.testMessage': { section: 'functions', field: 'testMessage', type: 'string', default: '{"text": "Hello, World!", "type": "greeting"}' },
-  'functions.testParams': { section: 'functions', field: 'testParams', type: 'string', default: '{}' },
-  'functions.testQuery': { section: 'functions', field: 'testQuery', type: 'string', default: '{}' },
-  'functions.testBody': { section: 'functions', field: 'testBody', type: 'string', default: '{}' },
-  'functions.intervalSeconds': { section: 'functions', field: 'intervalSeconds', type: 'number', default: 30 },
-  'functions.showAdvanced': { section: 'functions', field: 'showAdvanced', type: 'boolean', default: false },
-  'functions.autoFormat': { section: 'functions', field: 'autoFormat', type: 'boolean', default: true },
 } as const;
 
-// Function templates for each type
-const FUNCTION_TEMPLATES = {
+// Module documentation data
+const MODULE_DOCS = {
+  'kvstore': {
+    name: 'KV Store',
+    description: 'Key-Value Storage for persistent data',
+    overview: 'The kvstore module provides globally-distributed, persistent storage for your serverless code. Perfect for storing state, counters, configuration, and cached data.',
+    methods: [
+      { name: 'set(key, value, ttlMinutes?)', description: 'Store data with optional TTL' },
+      { name: 'get(key)', description: 'Retrieve stored data' },
+      { name: 'removeItem(key)', description: 'Delete stored data' },
+      { name: 'incrCounter(key, increment?)', description: 'Atomically increment counters' },
+      { name: 'getCounter(key)', description: 'Get current counter value' },
+      { name: 'getKeys(paginationKey?)', description: 'List all stored keys' }
+    ],
+    example: `const db = require('kvstore');
+
+// Store user preferences
+await db.set("user:123", { 
+  theme: "dark", 
+  notifications: true 
+}, 1440); // 24 hour TTL
+
+// Increment page views atomically
+const views = await db.incrCounter("page_views");
+
+// Retrieve data
+const userData = await db.get("user:123");`
+  },
+  'xhr': {
+    name: 'XHR (HTTP Requests)',
+    description: 'Make HTTP requests to external APIs',
+    overview: 'The xhr module allows your Functions to make outbound HTTP/HTTPS requests to external APIs, webhooks, and services.',
+    methods: [
+      { name: 'fetch(url, options?)', description: 'Make HTTP requests with optional configuration' }
+    ],
+    example: `const xhr = require('xhr');
+
+// GET request
+const response = await xhr.fetch('https://api.example.com/data');
+const data = JSON.parse(response.body);
+
+// POST with JSON
+const result = await xhr.fetch('https://api.example.com/webhook', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ message: 'Hello World' })
+});`
+  },
+  'vault': {
+    name: 'Vault',
+    description: 'Secure storage for sensitive information',
+    overview: 'The vault module provides secure storage for sensitive data like API keys, tokens, and secrets that should not be hardcoded.',
+    methods: [
+      { name: 'get(key)', description: 'Retrieve secret securely' }
+    ],
+    example: `const vault = require('vault');
+
+// Retrieve API key securely
+const apiKey = await vault.get("github_api_token");
+if (!apiKey) {
+  throw new Error("API key not configured");
+}
+
+// Use in HTTP request
+const response = await xhr.fetch(url, {
+  headers: { 'Authorization': \`Bearer \${apiKey}\` }
+});`
+  },
+  'pubnub': {
+    name: 'PubNub',
+    description: 'Core PubNub client for messaging',
+    overview: 'The pubnub module provides direct access to PubNub messaging APIs including publish, fire, signals, and App Context operations.',
+    methods: [
+      { name: 'publish(params)', description: 'Send messages to channels' },
+      { name: 'fire(params)', description: 'Trigger Functions without delivering to subscribers' },
+      { name: 'signal(params)', description: 'Send lightweight real-time signals' },
+      { name: 'objects.setUUIDMetadata(params)', description: 'Manage user metadata' },
+      { name: 'objects.setChannelMetadata(params)', description: 'Manage channel metadata' },
+      { name: 'listFiles(params)', description: 'List uploaded files' }
+    ],
+    example: `const pubnub = require('pubnub');
+
+// Publish message
+await pubnub.publish({
+  channel: "alerts",
+  message: { 
+    type: "notification", 
+    text: "System update complete" 
+  }
+});
+
+// Fire analytics event
+await pubnub.fire({
+  channel: "analytics",
+  message: { event: "user_action", timestamp: Date.now() }
+});`
+  },
+  'crypto': {
+    name: 'Crypto',
+    description: 'Cryptographic functions and hashing',
+    overview: 'The crypto module provides cryptographic operations including HMAC signatures, hashing, and data verification.',
+    methods: [
+      { name: 'hmac(key, data, algorithm)', description: 'Generate HMAC signatures' },
+      { name: 'sha256(data)', description: 'SHA-256 hash generation' },
+      { name: 'ALGORITHM.HMAC_SHA256', description: 'Algorithm constant for HMAC' }
+    ],
+    example: `const crypto = require('crypto');
+
+// Generate HMAC signature
+const signature = await crypto.hmac(
+  'secretKey', 
+  'data', 
+  crypto.ALGORITHM.HMAC_SHA256
+);
+
+// Hash data
+const hash = await crypto.sha256('hello world');
+console.log('SHA-256 hash:', hash);`
+  },
+  'utils': {
+    name: 'Utils',
+    description: 'General utility functions',
+    overview: 'The utils module provides helpful utility functions for common operations like random number generation and data validation.',
+    methods: [
+      { name: 'generateRandom()', description: 'Generate random numbers' },
+      { name: 'isNumber(value)', description: 'Check if value is a number' }
+    ],
+    example: `const utils = require('utils');
+
+// Generate random number
+const randomValue = utils.generateRandom();
+
+// Validate input
+if (utils.isNumber(request.message.amount)) {
+  // Process numeric amount
+}`
+  },
+  'uuid': {
+    name: 'UUID',
+    description: 'UUID generation and validation',
+    overview: 'The uuid module provides UUID generation and validation capabilities for creating unique identifiers.',
+    methods: [
+      { name: 'v4()', description: 'Generate random UUID v4' },
+      { name: 'validate(uuid)', description: 'Validate UUID format' }
+    ],
+    example: `const { v4, validate } = require('uuid');
+
+// Generate new UUID
+const id = v4();
+console.log('New UUID:', id);
+
+// Validate UUID
+if (validate(request.message.userId)) {
+  console.log('Valid UUID provided');
+}`
+  },
+  'jwt': {
+    name: 'JWT',
+    description: 'JSON Web Token operations',
+    overview: 'The jwt module enables creation and verification of JSON Web Tokens for authentication and authorization.',
+    methods: [
+      { name: 'sign(payload, secret)', description: 'Create signed JWT tokens' },
+      { name: 'verify(token, secret)', description: 'Verify and decode JWT tokens' }
+    ],
+    example: `const jwt = require('jwt');
+
+// Create JWT token
+const token = await jwt.sign(
+  { userId: '123', role: 'admin' },
+  'your-secret-key'
+);
+
+// Verify token
+const decoded = await jwt.verify(token, 'your-secret-key');
+console.log('User ID:', decoded.userId);`
+  },
+  'codec/*': {
+    name: 'Codec Modules',
+    description: 'Encoding/decoding utilities',
+    overview: 'The codec modules provide various encoding and decoding utilities including Base64, authentication headers, and query string parsing.',
+    methods: [
+      { name: 'codec/base64.encode(data)', description: 'Base64 encode data' },
+      { name: 'codec/base64.decode(data)', description: 'Base64 decode data' },
+      { name: 'codec/auth.basic(user, pass)', description: 'Generate basic auth header' },
+      { name: 'codec/query_string.parse(qs)', description: 'Parse query parameters' }
+    ],
+    example: `const base64 = require('codec/base64');
+const auth = require('codec/auth');
+
+// Base64 encoding
+const encoded = base64.encode('Hello World');
+
+// Basic auth header
+const authHeader = auth.basic('username', 'password');
+
+// Use in HTTP request
+const response = await xhr.fetch(url, {
+  headers: { 'Authorization': authHeader }
+});`
+  },
+  'advanced_math': {
+    name: 'Advanced Math',
+    description: 'Mathematical and geospatial functions',
+    overview: 'The advanced_math module provides mathematical operations and geospatial calculations for location-based applications.',
+    methods: [
+      { name: 'distance(lat1, lon1, lat2, lon2)', description: 'Calculate distance between coordinates' },
+      { name: 'radians(degrees)', description: 'Convert degrees to radians' },
+      { name: 'degrees(radians)', description: 'Convert radians to degrees' }
+    ],
+    example: `const math = require('advanced_math');
+
+// Calculate distance between two points
+const distance = math.distance(
+  40.7128, -74.0060, // New York
+  34.0522, -118.2437  // Los Angeles
+);
+
+console.log('Distance:', distance, 'km');`
+  },
+  'jsonpath': {
+    name: 'JSONPath',
+    description: 'Complex JSON data queries',
+    overview: 'The jsonpath module enables complex queries and transformations on JSON data using JSONPath expressions.',
+    methods: [
+      { name: 'query(data, path)', description: 'Query JSON data with JSONPath expressions' }
+    ],
+    example: `const jsonpath = require('jsonpath');
+
+const data = {
+  users: [
+    { name: 'Alice', age: 30, active: true },
+    { name: 'Bob', age: 25, active: false }
+  ]
+};
+
+// Find all active users
+const activeUsers = jsonpath.query(data, '$.users[?(@.active)]');
+console.log('Active users:', activeUsers);`
+  }
+};
+
+// Function Type documentation data
+const FUNCTION_TYPE_DOCS = {
   'before-publish': {
     name: 'Before Publish',
     description: 'Transform or validate messages before they are published',
-    code: `export default async (request) => {
+    overview: 'Before Publish Functions execute before a message is delivered to subscribers. They can modify, enrich, or block messages. Perfect for content filtering, message transformation, and validation.',
+    useCases: [
+      'Content moderation and filtering',
+      'Message enrichment with additional data',
+      'Data validation and sanitization',
+      'Rate limiting and spam detection',
+      'Adding timestamps and metadata'
+    ],
+    parameters: [
+      { name: 'request.message', description: 'The message payload being published' },
+      { name: 'request.channels', description: 'Array of channels the message is being sent to' },
+      { name: 'request.ok()', description: 'Call to allow the message to be published' },
+      { name: 'request.abort()', description: 'Call to block the message from being published' }
+    ],
+    example: `export default async (request) => {
   const db = require('kvstore');
-  const xhr = require('xhr');
+  const crypto = require('crypto');
   
   try {
     const message = request.message;
     const channel = request.channels[0];
     
-    console.log('Processing message for channel:', channel);
+    // Content moderation - block messages with profanity
+    const profanityWords = ['spam', 'blocked'];
+    const messageText = message.text?.toLowerCase() || '';
     
-    // Add timestamp to message
+    if (profanityWords.some(word => messageText.includes(word))) {
+      console.log('Message blocked due to inappropriate content');
+      return request.abort();
+    }
+    
+    // Rate limiting - max 10 messages per minute per user
+    const userId = message.userId;
+    const rateLimitKey = \`rate_limit:\${userId}:\${Math.floor(Date.now() / 60000)}\`;
+    const messageCount = await db.getCounter(rateLimitKey);
+    
+    if (messageCount >= 10) {
+      console.log(\`Rate limit exceeded for user \${userId}\`);
+      return request.abort();
+    }
+    
+    await db.incrCounter(rateLimitKey);
+    
+    // Message enrichment
     message.processedAt = new Date().toISOString();
+    message.messageId = crypto.sha256(JSON.stringify(message)).substring(0, 8);
+    message.channel = channel;
     
-    // Increment message counter
-    const messageCount = await db.incrCounter('total_messages');
-    message.sequenceNumber = messageCount;
+    // Increment total message counter
+    await db.incrCounter('total_messages_processed');
     
-    console.log('Message processed successfully:', message);
+    console.log(\`Message processed for channel: \${channel}\`);
     return request.ok();
     
   } catch (error) {
@@ -98,818 +340,674 @@ const FUNCTION_TEMPLATES = {
   'after-publish': {
     name: 'After Publish',
     description: 'Process messages after they have been published',
-    code: `export default async (request) => {
+    overview: 'After Publish Functions execute after a message has been delivered to subscribers. They cannot modify the original message but can trigger additional actions, analytics, or notifications.',
+    useCases: [
+      'Analytics and message tracking',
+      'Triggering workflows and notifications',
+      'Database logging and archival',
+      'Third-party integrations',
+      'Audit trails and compliance'
+    ],
+    parameters: [
+      { name: 'request.message', description: 'The published message payload (read-only)' },
+      { name: 'request.channels', description: 'Array of channels the message was sent to' },
+      { name: 'request.ok()', description: 'Call to complete processing successfully' },
+      { name: 'request.abort()', description: 'Call to stop further processing' }
+    ],
+    example: `export default async (request) => {
   const db = require('kvstore');
+  const xhr = require('xhr');
   const pubnub = require('pubnub');
   
   try {
     const message = request.message;
     const channel = request.channels[0];
     
-    console.log('Message published to channel:', channel);
+    // Analytics tracking
+    const today = new Date().toISOString().split('T')[0];
+    await db.incrCounter(\`messages_per_day:\${today}\`);
+    await db.incrCounter(\`channel_activity:\${channel}\`);
     
-    // Store message for analytics
-    await db.set(\`message:\${Date.now()}\`, {
+    // Store message for compliance/audit
+    const auditRecord = {
+      messageId: message.messageId,
       channel: channel,
-      message: message,
-      timestamp: new Date().toISOString()
-    }, 1440); // 24 hour TTL
+      timestamp: Date.now(),
+      userId: message.userId,
+      messageSize: JSON.stringify(message).length
+    };
     
-    // Send analytics event
-    await pubnub.fire({
-      channel: 'analytics',
-      message: {
-        type: 'message_published',
-        channel: channel,
-        timestamp: Date.now()
-      }
+    await db.set(\`audit:\${message.messageId}\`, auditRecord, 10080); // 7 days
+    
+    // Trigger notifications for important messages
+    if (message.priority === 'urgent') {
+      // Send to notification service
+      await xhr.fetch('https://api.slack.com/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: \`🚨 Urgent message in \${channel}: \${message.text}\`,
+          channel: '#alerts'
+        })
+      });
+      
+      // Fire internal alert
+      await pubnub.fire({
+        channel: 'internal_alerts',
+        message: {
+          type: 'urgent_message',
+          originalChannel: channel,
+          messageId: message.messageId,
+          timestamp: Date.now()
+        }
+      });
+    }
+    
+    // Log successful processing
+    console.log(\`Post-processing completed for message \${message.messageId}\`);
+    return request.ok();
+    
+  } catch (error) {
+    console.error('Error in post-processing:', error);
+    return request.ok(); // Continue even if post-processing fails
+  }
+};`
+  },
+  'after-presence': {
+    name: 'After Presence',
+    description: 'React to presence events (join, leave, timeout)',
+    overview: 'After Presence Functions execute when users join, leave, or timeout from channels. Perfect for tracking user activity, managing sessions, and triggering presence-based workflows.',
+    useCases: [
+      'User session management',
+      'Activity tracking and analytics',
+      'Welcome messages for new users',
+      'Cleanup tasks when users leave',
+      'Real-time user count updates'
+    ],
+    parameters: [
+      { name: 'request.message', description: 'Presence event data (action, uuid, timestamp)' },
+      { name: 'request.channels', description: 'Array of channels where presence occurred' },
+      { name: 'request.message.action', description: 'Presence action: "join", "leave", or "timeout"' },
+      { name: 'request.message.uuid', description: 'User ID that triggered the presence event' }
+    ],
+    example: `export default async (request) => {
+  const db = require('kvstore');
+  const pubnub = require('pubnub');
+  
+  try {
+    const presenceEvent = request.message;
+    const channel = request.channels[0];
+    const userId = presenceEvent.uuid;
+    const action = presenceEvent.action;
+    
+    console.log(\`Presence event: \${userId} \${action} \${channel}\`);
+    
+    switch (action) {
+      case 'join':
+        // Track user session start
+        await db.set(\`session:\${userId}:\${channel}\`, {
+          joinedAt: Date.now(),
+          channel: channel,
+          lastSeen: Date.now()
+        }, 1440); // 24 hour TTL
+        
+        // Increment active user count
+        await db.incrCounter(\`active_users:\${channel}\`);
+        
+        // Send welcome message for new users
+        const userHistory = await db.get(\`user_history:\${userId}\`);
+        if (!userHistory) {
+          await pubnub.publish({
+            channel: channel,
+            message: {
+              type: 'welcome',
+              text: \`Welcome to \${channel}! 👋\`,
+              userId: userId,
+              timestamp: Date.now()
+            }
+          });
+          
+          // Mark user as seen before
+          await db.set(\`user_history:\${userId}\`, { firstSeen: Date.now() }, 43200); // 30 days
+        }
+        
+        // Update channel statistics
+        await db.incrCounter('total_joins');
+        break;
+        
+      case 'leave':
+      case 'timeout':
+        // Clean up user session
+        await db.removeItem(\`session:\${userId}:\${channel}\`);
+        
+        // Decrement active user count
+        await db.incrCounter(\`active_users:\${channel}\`, -1);
+        
+        // Log session duration if we have join time
+        const sessionData = await db.get(\`session:\${userId}:\${channel}\`);
+        if (sessionData) {
+          const sessionDuration = Date.now() - sessionData.joinedAt;
+          await db.incrCounter('total_session_time', Math.floor(sessionDuration / 1000));
+        }
+        
+        // Fire analytics event
+        await pubnub.fire({
+          channel: 'presence_analytics',
+          message: {
+            type: 'user_left',
+            userId: userId,
+            channel: channel,
+            action: action,
+            timestamp: Date.now()
+          }
+        });
+        break;
+    }
+    
+    // Update real-time presence dashboard
+    const currentCount = await db.getCounter(\`active_users:\${channel}\`) || 0;
+    await pubnub.signal({
+      channel: \`presence_updates.\${channel}\`,
+      message: { count: currentCount, action: action, userId: userId }
     });
     
     return request.ok();
     
   } catch (error) {
-    console.error('Error in after-publish function:', error);
-    return request.ok(); // Don't block the message
+    console.error('Error processing presence event:', error);
+    return request.ok();
   }
 };`
   },
   'on-request': {
-    name: 'On Request (HTTP)',
-    description: 'Handle HTTP requests to your function endpoint',
-    code: `export default async (request, response) => {
+    name: 'On Request',
+    description: 'Create RESTful endpoints with custom logic',
+    overview: 'On Request Functions create HTTP endpoints that can be called directly via REST API. They receive HTTP requests and can return custom responses, perfect for webhooks, APIs, and server-side logic.',
+    useCases: [
+      'Webhook endpoints for third-party services',
+      'RESTful APIs for mobile/web apps',
+      'Data processing and transformation',
+      'Authentication and authorization',
+      'Integration with external databases'
+    ],
+    parameters: [
+      { name: 'request.params', description: 'URL path parameters' },
+      { name: 'request.query', description: 'Query string parameters' },
+      { name: 'request.body', description: 'Request body content' },
+      { name: 'request.headers', description: 'HTTP request headers' },
+      { name: 'response.send(data, statusCode)', description: 'Send JSON response with status code' }
+    ],
+    example: `export default async (request, response) => {
   const db = require('kvstore');
+  const xhr = require('xhr');
   const vault = require('vault');
+  const pubnub = require('pubnub');
   
   try {
-    // Set CORS headers
-    response.headers['Access-Control-Allow-Origin'] = '*';
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE';
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
+    const method = request.method || 'GET';
+    const path = request.params.path;
     
-    if (request.method === 'OPTIONS') {
-      return response.send('', 200);
+    // Authentication check
+    const authHeader = request.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return response.send({ error: 'Authentication required' }, 401);
     }
     
-    const userId = request.params.userId;
+    const token = authHeader.replace('Bearer ', '');
+    const validToken = await vault.get('api_access_token');
     
-    switch (request.method) {
+    if (token !== validToken) {
+      return response.send({ error: 'Invalid token' }, 403);
+    }
+    
+    // Route handling
+    switch (method) {
       case 'GET':
-        const userData = await db.get(\`user:\${userId}\`);
-        if (!userData) {
-          return response.send({ error: 'User not found' }, 404);
+        if (path === 'stats') {
+          // Return system statistics
+          const stats = {
+            totalMessages: await db.getCounter('total_messages_processed') || 0,
+            activeUsers: await db.getCounter('total_active_users') || 0,
+            uptime: await db.get('system_start_time'),
+            timestamp: Date.now()
+          };
+          
+          return response.send(stats, 200);
+          
+        } else if (path === 'health') {
+          // Health check endpoint
+          return response.send({ 
+            status: 'healthy', 
+            timestamp: Date.now(),
+            version: '1.0.0'
+          }, 200);
+          
+        } else {
+          return response.send({ error: 'Endpoint not found' }, 404);
         }
-        return response.send(userData, 200);
         
       case 'POST':
-        const body = await request.json();
-        const user = {
-          id: userId,
-          name: body.name,
-          email: body.email,
-          createdAt: new Date().toISOString()
-        };
-        
-        await db.set(\`user:\${userId}\`, user, 43200); // 30 days
-        return response.send({ message: 'User created', user }, 201);
+        if (path === 'webhook') {
+          // Process incoming webhook
+          const webhookData = JSON.parse(request.body);
+          
+          // Validate webhook signature (example)
+          const signature = request.headers['x-webhook-signature'];
+          // ... signature validation logic ...
+          
+          // Process the webhook data
+          await db.set(\`webhook:\${Date.now()}\`, {
+            data: webhookData,
+            timestamp: Date.now(),
+            source: request.headers['user-agent']
+          }, 1440); // Store for 24 hours
+          
+          // Forward to internal channel
+          await pubnub.publish({
+            channel: 'webhook_events',
+            message: {
+              type: 'external_webhook',
+              data: webhookData,
+              timestamp: Date.now()
+            }
+          });
+          
+          return response.send({ status: 'processed' }, 200);
+          
+        } else if (path === 'notify') {
+          // Send notification
+          const { channel, message, priority } = JSON.parse(request.body);
+          
+          if (!channel || !message) {
+            return response.send({ 
+              error: 'Missing required fields: channel, message' 
+            }, 400);
+          }
+          
+          await pubnub.publish({
+            channel: channel,
+            message: {
+              text: message,
+              priority: priority || 'normal',
+              timestamp: Date.now(),
+              source: 'api'
+            }
+          });
+          
+          return response.send({ 
+            status: 'sent', 
+            channel: channel 
+          }, 200);
+          
+        } else {
+          return response.send({ error: 'Endpoint not found' }, 404);
+        }
         
       default:
-        return response.send({ error: 'Method not allowed' }, 405);
+        return response.send({ 
+          error: \`Method \${method} not allowed\` 
+        }, 405);
     }
     
   } catch (error) {
-    console.error('Error processing request:', error);
-    return response.send({ error: 'Internal server error' }, 500);
-  }
-};`
-  },
-  'on-interval': {
-    name: 'On Interval (Scheduled)',
-    description: 'Execute code on a scheduled interval',
-    code: `export default async (event) => {
-  const db = require('kvstore');
-  const pubnub = require('pubnub');
-  const xhr = require('xhr');
-  
-  try {
-    console.log('Scheduled function triggered at:', new Date().toISOString());
-    
-    // Perform cleanup of expired data
-    const allKeys = await db.getKeys();
-    const tempKeys = allKeys.filter(key => key.startsWith('temp:'));
-    
-    let cleaned = 0;
-    for (const key of tempKeys) {
-      const data = await db.get(key);
-      if (data && data.expiresAt && new Date(data.expiresAt) < new Date()) {
-        await db.removeItem(key);
-        cleaned++;
-      }
-    }
-    
-    // Send status update
-    await pubnub.publish({
-      channel: 'system_status',
-      message: {
-        type: 'cleanup_complete',
-        itemsCleaned: cleaned,
-        timestamp: Date.now()
-      }
-    });
-    
-    console.log(\`Cleanup complete. Removed \${cleaned} expired items.\`);
-    return event.ok();
-    
-  } catch (error) {
-    console.error('Error in scheduled function:', error);
-    return event.abort();
+    console.error('API endpoint error:', error);
+    return response.send({ 
+      error: 'Internal server error' 
+    }, 500);
   }
 };`
   }
 };
-
-// Mock execution results for testing
-const MOCK_EXECUTION_RESULTS = {
-  success: {
-    status: 'completed',
-    duration: 245,
-    result: 'ok',
-    logs: [
-      { level: 'info', message: 'Processing message for channel: test-channel', timestamp: Date.now() - 200 },
-      { level: 'info', message: 'Message processed successfully: {"text":"Hello, World!","type":"greeting","processedAt":"2023-12-07T10:30:00.000Z","sequenceNumber":42}', timestamp: Date.now() - 100 },
-    ],
-    output: {
-      message: {
-        text: "Hello, World!",
-        type: "greeting",
-        processedAt: "2023-12-07T10:30:00.000Z",
-        sequenceNumber: 42
-      },
-      modified: true
-    }
-  },
-  error: {
-    status: 'error',
-    duration: 89,
-    result: 'abort',
-    logs: [
-      { level: 'info', message: 'Processing message for channel: test-channel', timestamp: Date.now() - 200 },
-      { level: 'error', message: 'Error processing message: Invalid message format', timestamp: Date.now() - 100 },
-    ],
-    error: 'Invalid message format',
-    output: null
-  }
-};
-
-declare global {
-  interface Window {
-    PubNub: any;
-  }
-}
 
 export default function FunctionsPage() {
-  const { toast } = useToast();
-  const { pageSettings, setPageSettings, setConfigType } = useConfig();
-  const [mounted, setMounted] = useState(false);
-  const [executing, setExecuting] = useState(false);
-  const [executionResult, setExecutionResult] = useState<any>(null);
-  const [showLogs, setShowLogs] = useState(true);
-  const [showResult, setShowResult] = useState(true);
-  const codeTextareaRef = useRef<HTMLTextAreaElement>(null);
+  // Configuration state management
+  const { setPageSettings } = useConfig();
+  
+  // Page settings state
+  const [localPageSettings] = useState({
+    selectedFunction: 'message-enricher',
+  });
 
-  // Mount check
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Module documentation dialog state
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [isModuleDialogOpen, setIsModuleDialogOpen] = useState(false);
 
-  // Set config type and initialize
-  useEffect(() => {
-    setConfigType('FUNCTIONS');
-    
-    // Initialize page settings
-    if (!pageSettings?.functions) {
-      const defaultSettings = {
-        functions: {
-          selectedFunction: FIELD_DEFINITIONS['functions.selectedFunction'].default,
-          functionType: FIELD_DEFINITIONS['functions.functionType'].default,
-          channel: FIELD_DEFINITIONS['functions.channel'].default,
-          channelPattern: FIELD_DEFINITIONS['functions.channelPattern'].default,
-          code: FUNCTION_TEMPLATES['before-publish'].code,
-          testMessage: FIELD_DEFINITIONS['functions.testMessage'].default,
-          testParams: FIELD_DEFINITIONS['functions.testParams'].default,
-          testQuery: FIELD_DEFINITIONS['functions.testQuery'].default,
-          testBody: FIELD_DEFINITIONS['functions.testBody'].default,
-          intervalSeconds: FIELD_DEFINITIONS['functions.intervalSeconds'].default,
-          showAdvanced: FIELD_DEFINITIONS['functions.showAdvanced'].default,
-          autoFormat: FIELD_DEFINITIONS['functions.autoFormat'].default,
-        }
-      };
-      setPageSettings(defaultSettings);
-    }
-  }, [setConfigType, setPageSettings, pageSettings]);
+  // Function type documentation dialog state
+  const [selectedFunctionType, setSelectedFunctionType] = useState<string | null>(null);
+  const [isFunctionTypeDialogOpen, setIsFunctionTypeDialogOpen] = useState(false);
 
-  // Computed values from pageSettings
-  const selectedFunction = pageSettings?.functions?.selectedFunction || FIELD_DEFINITIONS['functions.selectedFunction'].default;
-  const functionType = pageSettings?.functions?.functionType || FIELD_DEFINITIONS['functions.functionType'].default;
-  const channel = pageSettings?.functions?.channel || FIELD_DEFINITIONS['functions.channel'].default;
-  const channelPattern = pageSettings?.functions?.channelPattern || FIELD_DEFINITIONS['functions.channelPattern'].default;
-  const code = pageSettings?.functions?.code || FUNCTION_TEMPLATES['before-publish'].code;
-  const testMessage = pageSettings?.functions?.testMessage || FIELD_DEFINITIONS['functions.testMessage'].default;
-  const testParams = pageSettings?.functions?.testParams || FIELD_DEFINITIONS['functions.testParams'].default;
-  const testQuery = pageSettings?.functions?.testQuery || FIELD_DEFINITIONS['functions.testQuery'].default;
-  const testBody = pageSettings?.functions?.testBody || FIELD_DEFINITIONS['functions.testBody'].default;
-  const intervalSeconds = pageSettings?.functions?.intervalSeconds || FIELD_DEFINITIONS['functions.intervalSeconds'].default;
-  const showAdvanced = pageSettings?.functions?.showAdvanced || FIELD_DEFINITIONS['functions.showAdvanced'].default;
-  const autoFormat = pageSettings?.functions?.autoFormat || FIELD_DEFINITIONS['functions.autoFormat'].default;
-
-  // Update field helper
-  const updateField = (path: string, value: any) => {
-    const def = FIELD_DEFINITIONS[path as keyof typeof FIELD_DEFINITIONS];
-    if (def) {
-      setPageSettings(prev => ({
-        ...prev,
-        [def.section]: {
-          ...prev?.[def.section],
-          [def.field]: value
-        }
-      }));
-    }
+  const openModuleDoc = (moduleName: string) => {
+    setSelectedModule(moduleName);
+    setIsModuleDialogOpen(true);
   };
 
-  // Load function template
-  const loadTemplate = (type: string) => {
-    const template = FUNCTION_TEMPLATES[type as keyof typeof FUNCTION_TEMPLATES];
-    if (template) {
-      updateField('functions.code', template.code);
-      updateField('functions.functionType', type);
-      toast({
-        title: "Template loaded",
-        description: `Loaded ${template.name} template`,
-      });
-    }
+  const closeModuleDialog = () => {
+    setIsModuleDialogOpen(false);
+    setSelectedModule(null);
   };
 
-  // Format code
-  const formatCode = () => {
-    try {
-      // Simple formatting for JavaScript - replace with proper formatter if needed
-      const formatted = code
-        .split('\n')
-        .map(line => line.trim())
-        .join('\n')
-        .replace(/;\s*}/g, ';\n}')
-        .replace(/{\s*/g, '{\n  ')
-        .replace(/}\s*catch/g, '}\ncatch')
-        .replace(/}\s*finally/g, '}\nfinally');
-      
-      updateField('functions.code', formatted);
-      toast({
-        title: "Code formatted",
-        description: "Code has been formatted",
-      });
-    } catch (error) {
-      toast({
-        title: "Format failed",
-        description: "Failed to format code",
-        variant: "destructive",
-      });
-    }
+  const openFunctionTypeDoc = (functionType: string) => {
+    setSelectedFunctionType(functionType);
+    setIsFunctionTypeDialogOpen(true);
   };
 
-  // Test function execution
-  const testFunction = async () => {
-    setExecuting(true);
-    setExecutionResult(null);
-
-    try {
-      // Simulate function execution with mock results
-      await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
-      
-      // Randomly choose success or error for demo
-      const isSuccess = Math.random() > 0.3;
-      const result = isSuccess ? MOCK_EXECUTION_RESULTS.success : MOCK_EXECUTION_RESULTS.error;
-      
-      setExecutionResult({
-        ...result,
-        timestamp: new Date().toISOString(),
-        functionType,
-        channel: functionType === 'on-request' ? 'HTTP endpoint' : channel,
-      });
-
-      toast({
-        title: isSuccess ? "Function executed successfully" : "Function execution failed",
-        description: isSuccess 
-          ? `Function completed in ${result.duration}ms`
-          : `Function failed: ${result.error}`,
-        variant: isSuccess ? "default" : "destructive",
-      });
-
-    } catch (error) {
-      console.error('Test execution failed:', error);
-      toast({
-        title: "Test failed",
-        description: "Failed to execute function test",
-        variant: "destructive",
-      });
-    } finally {
-      setExecuting(false);
-    }
+  const closeFunctionTypeDialog = () => {
+    setIsFunctionTypeDialogOpen(false);
+    setSelectedFunctionType(null);
   };
 
-  // Copy to clipboard
-  const copyToClipboard = async (text: string, description: string) => {
+  // Copy to clipboard function
+  const copyToClipboard = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast({
-        title: "Copied!",
-        description: `${description} copied to clipboard`,
-      });
+      // You could add a toast notification here if available
+      console.log(`${label} copied to clipboard`);
     } catch (error) {
-      toast({
-        title: "Copy failed",
-        description: "Failed to copy to clipboard",
-        variant: "destructive",
-      });
+      console.error('Failed to copy:', error);
     }
   };
 
-  // Format JSON
-  const formatJson = (field: string, value: string) => {
-    try {
-      const parsed = JSON.parse(value);
-      const formatted = JSON.stringify(parsed, null, 2);
-      updateField(field, formatted);
-    } catch (error) {
-      // Invalid JSON, leave as is
-    }
-  };
+  // Auto-sync with config context for page settings management
+  useEffect(() => {
+    setPageSettings(localPageSettings);
+    console.log('🔧 Functions Page Settings Updated:', localPageSettings);
+  }, [localPageSettings, setPageSettings]);
 
-  if (!mounted) {
-    return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="p-8 text-center">
-            <RefreshCw className="w-16 h-16 text-pubnub-blue mx-auto mb-4 animate-spin" />
-            <h3 className="text-xl font-semibold mb-2">Loading Functions Tool</h3>
-            <p className="text-gray-600">Starting up...</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Load saved settings on component mount
+  useEffect(() => {
+    console.log('📁 Functions page loaded');
+  }, []);
 
   return (
     <div className="p-6 h-full">
       <div className="max-w-7xl mx-auto h-full flex flex-col">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-pubnub-text mb-2">PubNub Functions Developer Tool</h1>
-          <p className="text-gray-600">Test and debug serverless JavaScript functions for real-time applications</p>
-        </div>
 
-        {/* Main Layout */}
-        <div className="flex-1 flex gap-6 min-h-0">
-          {/* Left Panel - Function Code */}
-          <div className="flex-1 flex flex-col min-w-0">
-            <Card className="flex-1 flex flex-col">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-pubnub-blue rounded-lg flex items-center justify-center">
-                      <Code className="text-white h-5 w-5" />
-                    </div>
-                    <div>
-                      <CardTitle>Function Code</CardTitle>
-                      <p className="text-sm text-gray-600">Write and edit your PubNub Function</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={formatCode}
-                      disabled={!code.trim()}
-                    >
-                      <FileText className="w-4 h-4 mr-2" />
-                      Format
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyToClipboard(code, 'Function code')}
-                      disabled={!code.trim()}
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                  </div>
+        {/* Function Info Panel */}
+        <div className="w-full">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-pubnub-text rounded-lg flex items-center justify-center">
+                  <Settings className="text-white h-5 w-5" />
                 </div>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col space-y-4">
-                {/* Function Type Selection */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Function Type</Label>
-                    <Select value={functionType} onValueChange={(value) => updateField('functions.functionType', value)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="before-publish">Before Publish</SelectItem>
-                        <SelectItem value="after-publish">After Publish</SelectItem>
-                        <SelectItem value="on-request">On Request (HTTP)</SelectItem>
-                        <SelectItem value="on-interval">On Interval (Scheduled)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Load Template</Label>
-                    <Select onValueChange={loadTemplate}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose a template..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(FUNCTION_TEMPLATES).map(([key, template]) => (
-                          <SelectItem key={key} value={key}>
-                            {template.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div>
+                  <CardTitle>PubNub Functions Information</CardTitle>
+                  <p className="text-sm text-gray-600">Available modules and execution environment details</p>
                 </div>
-
-                {/* Trigger Configuration */}
-                {functionType !== 'on-interval' && (
-                  <div className="space-y-2">
-                    <Label>
-                      {functionType === 'on-request' ? 'HTTP Endpoint Path' : 'Channel Pattern'}
-                    </Label>
-                    <div className="flex items-center space-x-2">
-                      <Input
-                        placeholder={
-                          functionType === 'on-request' 
-                            ? '/api/users/{userId}' 
-                            : 'channel-name or pattern.*'
-                        }
-                        value={functionType === 'on-request' ? channelPattern : channel}
-                        onChange={(e) => updateField(
-                          functionType === 'on-request' ? 'functions.channelPattern' : 'functions.channel', 
-                          e.target.value
-                        )}
-                      />
-                      {functionType !== 'on-request' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => copyToClipboard(channel, 'Channel name')}
-                          disabled={!channel.trim()}
-                        >
-                          <Copy className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      {functionType === 'on-request' 
-                        ? 'URL path pattern for HTTP endpoint (use {param} for path parameters)'
-                        : 'Channel name or wildcard pattern (e.g., alerts.* matches alerts.critical, alerts.info)'
-                      }
-                    </p>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium text-sm mb-3">Available Modules</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {[
+                      'kvstore', 'xhr', 'vault', 'pubnub', 
+                      'crypto', 'utils', 'uuid', 'jwt',
+                      'codec/*', 'advanced_math', 'jsonpath'
+                    ].map(module => (
+                      <button
+                        key={module}
+                        onClick={() => openModuleDoc(module)}
+                        className="flex items-center space-x-2 p-2 bg-gray-50 rounded hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-all duration-200 cursor-pointer group text-left"
+                      >
+                        <Database className="w-3 h-3 text-gray-500 group-hover:text-blue-600" />
+                        <span className="font-mono group-hover:text-blue-700">{module}</span>
+                        <ExternalLink className="w-3 h-3 text-gray-400 group-hover:text-blue-500 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    ))}
                   </div>
-                )}
-
-                {/* Interval Configuration */}
-                {functionType === 'on-interval' && (
-                  <div className="space-y-2">
-                    <Label>Interval (seconds)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="3600"
-                      value={intervalSeconds}
-                      onChange={(e) => updateField('functions.intervalSeconds', parseInt(e.target.value) || 30)}
-                    />
-                    <p className="text-xs text-gray-500">
-                      How often the function should execute (1 second to 1 hour)
-                    </p>
-                  </div>
-                )}
-
-                {/* Code Editor */}
-                <div className="flex-1 flex flex-col space-y-2">
-                  <Label>Function Code</Label>
-                  <Textarea
-                    ref={codeTextareaRef}
-                    value={code}
-                    onChange={(e) => updateField('functions.code', e.target.value)}
-                    className="flex-1 font-mono text-sm resize-none"
-                    placeholder="export default async (request) => {
-  // Your function code here
-  return request.ok();
-};"
-                    style={{ minHeight: '300px' }}
-                  />
-                  <p className="text-xs text-gray-500">
-                    Write your function using ES6+ JavaScript. Available modules: kvstore, xhr, vault, pubnub, crypto, utils, uuid, jwt, codec/*, advanced_math, jsonpath
+                  <p className="text-xs text-gray-500 mt-2">
+                    💡 Click any module to view documentation and examples
                   </p>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Panel - Test & Results */}
-          <div className="w-96 flex flex-col space-y-6">
-            {/* Test Configuration */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
-                      <Play className="text-white h-5 w-5" />
-                    </div>
-                    <div>
-                      <CardTitle>Test Function</CardTitle>
-                      <p className="text-sm text-gray-600">Configure test parameters</p>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={testFunction}
-                    disabled={executing || !code.trim()}
-                    className="bg-green-500 hover:bg-green-600"
-                  >
-                    {executing ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                        Testing...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 h-4 mr-2" />
-                        Test Function
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Tabs defaultValue="message" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="message" disabled={functionType === 'on-request'}>
-                      Message
-                    </TabsTrigger>
-                    <TabsTrigger value="http" disabled={functionType !== 'on-request'}>
-                      HTTP
-                    </TabsTrigger>
-                    <TabsTrigger value="context">
-                      Context
-                    </TabsTrigger>
-                  </TabsList>
-                  
-                  {/* Message Test Data */}
-                  <TabsContent value="message" className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label>Test Message</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => formatJson('functions.testMessage', testMessage)}
-                        >
-                          Format JSON
-                        </Button>
-                      </div>
-                      <Textarea
-                        value={testMessage}
-                        onChange={(e) => updateField('functions.testMessage', e.target.value)}
-                        placeholder='{"text": "Hello, World!", "type": "greeting"}'
-                        className="font-mono text-sm"
-                        rows={4}
-                      />
-                      <p className="text-xs text-gray-500">
-                        The message payload that will be passed to your function
-                      </p>
-                    </div>
-                  </TabsContent>
-
-                  {/* HTTP Test Data */}
-                  <TabsContent value="http" className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>URL Parameters</Label>
-                      <Textarea
-                        value={testParams}
-                        onChange={(e) => updateField('functions.testParams', e.target.value)}
-                        placeholder='{"userId": "123", "action": "update"}'
-                        className="font-mono text-sm"
-                        rows={2}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Query String</Label>
-                      <Textarea
-                        value={testQuery}
-                        onChange={(e) => updateField('functions.testQuery', e.target.value)}
-                        placeholder='{"limit": "10", "offset": "0"}'
-                        className="font-mono text-sm"
-                        rows={2}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Request Body</Label>
-                      <Textarea
-                        value={testBody}
-                        onChange={(e) => updateField('functions.testBody', e.target.value)}
-                        placeholder='{"name": "John Doe", "email": "john@example.com"}'
-                        className="font-mono text-sm"
-                        rows={3}
-                      />
-                    </div>
-                  </TabsContent>
-
-                  {/* Context/Environment */}
-                  <TabsContent value="context" className="space-y-4">
-                    <div className="text-sm space-y-2">
-                      <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                        <span>Function Type:</span>
-                        <span className="font-mono">{functionType}</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                        <span>Channel:</span>
-                        <span className="font-mono">{functionType === 'on-request' ? 'HTTP' : channel}</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                        <span>User ID:</span>
-                        <span className="font-mono">test-user-123</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                        <span>Timestamp:</span>
-                        <span className="font-mono">{Date.now()}</span>
-                      </div>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-
-            {/* Execution Results */}
-            {executionResult && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        executionResult.status === 'completed' 
-                          ? 'bg-green-500' 
-                          : 'bg-red-500'
-                      }`}>
-                        {executionResult.status === 'completed' ? (
-                          <CheckCircle2 className="text-white h-5 w-5" />
-                        ) : (
-                          <XCircle className="text-white h-5 w-5" />
-                        )}
-                      </div>
-                      <div>
-                        <CardTitle>Execution Result</CardTitle>
-                        <p className="text-sm text-gray-600">
-                          {executionResult.status === 'completed' ? 'Success' : 'Failed'} • {executionResult.duration}ms
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyToClipboard(JSON.stringify(executionResult, null, 2), 'Execution result')}
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Status and Timing */}
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500">Status:</span>
-                      <div className={`font-medium ${
-                        executionResult.status === 'completed' ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {executionResult.result}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Duration:</span>
-                      <div className="font-medium">{executionResult.duration}ms</div>
-                    </div>
-                  </div>
-
-                  {/* Error Message */}
-                  {executionResult.error && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded">
-                      <div className="flex items-center space-x-2 text-red-700 mb-1">
-                        <AlertTriangle className="w-4 h-4" />
-                        <span className="font-medium">Error</span>
-                      </div>
-                      <p className="text-sm text-red-600">{executionResult.error}</p>
-                    </div>
-                  )}
-
-                  {/* Logs */}
-                  <div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowLogs(!showLogs)}
-                      className="p-0 h-auto font-medium text-gray-700 hover:text-gray-900"
-                    >
-                      <Monitor className="w-4 h-4 mr-2" />
-                      Execution Logs ({executionResult.logs?.length || 0})
-                      {showLogs ? <ChevronUp className="w-4 h-4 ml-2" /> : <ChevronDown className="w-4 h-4 ml-2" />}
-                    </Button>
-                    {showLogs && (
-                      <div className="mt-2 max-h-32 overflow-y-auto bg-gray-900 text-gray-100 p-3 rounded text-xs font-mono">
-                        {executionResult.logs?.map((log: any, index: number) => (
-                          <div key={index} className="mb-1">
-                            <span className={`${
-                              log.level === 'error' ? 'text-red-400' : 
-                              log.level === 'warn' ? 'text-yellow-400' : 
-                              'text-gray-400'
-                            }`}>
-                              [{log.level.toUpperCase()}]
-                            </span>
-                            <span className="ml-2">{log.message}</span>
-                          </div>
-                        )) || <div className="text-gray-500">No logs</div>}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Output */}
-                  {executionResult.output && (
-                    <div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowResult(!showResult)}
-                        className="p-0 h-auto font-medium text-gray-700 hover:text-gray-900"
+                
+                <div>
+                  <h4 className="font-medium text-sm mb-3">Function Types</h4>
+                  <div className="space-y-2 text-sm">
+                    {[
+                      { key: 'before-publish', icon: ArrowRight, name: 'Before Publish', desc: 'Transform or validate messages before publishing' },
+                      { key: 'after-publish', icon: ArrowRight, name: 'After Publish', desc: 'Process messages after they have been published' },
+                      { key: 'after-presence', icon: Monitor, name: 'After Presence', desc: 'React to presence events (join, leave, timeout)' },
+                      { key: 'on-request', icon: Globe, name: 'On Request', desc: 'Create RESTful endpoints with custom logic' }
+                    ].map(({ key, icon: Icon, name, desc }) => (
+                      <button
+                        key={key}
+                        onClick={() => openFunctionTypeDoc(key)}
+                        className="flex items-center space-x-3 p-3 bg-gray-50 rounded hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-all duration-200 cursor-pointer group text-left w-full"
                       >
-                        <Activity className="w-4 h-4 mr-2" />
-                        Function Output
-                        {showResult ? <ChevronUp className="w-4 h-4 ml-2" /> : <ChevronDown className="w-4 h-4 ml-2" />}
-                      </Button>
-                      {showResult && (
-                        <div className="mt-2">
-                          <pre className="bg-gray-50 p-3 rounded text-xs font-mono overflow-x-auto">
-                            {JSON.stringify(executionResult.output, null, 2)}
-                          </pre>
+                        <Icon className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
+                        <div className="flex-1">
+                          <div className="font-medium group-hover:text-blue-700">{name}</div>
+                          <div className="text-xs text-gray-600 group-hover:text-blue-600">{desc}</div>
                         </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Function Info */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-pubnub-text rounded-lg flex items-center justify-center">
-                    <Settings className="text-white h-5 w-5" />
+                        <ExternalLink className="w-4 h-4 text-gray-400 group-hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    ))}
                   </div>
-                  <div>
-                    <CardTitle>Function Info</CardTitle>
-                    <p className="text-sm text-gray-600">Available modules and limits</p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    💡 Click any function type to view documentation and examples
+                  </p>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium text-sm mb-3">Execution Limits</h4>
+                  <div className="space-y-1 text-sm text-gray-600">
+                    <div className="flex items-center space-x-2">
+                      <Activity className="w-3 h-3" />
+                      <span>Max 3 external operations per execution</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Activity className="w-3 h-3" />
+                      <span>Max 3-level function chaining</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Activity className="w-3 h-3" />
+                      <span>Async/await supported</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Activity className="w-3 h-3" />
+                      <span>ES6+ JavaScript features</span>
+                    </div>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Module Documentation Dialog */}
+        <Dialog open={isModuleDialogOpen} onOpenChange={setIsModuleDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            {selectedModule && MODULE_DOCS[selectedModule] && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                      <Book className="text-white h-4 w-4" />
+                    </div>
+                    <div>
+                      <span className="font-mono text-lg">{selectedModule}</span>
+                      <span className="text-lg font-normal ml-2">- {MODULE_DOCS[selectedModule].name}</span>
+                    </div>
+                  </DialogTitle>
+                  <DialogDescription>
+                    {MODULE_DOCS[selectedModule].description}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6">
+                  {/* Overview */}
                   <div>
-                    <h4 className="font-medium text-sm mb-2">Available Modules</h4>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {[
-                        'kvstore', 'xhr', 'vault', 'pubnub', 
-                        'crypto', 'utils', 'uuid', 'jwt',
-                        'codec/*', 'advanced_math', 'jsonpath'
-                      ].map(module => (
-                        <div key={module} className="flex items-center space-x-2 p-2 bg-gray-50 rounded">
-                          <Database className="w-3 h-3 text-gray-500" />
-                          <span className="font-mono">{module}</span>
+                    <h3 className="text-sm font-semibold mb-2">Overview</h3>
+                    <p className="text-sm text-gray-600">
+                      {MODULE_DOCS[selectedModule].overview}
+                    </p>
+                  </div>
+
+                  {/* Methods */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">Available Methods</h3>
+                    <div className="space-y-2">
+                      {MODULE_DOCS[selectedModule].methods.map((method, index) => (
+                        <div key={index} className="p-3 bg-gray-50 rounded-lg">
+                          <div className="font-mono text-sm font-medium text-blue-700 mb-1">
+                            {method.name}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {method.description}
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
-                  
+
+                  {/* Example Code */}
                   <div>
-                    <h4 className="font-medium text-sm mb-2">Execution Limits</h4>
-                    <div className="space-y-1 text-xs text-gray-600">
-                      <div>• Max 3 external operations per execution</div>
-                      <div>• Max 3-level function chaining</div>
-                      <div>• Async/await supported</div>
-                      <div>• ES6+ JavaScript features</div>
+                    <h3 className="text-sm font-semibold mb-3">Example Usage</h3>
+                    <div className="bg-gray-900 rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between p-3 bg-gray-800 border-b border-gray-700">
+                        <span className="text-xs text-gray-400">
+                          {selectedModule}.js
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(MODULE_DOCS[selectedModule].example, `${selectedModule} example`)}
+                          className="h-6 px-2 text-gray-400 hover:text-white hover:bg-gray-700"
+                        >
+                          <Copy className="w-3 h-3 mr-1" />
+                          <span className="text-xs">Copy</span>
+                        </Button>
+                      </div>
+                      <div className="p-4 overflow-x-auto">
+                        <pre className="text-sm text-gray-100 whitespace-pre-wrap">
+                          <code>{MODULE_DOCS[selectedModule].example}</code>
+                        </pre>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Footer */}
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="text-xs text-gray-500">
+                      💡 All methods are asynchronous - use <code className="bg-gray-100 px-1 rounded">await</code> and <code className="bg-gray-100 px-1 rounded">try/catch</code>
+                    </div>
+                    <Button onClick={closeModuleDialog} variant="outline" size="sm">
+                      Close
+                    </Button>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Function Type Documentation Dialog */}
+        <Dialog open={isFunctionTypeDialogOpen} onOpenChange={setIsFunctionTypeDialogOpen}>
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            {selectedFunctionType && FUNCTION_TYPE_DOCS[selectedFunctionType] && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
+                      <Code className="text-white h-4 w-4" />
+                    </div>
+                    <div>
+                      <span className="text-lg">{FUNCTION_TYPE_DOCS[selectedFunctionType].name}</span>
+                      <span className="text-lg font-normal ml-2">Function</span>
+                    </div>
+                  </DialogTitle>
+                  <DialogDescription>
+                    {FUNCTION_TYPE_DOCS[selectedFunctionType].description}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6">
+                  {/* Overview */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-2">Overview</h3>
+                    <p className="text-sm text-gray-600">
+                      {FUNCTION_TYPE_DOCS[selectedFunctionType].overview}
+                    </p>
+                  </div>
+
+                  {/* Use Cases */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">Common Use Cases</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {FUNCTION_TYPE_DOCS[selectedFunctionType].useCases.map((useCase, index) => (
+                        <div key={index} className="flex items-start space-x-2 p-2 bg-green-50 rounded-lg">
+                          <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
+                          <span className="text-sm text-green-800">{useCase}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Parameters */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">Function Parameters</h3>
+                    <div className="space-y-2">
+                      {FUNCTION_TYPE_DOCS[selectedFunctionType].parameters.map((param, index) => (
+                        <div key={index} className="p-3 bg-gray-50 rounded-lg">
+                          <div className="font-mono text-sm font-medium text-blue-700 mb-1">
+                            {param.name}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {param.description}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Example Code */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">Complete Example</h3>
+                    <div className="bg-gray-900 rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between p-3 bg-gray-800 border-b border-gray-700">
+                        <div className="flex items-center space-x-3">
+                          <span className="text-xs text-gray-400">
+                            {selectedFunctionType}.js
+                          </span>
+                          <span className="text-xs text-green-400">
+                            ✓ Production Ready
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(FUNCTION_TYPE_DOCS[selectedFunctionType].example, `${selectedFunctionType} function`)}
+                          className="h-6 px-2 text-gray-400 hover:text-white hover:bg-gray-700"
+                        >
+                          <Copy className="w-3 h-3 mr-1" />
+                          <span className="text-xs">Copy</span>
+                        </Button>
+                      </div>
+                      <div className="p-4 overflow-x-auto">
+                        <pre className="text-sm text-gray-100 whitespace-pre-wrap">
+                          <code>{FUNCTION_TYPE_DOCS[selectedFunctionType].example}</code>
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="text-xs text-gray-500">
+                      🚀 Copy this code and customize it for your use case
+                    </div>
+                    <Button onClick={closeFunctionTypeDialog} variant="outline" size="sm">
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

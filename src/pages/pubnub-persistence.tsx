@@ -576,8 +576,6 @@ export default function PubNubPersistencePage() {
       <div className="max-w-7xl mx-auto h-full flex flex-col">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-pubnub-text mb-2">PubNub Message Persistence</h1>
-          <p className="text-gray-600">Manage message storage, retrieval, and history across your channels</p>
           <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
             <p className="text-sm text-blue-800">
               <strong>Requirements:</strong> Message Persistence add-on must be enabled in your PubNub Admin Portal. 

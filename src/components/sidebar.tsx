@@ -5,13 +5,10 @@ import {
   Settings, 
   MessageCircle, 
   Smartphone, 
-  Zap, 
   Upload, 
   Users, 
   Code, 
   Database, 
-  Lightbulb, 
-  TrendingUp, 
   Activity, 
   GitBranch,
   Box,
@@ -19,7 +16,8 @@ import {
   Menu,
   Archive,
   Layers,
-  Shield
+  Shield,
+  Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -28,6 +26,7 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<any>;
   path: string;
+  comingSoon?: boolean;
 }
 
 interface NavCategory {
@@ -49,7 +48,6 @@ const navigationConfig: (NavItem | NavCategory)[] = [
       { id: 'pubnub-persistence', label: 'PubNub Persistence', icon: Archive, path: '/pubnub-persistence' },
       { id: 'channel-groups', label: 'Channel Groups', icon: Layers, path: '/channel-groups' },
       { id: 'mobile-push', label: 'Mobile Push', icon: Smartphone, path: '/mobile-push' },
-      { id: 'events-actions', label: 'Events & Actions', icon: Zap, path: '/events-actions' },
     ],
   },
   {
@@ -68,17 +66,10 @@ const navigationConfig: (NavItem | NavCategory)[] = [
     ],
   },
   {
-    label: 'Analytics Services',
-    items: [
-      { id: 'illuminate', label: 'Illuminate', icon: Lightbulb, path: '/illuminate' },
-      { id: 'insights', label: 'Insights', icon: TrendingUp, path: '/insights' },
-    ],
-  },
-  {
     label: 'Advanced Tools',
     items: [
-      { id: 'stream-generator', label: 'Stream Generator', icon: Activity, path: '/stream-generator' },
-      { id: 'event-workflow', label: 'Event Workflow', icon: GitBranch, path: '/event-workflow' },
+      { id: 'stream-generator', label: 'Stream Generator', icon: Activity, path: '/stream-generator', comingSoon: true },
+      { id: 'event-workflow', label: 'Event Workflow', icon: GitBranch, path: '/event-workflow', comingSoon: true },
     ],
   },
 ];
@@ -101,6 +92,38 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const renderNavItem = (item: NavItem) => {
     const Icon = item.icon;
     const active = isActive(item.path);
+    const isComingSoon = item.comingSoon;
+    
+    if (isComingSoon) {
+      return (
+        <div key={item.id} className="relative">
+          <Button
+            variant="ghost"
+            disabled
+            className="w-full justify-start space-x-3 px-4 py-2.5 h-auto font-medium transition-all duration-200 cursor-not-allowed"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'rgba(255, 255, 255, 0.75)'
+            }}
+          >
+            <Icon className="w-5 h-5" style={{ color: 'rgba(255, 255, 255, 0.65)' }} />
+            <div className="flex items-center space-x-2 flex-1">
+              <span>{item.label}</span>
+              <div className="flex items-center space-x-1 ml-auto">
+                <Clock className="w-3 h-3 animate-pulse" style={{ color: 'hsl(217, 96%, 64%)' }} />
+                <span className="text-xs font-normal px-2 py-0.5 rounded-full" style={{ 
+                  backgroundColor: 'hsl(217, 96%, 64%)', 
+                  color: 'white',
+                  fontSize: '10px'
+                }}>
+                  Coming Soon
+                </span>
+              </div>
+            </div>
+          </Button>
+        </div>
+      );
+    }
     
     return (
       <Link key={item.id} href={item.path}>

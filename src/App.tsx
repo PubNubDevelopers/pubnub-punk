@@ -8,13 +8,10 @@ import PubSubPage from "@/pages/pubsub";
 import PubNubPersistencePage from "@/pages/pubnub-persistence";
 import ChannelGroupsPage from "@/pages/channel-groups";
 import MobilePushPage from "@/pages/mobile-push";
-import EventsActionsPage from "@/pages/events-actions";
 import FileSharingPage from "@/pages/file-sharing";
 import PresencePage from "@/pages/presence";
 import FunctionsPage from "@/pages/functions";
 import AppContextPage from "@/pages/app-context";
-import IlluminatePage from "@/pages/illuminate";
-import InsightsPage from "@/pages/insights";
 import AccessManagerPage from "@/pages/access-manager";
 import StreamGeneratorPage from "@/pages/stream-generator";
 import EventWorkflowPage from "@/pages/event-workflow";
@@ -41,10 +38,6 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
     title: 'Mobile Push Tool',
     subtitle: 'Test and debug push notifications'
   },
-  '/events-actions': {
-    title: 'Events & Actions Tool',
-    subtitle: 'Configure event-driven automation'
-  },
   '/file-sharing': {
     title: 'File Sharing Tool',
     subtitle: 'Test file upload and sharing'
@@ -60,14 +53,6 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
   '/app-context': {
     title: 'App Context Tool',
     subtitle: 'Manage users, channels, and metadata'
-  },
-  '/illuminate': {
-    title: 'Illuminate Tool',
-    subtitle: 'Real-time analytics dashboard'
-  },
-  '/insights': {
-    title: 'Insights Tool',
-    subtitle: 'Historical analytics and reporting'
   },
   '/access-manager': {
     title: 'Access Manager Tool',
@@ -95,13 +80,10 @@ function Router() {
         <Route path="/pubnub-persistence" component={PubNubPersistencePage} />
         <Route path="/channel-groups" component={ChannelGroupsPage} />
         <Route path="/mobile-push" component={MobilePushPage} />
-        <Route path="/events-actions" component={EventsActionsPage} />
         <Route path="/file-sharing" component={FileSharingPage} />
         <Route path="/presence" component={PresencePage} />
         <Route path="/functions" component={FunctionsPage} />
         <Route path="/app-context" component={AppContextPage} />
-        <Route path="/illuminate" component={IlluminatePage} />
-        <Route path="/insights" component={InsightsPage} />
         <Route path="/access-manager" component={AccessManagerPage} />
         <Route path="/stream-generator" component={StreamGeneratorPage} />
         <Route path="/event-workflow" component={EventWorkflowPage} />

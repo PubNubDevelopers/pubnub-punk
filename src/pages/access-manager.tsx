@@ -48,6 +48,225 @@ import {
 } from '@/components/ui/tooltip';
 import { Checkbox } from '@/components/ui/checkbox';
 
+// REST API Helper Functions for Access Manager
+async function generateSignature(
+  subscribeKey: string,
+  publishKey: string,
+  httpMethod: string,
+  uri: string,
+  queryParams: Record<string, string>,
+  body: string,
+  secretKey: string
+): Promise<string> {
+  // Create the string to sign following PubNub's v3 signature algorithm
+  // Format: {method}\n{pub_key}\n{path}\n{query_string}\n{body}
+  const sortedParams = Object.keys(queryParams)
+    .sort()
+    .map(key => `${key}=${encodeURIComponent(queryParams[key])}`)
+    .join('&');
+  
+  const stringToSign = [
+    httpMethod.toUpperCase(),
+    publishKey,
+    uri,
+    sortedParams,
+    body || ''
+  ].join('\n');
+  
+  console.log('String to sign:', stringToSign);
+  
+  // Use Web Crypto API for HMAC-SHA256
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secretKey),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(stringToSign)
+  );
+  
+  const base64Signature = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  
+  // Convert to URL-safe Base64 and remove padding
+  const urlSafeSignature = base64Signature
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  
+  // PubNub requires v2. prefix for signatures
+  return `v2.${urlSafeSignature}`;
+}
+
+// Helper function to convert boolean permissions to numeric bitmask
+function convertPermissionsToBitmask(permissions: any): any {
+  const converted: any = {};
+  
+  for (const [resource, perms] of Object.entries(permissions)) {
+    if (typeof perms === 'object' && perms !== null) {
+      let bitmask = 0;
+      const permObj = perms as any;
+      
+      // Convert boolean permissions to numeric bitmask
+      if (permObj.read) bitmask |= 1;      // READ = 1
+      if (permObj.write) bitmask |= 2;     // WRITE = 2
+      if (permObj.manage) bitmask |= 4;    // MANAGE = 4
+      if (permObj.delete) bitmask |= 8;    // DELETE = 8
+      if (permObj.create) bitmask |= 16;   // CREATE = 16
+      if (permObj.get) bitmask |= 32;      // GET = 32
+      if (permObj.update) bitmask |= 64;   // UPDATE = 64
+      if (permObj.join) bitmask |= 128;    // JOIN = 128
+      
+      converted[resource] = bitmask;
+    }
+  }
+  
+  return converted;
+}
+
+// Helper function to generate curl command for grant token
+async function generateGrantTokenCurl(
+  subscribeKey: string,
+  publishKey: string,
+  secretKey: string,
+  grantRequest: any
+): Promise<string> {
+  // Generate current Unix timestamp - PubNub requires this to be within ±60 seconds of NTP time
+  const timestamp = Math.floor(Date.now() / 1000);
+  const uri = `/v3/pam/${subscribeKey}/grant`;
+  
+  const queryParams = {
+    timestamp: timestamp.toString(),
+    uuid: 'access-manager-admin'
+  };
+  
+  // Build the request body according to PubNub REST API format
+  const requestBody: any = {
+    ttl: grantRequest.ttl,
+    permissions: {}
+  };
+
+  // Add resources with converted permissions
+  if (grantRequest.resources && Object.keys(grantRequest.resources).length > 0) {
+    requestBody.permissions.resources = {};
+    
+    if (grantRequest.resources.channels) {
+      requestBody.permissions.resources.channels = convertPermissionsToBitmask(grantRequest.resources.channels);
+    }
+    if (grantRequest.resources.groups) {
+      requestBody.permissions.resources.channelGroups = convertPermissionsToBitmask(grantRequest.resources.groups);
+    }
+    if (grantRequest.resources.uuids) {
+      requestBody.permissions.resources.uuids = convertPermissionsToBitmask(grantRequest.resources.uuids);
+    }
+  }
+
+  // Add patterns with converted permissions
+  if (grantRequest.patterns && Object.keys(grantRequest.patterns).length > 0) {
+    requestBody.permissions.patterns = {};
+    
+    if (grantRequest.patterns.channels) {
+      requestBody.permissions.patterns.channels = convertPermissionsToBitmask(grantRequest.patterns.channels);
+    }
+    if (grantRequest.patterns.groups) {
+      requestBody.permissions.patterns.channelGroups = convertPermissionsToBitmask(grantRequest.patterns.groups);
+    }
+    if (grantRequest.patterns.uuids) {
+      requestBody.permissions.patterns.uuids = convertPermissionsToBitmask(grantRequest.patterns.uuids);
+    }
+  }
+
+  // Add meta
+  if (grantRequest.meta && Object.keys(grantRequest.meta).length > 0) {
+    requestBody.permissions.meta = grantRequest.meta;
+  }
+
+  // Add authorized UUID
+  if (grantRequest.authorized_uuid) {
+    requestBody.permissions.uuid = grantRequest.authorized_uuid;
+  }
+
+  const body = JSON.stringify(requestBody, null, 2);
+  
+  // Generate signature for authentication
+  const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, secretKey);
+  queryParams.signature = signature;
+  
+  // Create curl command with proper authentication
+  // Build query string manually to avoid URL encoding the signature
+  const queryString = Object.keys(queryParams)
+    .sort()
+    .map(key => {
+      if (key === 'signature') {
+        // Don't URL encode the signature
+        return `${key}=${queryParams[key]}`;
+      } else {
+        return `${key}=${encodeURIComponent(queryParams[key])}`;
+      }
+    })
+    .join('&');
+  
+  // Escape single quotes in the body for shell safety
+  const escapedBody = body.replace(/'/g, "'\"'\"'");
+  
+  return `curl -L 'https://ps.pndsn.com${uri}?${queryString}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: text/javascript' \\
+  --data-raw '${escapedBody}'`;
+}
+
+// Helper function to generate curl command for revoke token
+async function generateRevokeTokenCurl(
+  subscribeKey: string,
+  publishKey: string,
+  secretKey: string,
+  token: string
+): Promise<string> {
+  // Generate current Unix timestamp - PubNub requires this to be within ±60 seconds of NTP time
+  const timestamp = Math.floor(Date.now() / 1000);
+  const uri = `/v3/pam/${subscribeKey}/revoke`;
+  
+  const queryParams = {
+    timestamp: timestamp.toString(),
+    uuid: 'access-manager-admin'
+  };
+  
+  const requestBody = {
+    token: token
+  };
+  
+  const body = JSON.stringify(requestBody);
+  
+  // Generate signature for authentication
+  const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, secretKey);
+  queryParams.signature = signature;
+  
+  // Build query string manually to avoid URL encoding the signature
+  const queryString = Object.keys(queryParams)
+    .sort()
+    .map(key => {
+      if (key === 'signature') {
+        // Don't URL encode the signature
+        return `${key}=${queryParams[key]}`;
+      } else {
+        return `${key}=${encodeURIComponent(queryParams[key])}`;
+      }
+    })
+    .join('&');
+  
+  // Escape single quotes in the body for shell safety
+  const escapedBody = body.replace(/'/g, "'\"'\"'");
+  
+  return `curl -L 'https://ps.pndsn.com${uri}?${queryString}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: text/javascript' \\
+  --data-raw '${escapedBody}'`;
+}
+
 interface TokenData {
   id: string;
   token: string;
@@ -181,6 +400,25 @@ export default function AccessManagerPage() {
   const [testChannel, setTestChannel] = useState('');
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+
+  // Curl command state
+  const [grantTokenCurl, setGrantTokenCurl] = useState('');
+  const [revokeTokenCurl, setRevokeTokenCurl] = useState('');
+  
+  // Manual token addition state
+  const [manualTokenInput, setManualTokenInput] = useState('');
+  const [manualTokenDialogOpen, setManualTokenDialogOpen] = useState(false);
+
+  // Helper function to check if PAM operations are available
+  const isPamConfigurationValid = useMemo(() => {
+    const currentSettings = storage.getSettings();
+    return pubnubReady && 
+           currentSettings.credentials.secretKey && 
+           currentSettings.credentials.publishKey && 
+           currentSettings.credentials.subscribeKey &&
+           currentSettings.credentials.publishKey !== 'demo' && 
+           currentSettings.credentials.subscribeKey !== 'demo';
+  }, [pubnubReady, appSettings]); // appSettings as dependency to trigger recalculation when state updates
   
   // Mount check
   useEffect(() => {
@@ -251,6 +489,22 @@ export default function AccessManagerPage() {
     setAppSettings(settings);
   }, []);
 
+  // Function to refresh settings (called when needed)
+  const refreshSettings = () => {
+    const settings = storage.getSettings();
+    setAppSettings(settings);
+  };
+
+  // Refresh settings when page gains focus (e.g., user returns from settings page)
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshSettings();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
   // Load saved tokens from localStorage
   useEffect(() => {
     const savedTokens = storage.getItem('accessManager.tokens');
@@ -302,7 +556,18 @@ export default function AccessManagerPage() {
 
   // Grant token function
   const grantToken = useCallback(async () => {
-    if (!pubnub || !secretKey) {
+    // Refresh settings to ensure we have the latest configuration
+    const currentSettings = storage.getSettings();
+    const currentSecretKey = currentSettings.credentials.secretKey;
+    
+    console.log('Grant Token Debug - Current Settings:', {
+      publishKey: currentSettings.credentials.publishKey,
+      subscribeKey: currentSettings.credentials.subscribeKey,
+      secretKey: currentSecretKey ? '[HIDDEN]' : 'NOT SET',
+      pubnubReady,
+    });
+    
+    if (!pubnub || !currentSecretKey) {
       toast({
         title: 'Configuration Required',
         description: 'Please configure your secret key and ensure PubNub is loaded',
@@ -361,21 +626,13 @@ export default function AccessManagerPage() {
         });
       }
 
-      // Create PubNub instance with secret key
-      const pubnubConfig: any = {
-        publishKey: appSettings.credentials.publishKey || 'demo',
-        subscribeKey: appSettings.credentials.subscribeKey || 'demo',
-        userId: 'access-manager-server',
-        secretKey: secretKey,
-      };
-      
-      // Add PAM token if available
-      if (appSettings.credentials.pamToken) {
-        pubnubConfig.authKey = appSettings.credentials.pamToken;
+      // Check if we have real keys (not demo keys)
+      if (!currentSettings.credentials.publishKey || !currentSettings.credentials.subscribeKey || 
+          currentSettings.credentials.publishKey === 'demo' || currentSettings.credentials.subscribeKey === 'demo') {
+        throw new Error('Real PubNub keys are required for Access Manager operations. Demo keys do not support PAM functionality.');
       }
-      
-      const pubnubWithSecret = new window.PubNub(pubnubConfig);
 
+      // Build the grant request for REST API
       const grantRequest: any = {
         ttl: grantForm.ttl,
       };
@@ -396,51 +653,29 @@ export default function AccessManagerPage() {
         grantRequest.meta = grantForm.meta;
       }
 
-      const result = await pubnubWithSecret.grantToken(grantRequest);
+      console.log('*** Generating curl command for grantToken ***');
+      console.log('Grant request:', grantRequest);
+      console.log('Subscribe Key:', currentSettings.credentials.subscribeKey);
+      console.log('Secret Key present:', currentSecretKey ? '[PRESENT]' : '[MISSING]');
       
-      // Create token data object
-      const tokenData: TokenData = {
-        id: Date.now().toString(),
-        token: result,
-        authorizedUserId: grantForm.authorizedUserId,
-        ttl: grantForm.ttl,
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + grantForm.ttl * 60 * 1000).toISOString(),
-        permissions: {
-          channels: resources.channels,
-          channelGroups: resources.groups,
-          uuids: resources.uuids,
-        },
-        patterns: {
-          channels: patterns.channels,
-          channelGroups: patterns.groups,
-          uuids: patterns.uuids,
-        },
-        meta: grantForm.meta,
-        status: 'active',
-        description: grantForm.description,
-      };
-
-      setTokens(prev => [tokenData, ...prev]);
-      setGrantDialogOpen(false);
+      // Generate the curl command for manual execution
+      const curlCommand = await generateGrantTokenCurl(
+        currentSettings.credentials.subscribeKey,
+        currentSettings.credentials.publishKey,
+        currentSecretKey,
+        grantRequest
+      );
       
-      // Reset form
-      setGrantForm({
-        ttl: 60,
-        authorizedUserId: '',
-        description: '',
-        channels: [],
-        channelGroups: [],
-        uuids: [],
-        channelPatterns: [],
-        channelGroupPatterns: [],
-        uuidPatterns: [],
-        meta: {},
-      });
-
+      console.log('Generated curl command:', curlCommand);
+      
+      // Store the curl command for display in the UI
+      setGrantTokenCurl(curlCommand);
+      
+      // Show success message with instructions
       toast({
-        title: 'Token granted successfully',
-        description: 'New access token has been created',
+        title: 'Curl command generated',
+        description: 'Run the curl command below to create the token, then manually add it to your list',
+        duration: 8000,
       });
       
     } catch (error) {
@@ -453,7 +688,7 @@ export default function AccessManagerPage() {
     } finally {
       setIsGranting(false);
     }
-  }, [pubnub, secretKey, grantForm, toast]);
+  }, [pubnub, grantForm, toast]);
 
   // Parse token function
   const parseToken = useCallback(async () => {
@@ -491,7 +726,11 @@ export default function AccessManagerPage() {
 
   // Revoke token function
   const revokeToken = useCallback(async () => {
-    if (!pubnub || !secretKey || !revokeTokenInput.trim()) {
+    // Refresh settings to ensure we have the latest configuration
+    const currentSettings = storage.getSettings();
+    const currentSecretKey = currentSettings.credentials.secretKey;
+    
+    if (!pubnub || !currentSecretKey || !revokeTokenInput.trim()) {
       toast({
         title: 'Configuration Required',
         description: 'Please configure your secret key and enter a token to revoke',
@@ -502,36 +741,35 @@ export default function AccessManagerPage() {
 
     setIsRevoking(true);
     try {
-      // Create PubNub instance with secret key
-      const pubnubConfig: any = {
-        publishKey: appSettings.credentials.publishKey || 'demo',
-        subscribeKey: appSettings.credentials.subscribeKey || 'demo',
-        userId: 'access-manager-server',
-        secretKey: secretKey,
-      };
-      
-      // Add PAM token if available
-      if (appSettings.credentials.pamToken) {
-        pubnubConfig.authKey = appSettings.credentials.pamToken;
+      // Check if we have real keys (not demo keys)
+      if (!currentSettings.credentials.publishKey || !currentSettings.credentials.subscribeKey || 
+          currentSettings.credentials.publishKey === 'demo' || currentSettings.credentials.subscribeKey === 'demo') {
+        throw new Error('Real PubNub keys are required for Access Manager operations. Demo keys do not support PAM functionality.');
       }
-      
-      const pubnubWithSecret = new window.PubNub(pubnubConfig);
 
-      await pubnubWithSecret.revokeToken(revokeTokenInput.trim());
+      console.log('*** Generating curl command for revokeToken ***');
+      console.log('Subscribe Key:', currentSettings.credentials.subscribeKey);
+      console.log('Token to revoke:', revokeTokenInput.trim());
+      console.log('Secret Key present:', currentSecretKey ? '[PRESENT]' : '[MISSING]');
       
-      // Update token status in local state
-      setTokens(prev => prev.map(token => 
-        token.token === revokeTokenInput.trim() 
-          ? { ...token, status: 'revoked' as const }
-          : token
-      ));
+      // Generate curl command for manual execution
+      const curlCommand = await generateRevokeTokenCurl(
+        currentSettings.credentials.subscribeKey,
+        currentSettings.credentials.publishKey,
+        currentSecretKey,
+        revokeTokenInput.trim()
+      );
       
-      setRevokeDialogOpen(false);
-      setRevokeTokenInput('');
-
+      console.log('Generated revoke curl command:', curlCommand);
+      
+      // Store the curl command for display in the UI
+      setRevokeTokenCurl(curlCommand);
+      
+      // Show success message with instructions
       toast({
-        title: 'Token revoked successfully',
-        description: 'Access token has been revoked',
+        title: 'Curl command generated',
+        description: 'Run the curl command below to revoke the token',
+        duration: 8000,
       });
       
     } catch (error) {
@@ -544,7 +782,82 @@ export default function AccessManagerPage() {
     } finally {
       setIsRevoking(false);
     }
-  }, [pubnub, secretKey, revokeTokenInput, toast]);
+  }, [pubnub, revokeTokenInput, toast]);
+
+  // Manual token addition function
+  const addManualToken = useCallback(() => {
+    if (!manualTokenInput.trim()) {
+      toast({
+        title: 'Token required',
+        description: 'Please enter a token to add',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      // Parse the token to get basic info
+      const parsedToken = window.PubNub ? window.PubNub.parseToken(manualTokenInput.trim()) : null;
+      
+      const tokenData: TokenData = {
+        id: Date.now().toString(),
+        token: manualTokenInput.trim(),
+        authorizedUserId: parsedToken?.authorized_uuid || 'Unknown',
+        ttl: parsedToken?.ttl || 0,
+        createdAt: new Date().toISOString(),
+        expiresAt: parsedToken?.ttl ? 
+          new Date(Date.now() + parsedToken.ttl * 60 * 1000).toISOString() : 
+          new Date().toISOString(),
+        permissions: {
+          channels: parsedToken?.resources?.channels || {},
+          channelGroups: parsedToken?.resources?.groups || {},
+          uuids: parsedToken?.resources?.uuids || {},
+        },
+        patterns: {
+          channels: parsedToken?.patterns?.channels || {},
+          channelGroups: parsedToken?.patterns?.groups || {},
+          uuids: parsedToken?.patterns?.uuids || {},
+        },
+        meta: parsedToken?.meta || {},
+        status: 'active',
+        description: 'Manually added token',
+      };
+
+      setTokens(prev => [tokenData, ...prev]);
+      setManualTokenDialogOpen(false);
+      setManualTokenInput('');
+
+      toast({
+        title: 'Token added successfully',
+        description: 'Manual token has been added to your list',
+      });
+      
+    } catch (error) {
+      // If parsing fails, add it anyway with minimal info
+      const tokenData: TokenData = {
+        id: Date.now().toString(),
+        token: manualTokenInput.trim(),
+        authorizedUserId: 'Unknown',
+        ttl: 60,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        permissions: { channels: {}, channelGroups: {}, uuids: {} },
+        patterns: { channels: {}, channelGroups: {}, uuids: {} },
+        meta: {},
+        status: 'active',
+        description: 'Manually added token (unparsed)',
+      };
+
+      setTokens(prev => [tokenData, ...prev]);
+      setManualTokenDialogOpen(false);
+      setManualTokenInput('');
+
+      toast({
+        title: 'Token added',
+        description: 'Token added (could not parse details)',
+      });
+    }
+  }, [manualTokenInput, toast]);
 
   // Test token function
   const testToken = useCallback(async () => {
@@ -703,10 +1016,6 @@ export default function AccessManagerPage() {
     <div className="p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-pubnub-text mb-2">Access Manager</h1>
-          <p className="text-gray-600">Manage permissions and access control for your PubNub application</p>
-        </div>
 
         {/* Configuration Panel */}
         <Card className="mb-6">
@@ -731,9 +1040,25 @@ export default function AccessManagerPage() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${appSettings.credentials.publishKey && appSettings.credentials.subscribeKey ? 'bg-green-500' : 'bg-orange-500'}`} />
+                <div className={`w-3 h-3 rounded-full ${
+                  appSettings.credentials.publishKey && 
+                  appSettings.credentials.subscribeKey &&
+                  appSettings.credentials.publishKey !== 'demo' &&
+                  appSettings.credentials.subscribeKey !== 'demo'
+                    ? 'bg-green-500' 
+                    : 'bg-orange-500'
+                }`} />
                 <span className="text-sm">
-                  API Keys: {appSettings.credentials.publishKey && appSettings.credentials.subscribeKey ? 'Configured' : 'Partial'}
+                  API Keys: {
+                    appSettings.credentials.publishKey && 
+                    appSettings.credentials.subscribeKey &&
+                    appSettings.credentials.publishKey !== 'demo' &&
+                    appSettings.credentials.subscribeKey !== 'demo'
+                      ? 'Configured' 
+                      : appSettings.credentials.publishKey === 'demo' || appSettings.credentials.subscribeKey === 'demo'
+                        ? 'Demo Keys (PAM not supported)'
+                        : 'Not Configured'
+                  }
                 </span>
               </div>
             </div>
@@ -757,6 +1082,42 @@ export default function AccessManagerPage() {
                 </p>
               </div>
             )}
+            
+            {(appSettings.credentials.publishKey === 'demo' || appSettings.credentials.subscribeKey === 'demo') && (
+              <div className="mt-4 bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 text-orange-800">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="font-medium">Demo Keys Do Not Support PAM</span>
+                </div>
+                <p className="text-sm text-orange-700 mt-1">
+                  You are using demo keys which do not support Access Manager (PAM) functionality. 
+                  Please configure your real PubNub publish and subscribe keys in the{' '}
+                  <Button
+                    variant="link"
+                    className="p-0 h-auto text-orange-700 underline"
+                    onClick={() => window.location.href = '/settings'}
+                  >
+                    Settings page
+                  </Button>
+                  {' '}to use token granting and revoking features.
+                </p>
+              </div>
+            )}
+            
+            {isPamConfigurationValid && (
+              <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 text-blue-800">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="font-medium">About Access Manager (PAM)</span>
+                </div>
+                <p className="text-sm text-blue-700 mt-1">
+                  You can create and manage tokens here even when PAM is disabled. However, for PubNub to 
+                  <strong> enforce</strong> token-based access control, you must enable the "Access Manager" 
+                  add-on in your PubNub Admin Portal. Tokens created while PAM is disabled will become 
+                  active once you enable PAM.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -773,7 +1134,7 @@ export default function AccessManagerPage() {
                   <div className="flex gap-2">
                     <Dialog open={grantDialogOpen} onOpenChange={setGrantDialogOpen}>
                       <DialogTrigger asChild>
-                        <Button size="sm" disabled={!pubnubReady || !secretKey}>
+                        <Button size="sm" disabled={!isPamConfigurationValid}>
                           <Plus className="h-4 w-4" />
                         </Button>
                       </DialogTrigger>
@@ -791,6 +1152,49 @@ export default function AccessManagerPage() {
                           isGranting={isGranting}
                           onCancel={() => setGrantDialogOpen(false)}
                         />
+                      </DialogContent>
+                    </Dialog>
+                    
+                    <Dialog open={manualTokenDialogOpen} onOpenChange={setManualTokenDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" disabled={!pubnubReady}>
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add Token
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add Token Manually</DialogTitle>
+                          <DialogDescription>
+                            Paste a token that you received from the curl command
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="manualToken">Token</Label>
+                            <Textarea
+                              id="manualToken"
+                              placeholder="Paste your token here..."
+                              value={manualTokenInput}
+                              onChange={(e) => setManualTokenInput(e.target.value)}
+                              className="font-mono text-xs min-h-[100px]"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => setManualTokenDialogOpen(false)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={addManualToken}
+                            disabled={!manualTokenInput.trim()}
+                          >
+                            Add Token
+                          </Button>
+                        </div>
                       </DialogContent>
                     </Dialog>
                     
@@ -819,7 +1223,7 @@ export default function AccessManagerPage() {
                     
                     <Dialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" disabled={!pubnubReady || !secretKey}>
+                        <Button variant="outline" size="sm" disabled={!isPamConfigurationValid}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </DialogTrigger>
@@ -870,6 +1274,93 @@ export default function AccessManagerPage() {
                 </div>
               </CardHeader>
               <CardContent>
+                <div className="space-y-4">
+                  {/* Curl Command Display */}
+                  {(grantTokenCurl || revokeTokenCurl) && (
+                    <Card className="border-orange-200 bg-orange-50">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium text-orange-800">
+                          Manual Execution Required
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {grantTokenCurl && (
+                          <div>
+                            <Label className="text-sm font-medium text-orange-700">Grant Token Command:</Label>
+                            <div className="flex gap-2 mt-1">
+                              <Textarea
+                                value={grantTokenCurl}
+                                readOnly
+                                className="font-mono text-xs min-h-[100px] flex-1"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(grantTokenCurl);
+                                  toast({ title: 'Copied!', description: 'Grant token curl command copied to clipboard' });
+                                }}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="text-xs text-orange-600 mt-1 space-y-1">
+                              <p><strong>Instructions:</strong></p>
+                              <p>1. Run this curl command in your terminal</p>
+                              <p>2. Look for a long base64 token string in the response</p>
+                              <p>3. If you get "[]" or HTTP Status 200, the request worked but check the response format</p>
+                              <p>4. Copy the token and click the "Add Token" button above to add it to your list</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setGrantTokenCurl('')}
+                              className="mt-2 text-orange-700 hover:text-orange-800"
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Clear
+                            </Button>
+                          </div>
+                        )}
+                        
+                        {revokeTokenCurl && (
+                          <div>
+                            <Label className="text-sm font-medium text-orange-700">Revoke Token Command:</Label>
+                            <div className="flex gap-2 mt-1">
+                              <Textarea
+                                value={revokeTokenCurl}
+                                readOnly
+                                className="font-mono text-xs min-h-[60px] flex-1"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(revokeTokenCurl);
+                                  toast({ title: 'Copied!', description: 'Revoke token curl command copied to clipboard' });
+                                }}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <p className="text-xs text-orange-600 mt-1">
+                              Run this curl command in your terminal to revoke the token.
+                            </p>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setRevokeTokenCurl('')}
+                              className="mt-2 text-orange-700 hover:text-orange-800"
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Clear
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
                 <div className="space-y-4">
                   <div className="relative">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
