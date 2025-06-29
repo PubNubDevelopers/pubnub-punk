@@ -243,6 +243,54 @@ export default function AppContextPage() {
   const [currentChannelMembersChannelId, setCurrentChannelMembersChannelId] = useState<string>('');
   const [showSelectAllWarning, setShowSelectAllWarning] = useState(false);
 
+  // Membership selection state
+  const [selectedMemberships, setSelectedMemberships] = useState<Set<string>>(new Set());
+  const [showMembershipDeleteConfirm, setShowMembershipDeleteConfirm] = useState(false);
+  const [showMembershipDeleteResults, setShowMembershipDeleteResults] = useState(false);
+  const [membershipDeleteResults, setMembershipDeleteResults] = useState<{
+    successful: number;
+    failed: number;
+    cancelled: number;
+    errors: string[];
+    fullLog: string;
+  }>({ successful: 0, failed: 0, cancelled: 0, errors: [], fullLog: '' });
+  const [deletingMemberships, setDeletingMemberships] = useState(false);
+  const [membershipDeleteProgress, setMembershipDeleteProgress] = useState<{
+    current: number;
+    total: number;
+    currentItem: string;
+  }>({ current: 0, total: 0, currentItem: '' });
+  const membershipDeleteCancelledRef = useRef(false);
+
+  // Channel members selection state
+  const [selectedChannelMembers, setSelectedChannelMembers] = useState<Set<string>>(new Set());
+  const [showChannelMemberDeleteConfirm, setShowChannelMemberDeleteConfirm] = useState(false);
+  const [showChannelMemberDeleteResults, setShowChannelMemberDeleteResults] = useState(false);
+  const [channelMemberDeleteResults, setChannelMemberDeleteResults] = useState<{
+    successful: number;
+    failed: number;
+    cancelled: number;
+    errors: string[];
+    fullLog: string;
+  }>({ successful: 0, failed: 0, cancelled: 0, errors: [], fullLog: '' });
+  const [deletingChannelMembers, setDeletingChannelMembers] = useState(false);
+  const [channelMemberDeleteProgress, setChannelMemberDeleteProgress] = useState<{
+    current: number;
+    total: number;
+    currentItem: string;
+  }>({ current: 0, total: 0, currentItem: '' });
+  const channelMemberDeleteCancelledRef = useRef(false);
+
+  // Membership edit state
+  const [showMembershipEditDialog, setShowMembershipEditDialog] = useState(false);
+  const [editingMembership, setEditingMembership] = useState<{
+    type: 'user-membership' | 'channel-member';
+    userId: string;
+    channelId: string;
+    status?: string;
+    custom?: Record<string, any>;
+  } | null>(null);
+
   // Bulk delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDeleteResults, setShowDeleteResults] = useState(false);
@@ -1062,6 +1110,461 @@ export default function AppContextPage() {
     setShowChannelMembers(false);
     setCurrentMembershipsUserId('');
     setCurrentChannelMembersChannelId('');
+    // Clear selections when hiding
+    setSelectedMemberships(new Set());
+    setSelectedChannelMembers(new Set());
+  };
+
+  // Membership selection functions
+  const toggleMembershipSelection = (channelId: string) => {
+    setSelectedMemberships(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(channelId)) {
+        newSelection.delete(channelId);
+      } else {
+        newSelection.add(channelId);
+      }
+      return newSelection;
+    });
+  };
+
+  const selectAllMemberships = () => {
+    const allChannelIds = new Set(memberships.map(membership => membership.channel.id));
+    setSelectedMemberships(allChannelIds);
+  };
+
+  const clearMembershipSelection = () => {
+    setSelectedMemberships(new Set());
+  };
+
+  // Bulk delete memberships function
+  const handleBulkDeleteMemberships = async () => {
+    if (!pubnubRef.current || selectedMemberships.size === 0 || !currentMembershipsUserId) return;
+
+    setDeletingMemberships(true);
+    membershipDeleteCancelledRef.current = false;
+    
+    const selectedMembershipsList = memberships.filter(membership => selectedMemberships.has(membership.channel.id));
+    
+    // Initialize progress
+    setMembershipDeleteProgress({
+      current: 0,
+      total: selectedMembershipsList.length,
+      currentItem: ''
+    });
+    
+    let successful = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const fullLog: string[] = [];
+    
+    fullLog.push(`Starting bulk delete operation for ${selectedMembershipsList.length} memberships for user: ${currentMembershipsUserId}`);
+    fullLog.push(`Operation started at: ${new Date().toISOString()}`);
+    fullLog.push('');
+
+    try {
+      for (let i = 0; i < selectedMembershipsList.length; i++) {
+        // Check for cancellation before processing each item
+        if (membershipDeleteCancelledRef.current) {
+          const remainingCount = selectedMembershipsList.length - i;
+          fullLog.push('');
+          fullLog.push(`Operation cancelled by user at: ${new Date().toISOString()}`);
+          fullLog.push(`Memberships processed before cancellation: ${i}`);
+          fullLog.push(`Memberships cancelled (not processed): ${remainingCount}`);
+          
+          const cancelled = remainingCount;
+          
+          // Update local state - remove only successfully deleted memberships
+          const deletedChannelIds = new Set<string>();
+          for (let j = 0; j < successful; j++) {
+            deletedChannelIds.add(selectedMembershipsList[j].channel.id);
+          }
+
+          setMemberships(prev => prev.filter(membership => !deletedChannelIds.has(membership.channel.id)));
+
+          setMembershipDeleteResults({
+            successful,
+            failed,
+            cancelled,
+            errors,
+            fullLog: fullLog.join('\n')
+          });
+          
+          setSelectedMemberships(new Set());
+          setShowMembershipDeleteResults(true);
+          setShowMembershipDeleteConfirm(false);
+          return;
+        }
+        
+        const membership = selectedMembershipsList[i];
+        
+        // Update progress
+        setMembershipDeleteProgress({
+          current: i + 1,
+          total: selectedMembershipsList.length,
+          currentItem: membership.channel.id
+        });
+
+        try {
+          fullLog.push(`Attempting to delete membership: ${membership.channel.id}`);
+          
+          await pubnubRef.current.objects.removeMemberships({
+            uuid: currentMembershipsUserId,
+            channels: [membership.channel.id]
+          });
+          
+          successful++;
+          fullLog.push(`✓ Successfully deleted membership: ${membership.channel.id}`);
+          
+        } catch (error) {
+          failed++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`${membership.channel.id}: ${errorMsg}`);
+          fullLog.push(`✗ Failed to delete membership ${membership.channel.id}: ${errorMsg}`);
+        }
+      }
+
+      // Update local state - remove all successfully deleted memberships
+      const deletedChannelIds = new Set<string>();
+      for (let i = 0; i < selectedMembershipsList.length; i++) {
+        if (i < successful) {
+          deletedChannelIds.add(selectedMembershipsList[i].channel.id);
+        }
+      }
+
+      setMemberships(prev => prev.filter(membership => !deletedChannelIds.has(membership.channel.id)));
+
+      // Final results
+      fullLog.push('');
+      fullLog.push(`Operation completed at: ${new Date().toISOString()}`);
+      fullLog.push(`Total memberships selected: ${selectedMembershipsList.length}`);
+      fullLog.push(`Successfully deleted: ${successful}`);
+      fullLog.push(`Failed to delete: ${failed}`);
+
+      setMembershipDeleteResults({
+        successful,
+        failed,
+        cancelled: 0,
+        errors,
+        fullLog: fullLog.join('\n')
+      });
+
+      setSelectedMemberships(new Set());
+      setShowMembershipDeleteResults(true);
+      setShowMembershipDeleteConfirm(false);
+
+      if (successful > 0) {
+        toastRef.current({
+          title: "Bulk membership delete completed",
+          description: `Successfully deleted ${successful} of ${selectedMembershipsList.length} memberships`,
+        });
+      }
+
+    } catch (error) {
+      console.error('Bulk membership delete operation failed:', error);
+      toastRef.current({
+        title: "Bulk membership delete failed",
+        description: error instanceof Error ? error.message : "Failed to complete bulk membership delete operation",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingMemberships(false);
+      membershipDeleteCancelledRef.current = false;
+    }
+  };
+
+  // Individual membership delete function
+  const handleDeleteSingleMembership = async (channelId: string) => {
+    if (!pubnubRef.current || !currentMembershipsUserId) return;
+
+    try {
+      await pubnubRef.current.objects.removeMemberships({
+        uuid: currentMembershipsUserId,
+        channels: [channelId]
+      });
+
+      // Update local state
+      setMemberships(prev => prev.filter(membership => membership.channel.id !== channelId));
+      
+      toastRef.current({
+        title: "Membership deleted",
+        description: `Successfully removed membership for channel: ${channelId}`,
+      });
+
+    } catch (error) {
+      console.error('Failed to delete membership:', error);
+      toastRef.current({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Failed to delete membership",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Channel member selection functions
+  const toggleChannelMemberSelection = (userId: string) => {
+    setSelectedChannelMembers(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(userId)) {
+        newSelection.delete(userId);
+      } else {
+        newSelection.add(userId);
+      }
+      return newSelection;
+    });
+  };
+
+  const selectAllChannelMembers = () => {
+    const allUserIds = new Set(channelMembers.map(member => member.uuid.id));
+    setSelectedChannelMembers(allUserIds);
+  };
+
+  const clearChannelMemberSelection = () => {
+    setSelectedChannelMembers(new Set());
+  };
+
+  // Bulk delete channel members function
+  const handleBulkDeleteChannelMembers = async () => {
+    if (!pubnubRef.current || selectedChannelMembers.size === 0 || !currentChannelMembersChannelId) return;
+
+    setDeletingChannelMembers(true);
+    channelMemberDeleteCancelledRef.current = false;
+    
+    const selectedMembersList = channelMembers.filter(member => selectedChannelMembers.has(member.uuid.id));
+    
+    // Initialize progress
+    setChannelMemberDeleteProgress({
+      current: 0,
+      total: selectedMembersList.length,
+      currentItem: ''
+    });
+    
+    let successful = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const fullLog: string[] = [];
+    
+    fullLog.push(`Starting bulk delete operation for ${selectedMembersList.length} channel members from channel: ${currentChannelMembersChannelId}`);
+    fullLog.push(`Operation started at: ${new Date().toISOString()}`);
+    fullLog.push('');
+
+    try {
+      for (let i = 0; i < selectedMembersList.length; i++) {
+        // Check for cancellation before processing each item
+        if (channelMemberDeleteCancelledRef.current) {
+          const remainingCount = selectedMembersList.length - i;
+          fullLog.push('');
+          fullLog.push(`Operation cancelled by user at: ${new Date().toISOString()}`);
+          fullLog.push(`Members processed before cancellation: ${i}`);
+          fullLog.push(`Members cancelled (not processed): ${remainingCount}`);
+          
+          const cancelled = remainingCount;
+          
+          // Update local state - remove only successfully deleted members
+          const deletedUserIds = new Set<string>();
+          for (let j = 0; j < successful; j++) {
+            deletedUserIds.add(selectedMembersList[j].uuid.id);
+          }
+
+          setChannelMembers(prev => prev.filter(member => !deletedUserIds.has(member.uuid.id)));
+
+          setChannelMemberDeleteResults({
+            successful,
+            failed,
+            cancelled,
+            errors,
+            fullLog: fullLog.join('\n')
+          });
+          
+          setSelectedChannelMembers(new Set());
+          setShowChannelMemberDeleteResults(true);
+          setShowChannelMemberDeleteConfirm(false);
+          return;
+        }
+        
+        const member = selectedMembersList[i];
+        
+        // Update progress
+        setChannelMemberDeleteProgress({
+          current: i + 1,
+          total: selectedMembersList.length,
+          currentItem: member.uuid.id
+        });
+
+        try {
+          fullLog.push(`Attempting to delete channel member: ${member.uuid.id}`);
+          
+          await pubnubRef.current.objects.removeChannelMembers({
+            channel: currentChannelMembersChannelId,
+            uuids: [member.uuid.id]
+          });
+          
+          successful++;
+          fullLog.push(`✓ Successfully deleted channel member: ${member.uuid.id}`);
+          
+        } catch (error) {
+          failed++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`${member.uuid.id}: ${errorMsg}`);
+          fullLog.push(`✗ Failed to delete channel member ${member.uuid.id}: ${errorMsg}`);
+        }
+      }
+
+      // Update local state - remove all successfully deleted members
+      const deletedUserIds = new Set<string>();
+      for (let i = 0; i < selectedMembersList.length; i++) {
+        if (i < successful) {
+          deletedUserIds.add(selectedMembersList[i].uuid.id);
+        }
+      }
+
+      setChannelMembers(prev => prev.filter(member => !deletedUserIds.has(member.uuid.id)));
+
+      // Final results
+      fullLog.push('');
+      fullLog.push(`Operation completed at: ${new Date().toISOString()}`);
+      fullLog.push(`Total channel members selected: ${selectedMembersList.length}`);
+      fullLog.push(`Successfully deleted: ${successful}`);
+      fullLog.push(`Failed to delete: ${failed}`);
+
+      setChannelMemberDeleteResults({
+        successful,
+        failed,
+        cancelled: 0,
+        errors,
+        fullLog: fullLog.join('\n')
+      });
+
+      setSelectedChannelMembers(new Set());
+      setShowChannelMemberDeleteResults(true);
+      setShowChannelMemberDeleteConfirm(false);
+
+      if (successful > 0) {
+        toastRef.current({
+          title: "Bulk channel member delete completed",
+          description: `Successfully deleted ${successful} of ${selectedMembersList.length} channel members`,
+        });
+      }
+
+    } catch (error) {
+      console.error('Bulk channel member delete operation failed:', error);
+      toastRef.current({
+        title: "Bulk channel member delete failed",
+        description: error instanceof Error ? error.message : "Failed to complete bulk channel member delete operation",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingChannelMembers(false);
+      channelMemberDeleteCancelledRef.current = false;
+    }
+  };
+
+  // Individual channel member delete function
+  const handleDeleteSingleChannelMember = async (userId: string) => {
+    if (!pubnubRef.current || !currentChannelMembersChannelId) return;
+
+    try {
+      await pubnubRef.current.objects.removeChannelMembers({
+        channel: currentChannelMembersChannelId,
+        uuids: [userId]
+      });
+
+      // Update local state
+      setChannelMembers(prev => prev.filter(member => member.uuid.id !== userId));
+      
+      toastRef.current({
+        title: "Channel member deleted",
+        description: `Successfully removed user "${userId}" from channel`,
+      });
+
+    } catch (error) {
+      console.error('Failed to delete channel member:', error);
+      toastRef.current({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Failed to delete channel member",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Membership edit functions
+  const openMembershipEdit = (type: 'user-membership' | 'channel-member', userId: string, channelId: string, status?: string, custom?: Record<string, any>) => {
+    setEditingMembership({
+      type,
+      userId,
+      channelId,
+      status,
+      custom
+    });
+    setShowMembershipEditDialog(true);
+  };
+
+  const handleSaveMembershipEdit = async (updatedData: { status?: string; custom?: Record<string, any> }) => {
+    if (!pubnubRef.current || !editingMembership) return;
+
+    try {
+      if (editingMembership.type === 'user-membership') {
+        // Update membership from user perspective
+        await pubnubRef.current.objects.setMemberships({
+          uuid: editingMembership.userId,
+          channels: [{
+            id: editingMembership.channelId,
+            custom: updatedData.custom,
+            status: updatedData.status
+          }]
+        });
+
+        // Update local memberships state
+        setMemberships(prev => prev.map(membership => 
+          membership.channel.id === editingMembership.channelId
+            ? {
+                ...membership,
+                custom: updatedData.custom,
+                status: updatedData.status,
+                updated: new Date().toISOString()
+              }
+            : membership
+        ));
+      } else {
+        // Update membership from channel perspective
+        await pubnubRef.current.objects.setChannelMembers({
+          channel: editingMembership.channelId,
+          uuids: [{
+            id: editingMembership.userId,
+            custom: updatedData.custom,
+            status: updatedData.status
+          }]
+        });
+
+        // Update local channel members state
+        setChannelMembers(prev => prev.map(member => 
+          member.uuid.id === editingMembership.userId
+            ? {
+                ...member,
+                custom: updatedData.custom,
+                status: updatedData.status,
+                updated: new Date().toISOString()
+              }
+            : member
+        ));
+      }
+
+      setShowMembershipEditDialog(false);
+      setEditingMembership(null);
+
+      toastRef.current({
+        title: "Membership updated",
+        description: "Membership has been successfully updated",
+      });
+
+    } catch (error) {
+      console.error('Failed to update membership:', error);
+      toastRef.current({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Failed to update membership",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle saving edited item
@@ -1466,6 +1969,55 @@ export default function AppContextPage() {
                             ✕ Close
                           </Button>
                         </div>
+
+                        {/* Membership Selection Controls */}
+                        {!loading && memberships.length > 0 && (
+                          <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {selectedMemberships.size > 0 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={clearMembershipSelection}
+                                >
+                                  Clear
+                                </Button>
+                              )}
+
+                              {selectedMemberships.size > 0 && (
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => setShowMembershipDeleteConfirm(true)}
+                                  className="bg-red-600 hover:bg-red-700"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete Selected ({selectedMemberships.size})
+                                </Button>
+                              )}
+
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={selectAllMemberships}
+                                disabled={memberships.length === 0}
+                              >
+                                Select All
+                              </Button>
+
+                              {selectedMemberships.size > 0 && (
+                                <div className="text-sm text-gray-600">
+                                  {selectedMemberships.size} selected
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="text-sm text-gray-600">
+                              {memberships.length} membership{memberships.length === 1 ? '' : 's'}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex-1 p-4">
                           {loading ? (
                             <div className="text-center py-8">
@@ -1484,17 +2036,49 @@ export default function AppContextPage() {
                                 return (
                                   <div
                                     key={`membership-${channelId}-${index}`}
-                                    className="flex items-center justify-between p-3 bg-white border rounded-lg hover:bg-gray-50"
+                                    className="flex items-center gap-3 p-3 bg-white border rounded-lg hover:bg-gray-50"
                                   >
-                                    <div>
+                                    <Checkbox
+                                      checked={selectedMemberships.has(channelId)}
+                                      onCheckedChange={() => toggleMembershipSelection(channelId)}
+                                      className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
+                                    />
+                                    
+                                    <div className="flex-1">
                                       <div className="font-medium text-pubnub-blue">{channelId}</div>
                                       <div className="text-sm text-gray-600">{membership.channel.name || 'No name'}</div>
                                       {membership.channel.description && (
                                         <div className="text-xs text-gray-500 mt-1">{membership.channel.description}</div>
                                       )}
                                     </div>
-                                    <div className="text-xs text-gray-400">
-                                      {formatDate(membership.updated)}
+                                    
+                                    <div className="flex items-center gap-2">
+                                      <div className="text-xs text-gray-400">
+                                        {formatDate(membership.updated)}
+                                      </div>
+                                      
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                            <MoreVertical className="h-4 w-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem
+                                            onClick={() => openMembershipEdit('user-membership', currentMembershipsUserId, channelId, membership.status, membership.custom)}
+                                          >
+                                            <Edit className="w-4 h-4 mr-2" />
+                                            Edit Membership
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            className="text-red-600"
+                                            onClick={() => handleDeleteSingleMembership(channelId)}
+                                          >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete Membership
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
                                   </div>
                                 );
@@ -1735,6 +2319,55 @@ export default function AppContextPage() {
                             ✕ Close
                           </Button>
                         </div>
+
+                        {/* Channel Member Selection Controls */}
+                        {!loading && channelMembers.length > 0 && (
+                          <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {selectedChannelMembers.size > 0 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={clearChannelMemberSelection}
+                                >
+                                  Clear
+                                </Button>
+                              )}
+
+                              {selectedChannelMembers.size > 0 && (
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => setShowChannelMemberDeleteConfirm(true)}
+                                  className="bg-red-600 hover:bg-red-700"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete Selected ({selectedChannelMembers.size})
+                                </Button>
+                              )}
+
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={selectAllChannelMembers}
+                                disabled={channelMembers.length === 0}
+                              >
+                                Select All
+                              </Button>
+
+                              {selectedChannelMembers.size > 0 && (
+                                <div className="text-sm text-gray-600">
+                                  {selectedChannelMembers.size} selected
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="text-sm text-gray-600">
+                              {channelMembers.length} member{channelMembers.length === 1 ? '' : 's'}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex-1 p-4">
                           {loading ? (
                             <div className="text-center py-8">
@@ -1753,17 +2386,49 @@ export default function AppContextPage() {
                                 return (
                                   <div
                                     key={`member-${userId}-${index}`}
-                                    className="flex items-center justify-between p-3 bg-white border rounded-lg hover:bg-gray-50"
+                                    className="flex items-center gap-3 p-3 bg-white border rounded-lg hover:bg-gray-50"
                                   >
-                                    <div>
+                                    <Checkbox
+                                      checked={selectedChannelMembers.has(userId)}
+                                      onCheckedChange={() => toggleChannelMemberSelection(userId)}
+                                      className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
+                                    />
+                                    
+                                    <div className="flex-1">
                                       <div className="font-medium text-pubnub-blue">{userId}</div>
                                       <div className="text-sm text-gray-600">{member.uuid.name || 'No name'}</div>
                                       {member.uuid.email && (
                                         <div className="text-xs text-gray-500 mt-1">{member.uuid.email}</div>
                                       )}
                                     </div>
-                                    <div className="text-xs text-gray-400">
-                                      {formatDate(member.updated)}
+                                    
+                                    <div className="flex items-center gap-2">
+                                      <div className="text-xs text-gray-400">
+                                        {formatDate(member.updated)}
+                                      </div>
+                                      
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                            <MoreVertical className="h-4 w-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuItem
+                                            onClick={() => openMembershipEdit('channel-member', userId, currentChannelMembersChannelId, member.status, member.custom)}
+                                          >
+                                            <Edit className="w-4 h-4 mr-2" />
+                                            Edit Membership
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            className="text-red-600"
+                                            onClick={() => handleDeleteSingleChannelMember(userId)}
+                                          >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Remove from Channel
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
                                   </div>
                                 );
@@ -1979,7 +2644,7 @@ export default function AppContextPage() {
                 </div>
 
                 {/* Pagination Controls */}
-                {filteredAndSortedData.length > pageSize && (
+                {filteredAndSortedData.length > pageSize && !showMemberships && !showChannelMembers && (
                   <div className="border-t p-4">
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-gray-500">
@@ -2297,6 +2962,302 @@ export default function AppContextPage() {
                 Close
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Membership Bulk Delete Confirmation Dialog */}
+        <Dialog open={showMembershipDeleteConfirm} onOpenChange={setShowMembershipDeleteConfirm}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Selected Memberships?</DialogTitle>
+              <DialogDescription>
+                This will permanently remove {selectedMemberships.size} membership{selectedMemberships.size === 1 ? '' : 's'} for user "{currentMembershipsUserId}". This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {/* Progress Section - Only show when deleting */}
+            {deletingMemberships && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Progress</span>
+                    <span>{membershipDeleteProgress.current} of {membershipDeleteProgress.total}</span>
+                  </div>
+                  <Progress 
+                    value={(membershipDeleteProgress.current / membershipDeleteProgress.total) * 100} 
+                    className="w-full"
+                  />
+                </div>
+                
+                {membershipDeleteProgress.currentItem && (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">Currently deleting membership:</div>
+                    <div className="text-sm text-gray-600 truncate">{membershipDeleteProgress.currentItem}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                if (deletingMemberships) {
+                  membershipDeleteCancelledRef.current = true;
+                } else {
+                  setShowMembershipDeleteConfirm(false);
+                }
+              }}>
+                Cancel
+              </Button>
+              {!deletingMemberships && (
+                <Button 
+                  variant="destructive" 
+                  onClick={handleBulkDeleteMemberships}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete {selectedMemberships.size} Membership{selectedMemberships.size === 1 ? '' : 's'}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Membership Bulk Delete Results Dialog */}
+        <Dialog open={showMembershipDeleteResults} onOpenChange={setShowMembershipDeleteResults}>
+          <DialogContent className="max-w-2xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle>Membership Delete Operation Results</DialogTitle>
+              <DialogDescription>
+                Results of bulk membership delete operation for user "{currentMembershipsUserId}"
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className={`grid gap-4 p-4 bg-gray-50 rounded-lg ${
+                membershipDeleteResults.cancelled > 0 ? 'grid-cols-4' : 'grid-cols-3'
+              }`}>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{membershipDeleteResults.successful}</div>
+                  <div className="text-sm text-gray-600">Successful</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{membershipDeleteResults.failed}</div>
+                  <div className="text-sm text-gray-600">Failed</div>
+                </div>
+                {membershipDeleteResults.cancelled > 0 && (
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">{membershipDeleteResults.cancelled}</div>
+                    <div className="text-sm text-gray-600">Cancelled</div>
+                  </div>
+                )}
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-600">{membershipDeleteResults.successful + membershipDeleteResults.failed + membershipDeleteResults.cancelled}</div>
+                  <div className="text-sm text-gray-600">Total</div>
+                </div>
+              </div>
+
+              {/* Full Log */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">Full Operation Log:</h4>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(membershipDeleteResults.fullLog);
+                        toast({
+                          title: "Copied to clipboard",
+                          description: "Full operation log copied to clipboard",
+                        });
+                      } catch (error) {
+                        toast({
+                          title: "Copy failed",
+                          description: "Failed to copy log to clipboard",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy Log
+                  </Button>
+                </div>
+                <textarea
+                  value={membershipDeleteResults.fullLog}
+                  readOnly
+                  className="w-full h-64 p-3 text-sm font-mono bg-gray-50 border rounded resize-none"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button onClick={() => setShowMembershipDeleteResults(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Channel Member Bulk Delete Confirmation Dialog */}
+        <Dialog open={showChannelMemberDeleteConfirm} onOpenChange={setShowChannelMemberDeleteConfirm}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Remove Selected Channel Members?</DialogTitle>
+              <DialogDescription>
+                This will permanently remove {selectedChannelMembers.size} member{selectedChannelMembers.size === 1 ? '' : 's'} from channel "{currentChannelMembersChannelId}". This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {/* Progress Section - Only show when deleting */}
+            {deletingChannelMembers && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Progress</span>
+                    <span>{channelMemberDeleteProgress.current} of {channelMemberDeleteProgress.total}</span>
+                  </div>
+                  <Progress 
+                    value={(channelMemberDeleteProgress.current / channelMemberDeleteProgress.total) * 100} 
+                    className="w-full"
+                  />
+                </div>
+                
+                {channelMemberDeleteProgress.currentItem && (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">Currently removing member:</div>
+                    <div className="text-sm text-gray-600 truncate">{channelMemberDeleteProgress.currentItem}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                if (deletingChannelMembers) {
+                  channelMemberDeleteCancelledRef.current = true;
+                } else {
+                  setShowChannelMemberDeleteConfirm(false);
+                }
+              }}>
+                Cancel
+              </Button>
+              {!deletingChannelMembers && (
+                <Button 
+                  variant="destructive" 
+                  onClick={handleBulkDeleteChannelMembers}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Remove {selectedChannelMembers.size} Member{selectedChannelMembers.size === 1 ? '' : 's'}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Channel Member Bulk Delete Results Dialog */}
+        <Dialog open={showChannelMemberDeleteResults} onOpenChange={setShowChannelMemberDeleteResults}>
+          <DialogContent className="max-w-2xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle>Channel Member Remove Operation Results</DialogTitle>
+              <DialogDescription>
+                Results of bulk channel member removal operation for channel "{currentChannelMembersChannelId}"
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className={`grid gap-4 p-4 bg-gray-50 rounded-lg ${
+                channelMemberDeleteResults.cancelled > 0 ? 'grid-cols-4' : 'grid-cols-3'
+              }`}>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{channelMemberDeleteResults.successful}</div>
+                  <div className="text-sm text-gray-600">Successful</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{channelMemberDeleteResults.failed}</div>
+                  <div className="text-sm text-gray-600">Failed</div>
+                </div>
+                {channelMemberDeleteResults.cancelled > 0 && (
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">{channelMemberDeleteResults.cancelled}</div>
+                    <div className="text-sm text-gray-600">Cancelled</div>
+                  </div>
+                )}
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-600">{channelMemberDeleteResults.successful + channelMemberDeleteResults.failed + channelMemberDeleteResults.cancelled}</div>
+                  <div className="text-sm text-gray-600">Total</div>
+                </div>
+              </div>
+
+              {/* Full Log */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">Full Operation Log:</h4>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(channelMemberDeleteResults.fullLog);
+                        toast({
+                          title: "Copied to clipboard",
+                          description: "Full operation log copied to clipboard",
+                        });
+                      } catch (error) {
+                        toast({
+                          title: "Copy failed",
+                          description: "Failed to copy log to clipboard",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy Log
+                  </Button>
+                </div>
+                <textarea
+                  value={channelMemberDeleteResults.fullLog}
+                  readOnly
+                  className="w-full h-64 p-3 text-sm font-mono bg-gray-50 border rounded resize-none"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button onClick={() => setShowChannelMemberDeleteResults(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Membership Edit Dialog */}
+        <Dialog open={showMembershipEditDialog} onOpenChange={setShowMembershipEditDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Membership</DialogTitle>
+              <DialogDescription>
+                {editingMembership?.type === 'user-membership' 
+                  ? `Editing membership for user "${editingMembership.userId}" in channel "${editingMembership.channelId}"`
+                  : `Editing membership for user "${editingMembership?.userId}" in channel "${editingMembership?.channelId}"`
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            {editingMembership && (
+              <MembershipEditForm
+                membership={editingMembership}
+                onSave={handleSaveMembershipEdit}
+                onCancel={() => {
+                  setShowMembershipEditDialog(false);
+                  setEditingMembership(null);
+                }}
+              />
+            )}
           </DialogContent>
         </Dialog>
       </div>
@@ -2686,6 +3647,285 @@ function UserEditForm({ item, itemType, onSave, onCancel }: UserEditFormProps) {
         <Button
           type="submit"
           disabled={loading || hasValidationErrors || hasDuplicateKeys}
+          className="bg-pubnub-blue hover:bg-pubnub-blue/90"
+        >
+          {loading ? (
+            <>
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            'Save Changes'
+          )}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+// Membership Edit Form Component
+interface MembershipEditFormProps {
+  membership: {
+    type: 'user-membership' | 'channel-member';
+    userId: string;
+    channelId: string;
+    status?: string;
+    custom?: Record<string, any>;
+  };
+  onSave: (updatedData: { status?: string; custom?: Record<string, any> }) => Promise<void>;
+  onCancel: () => void;
+}
+
+function MembershipEditForm({ membership, onSave, onCancel }: MembershipEditFormProps) {
+  const [formData, setFormData] = useState(() => ({
+    status: membership.status || '',
+    custom: membership.custom || {}
+  }));
+  const [loading, setLoading] = useState(false);
+
+  // Custom Fields Management
+  const [customFields, setCustomFields] = useState<Array<{
+    key: string;
+    value: string;
+    type: 'string' | 'number' | 'boolean';
+    error?: string;
+  }>>(() => {
+    const custom = membership.custom || {};
+    return Object.entries(custom).map(([key, value]) => ({
+      key,
+      value: String(value),
+      type: typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string'
+    }));
+  });
+
+  const addCustomField = () => {
+    setCustomFields(prev => [...prev, { key: '', value: '', type: 'string' }]);
+  };
+
+  const updateCustomField = (index: number, field: 'key' | 'value' | 'type', value: string) => {
+    setCustomFields(prev => prev.map((item, i) => 
+      i === index ? { ...item, [field]: value, error: undefined } : item
+    ));
+  };
+
+  const removeCustomField = (index: number) => {
+    setCustomFields(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const validateCustomField = (field: { key: string; value: string; type: string }) => {
+    if (!field.key.trim()) {
+      return 'Field name is required';
+    }
+    
+    if (field.type === 'number' && field.value && isNaN(Number(field.value))) {
+      return 'Must be a valid number';
+    }
+    
+    if (field.type === 'boolean' && field.value && !['true', 'false'].includes(field.value.toLowerCase())) {
+      return 'Must be true or false';
+    }
+    
+    return undefined;
+  };
+
+  const convertValue = (value: string, type: string) => {
+    if (!value) return value;
+    
+    switch (type) {
+      case 'number':
+        return Number(value);
+      case 'boolean':
+        return value.toLowerCase() === 'true';
+      default:
+        return value;
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    try {
+      // Validate all custom fields
+      const validatedFields = customFields.map(field => ({
+        ...field,
+        error: validateCustomField(field)
+      }));
+      
+      setCustomFields(validatedFields);
+      
+      // Check if there are any validation errors
+      const hasErrors = validatedFields.some(field => field.error);
+      if (hasErrors) {
+        setLoading(false);
+        return;
+      }
+
+      // Convert custom fields to object
+      const customData: Record<string, any> = {};
+      validatedFields.forEach(field => {
+        if (field.key.trim() && field.value !== '') {
+          customData[field.key.trim()] = convertValue(field.value, field.type);
+        }
+      });
+
+      await onSave({
+        status: formData.status || undefined,
+        custom: Object.keys(customData).length > 0 ? customData : undefined
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-4">
+        {/* Read-only User ID */}
+        <div>
+          <Label htmlFor="userId">User ID (Read-only)</Label>
+          <Input
+            id="userId"
+            value={membership.userId}
+            readOnly
+            className="bg-gray-50"
+          />
+        </div>
+
+        {/* Read-only Channel ID */}
+        <div>
+          <Label htmlFor="channelId">Channel ID (Read-only)</Label>
+          <Input
+            id="channelId"
+            value={membership.channelId}
+            readOnly
+            className="bg-gray-50"
+          />
+        </div>
+
+        {/* Editable Status */}
+        <div>
+          <Label htmlFor="status">Status</Label>
+          <Input
+            id="status"
+            value={formData.status}
+            onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+            placeholder="Enter membership status (optional)"
+          />
+        </div>
+
+        {/* Custom Fields */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <Label>Custom Fields</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addCustomField}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Field
+            </Button>
+          </div>
+          
+          {customFields.length === 0 ? (
+            <div className="text-center py-6 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+              <Database className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p>No custom fields</p>
+              <p className="text-xs">Click "Add Field" to add custom metadata</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {customFields.map((field, index) => (
+                <div key={index} className={`p-3 rounded-lg border ${field.error ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
+                  <div className="grid grid-cols-12 gap-2 items-start">
+                    {/* Field Name */}
+                    <div className="col-span-4">
+                      <Input
+                        placeholder="Field name"
+                        value={field.key}
+                        onChange={(e) => updateCustomField(index, 'key', e.target.value)}
+                        className={`text-sm ${field.error ? 'border-red-300' : ''}`}
+                      />
+                    </div>
+                    
+                    {/* Field Type */}
+                    <div className="col-span-2">
+                      <Select value={field.type} onValueChange={(value) => updateCustomField(index, 'type', value)}>
+                        <SelectTrigger className="text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="string">String</SelectItem>
+                          <SelectItem value="number">Number</SelectItem>
+                          <SelectItem value="boolean">Boolean</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    {/* Field Value */}
+                    <div className="col-span-5">
+                      {field.type === 'boolean' ? (
+                        <Select value={field.value} onValueChange={(value) => updateCustomField(index, 'value', value)}>
+                          <SelectTrigger className="text-sm">
+                            <SelectValue placeholder="Select value" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="true">true</SelectItem>
+                            <SelectItem value="false">false</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          placeholder={field.type === 'number' ? 'Enter number' : 'Enter value'}
+                          value={field.value}
+                          onChange={(e) => updateCustomField(index, 'value', e.target.value)}
+                          type={field.type === 'number' ? 'number' : 'text'}
+                          className={`text-sm ${field.error ? 'border-red-300' : ''}`}
+                        />
+                      )}
+                    </div>
+                    
+                    {/* Remove Button */}
+                    <div className="col-span-1 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeCustomField(index)}
+                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-500"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {field.error && (
+                    <div className="mt-2 text-xs text-red-600 flex items-center">
+                      <AlertCircle className="w-3 h-3 mr-1" />
+                      {field.error}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={loading}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={loading}
           className="bg-pubnub-blue hover:bg-pubnub-blue/90"
         >
           {loading ? (
