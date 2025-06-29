@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
@@ -240,6 +241,25 @@ export default function AppContextPage() {
   const [showChannelMembers, setShowChannelMembers] = useState(false);
   const [currentMembershipsUserId, setCurrentMembershipsUserId] = useState<string>('');
   const [currentChannelMembersChannelId, setCurrentChannelMembersChannelId] = useState<string>('');
+  const [showSelectAllWarning, setShowSelectAllWarning] = useState(false);
+
+  // Bulk delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDeleteResults, setShowDeleteResults] = useState(false);
+  const [deleteResults, setDeleteResults] = useState<{
+    successful: number;
+    failed: number;
+    cancelled: number;
+    errors: string[];
+    fullLog: string;
+  }>({ successful: 0, failed: 0, cancelled: 0, errors: [], fullLog: '' });
+  const [deleting, setDeleting] = useState(false);
+  const [deleteCancelled, setDeleteCancelled] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState<{
+    current: number;
+    total: number;
+    currentItem: string;
+  }>({ current: 0, total: 0, currentItem: '' });
 
   // Computed values from pageSettings (with null safety)
   const selectedTab = pageSettings?.appContext?.selectedTab || FIELD_DEFINITIONS['appContext.selectedTab'].default;
@@ -280,6 +300,7 @@ export default function AppContextPage() {
   // Use refs to maintain stable function references
   const pubnubRef = useRef(pubnub);
   const toastRef = useRef(toast);
+  const deleteCancelledRef = useRef(false);
   
   // Update refs when values change
   useEffect(() => {
@@ -785,6 +806,234 @@ export default function AppContextPage() {
     setSelectedItems(new Set());
   };
 
+  const selectAll = () => {
+    const currentData = selectedTab === 'users' ? users : channels;
+    const filteredData = currentData.filter(item => {
+      if (!searchTerm) return true;
+      const searchLower = searchTerm.toLowerCase();
+      if (selectedTab === 'users') {
+        const user = item as UserMetadata;
+        return (
+          user.id.toLowerCase().includes(searchLower) ||
+          (user.name || '').toLowerCase().includes(searchLower) ||
+          (user.email || '').toLowerCase().includes(searchLower)
+        );
+      } else {
+        const channel = item as ChannelMetadata;
+        return (
+          channel.id.toLowerCase().includes(searchLower) ||
+          (channel.name || '').toLowerCase().includes(searchLower) ||
+          (channel.description || '').toLowerCase().includes(searchLower)
+        );
+      }
+    });
+    const allFilteredItemIds = new Set(filteredData.map(item => item.id));
+    setSelectedItems(allFilteredItemIds);
+    setShowSelectAllWarning(false);
+  };
+
+  // Bulk delete function
+  const handleBulkDelete = async () => {
+    if (!pubnubRef.current || selectedItems.size === 0) return;
+
+    setDeleting(true);
+    setDeleteCancelled(false);
+    deleteCancelledRef.current = false;
+    
+    const currentData = selectedTab === 'users' ? users : channels;
+    const selectedItemsList = currentData.filter(item => selectedItems.has(item.id));
+    
+    // Initialize progress
+    setDeleteProgress({
+      current: 0,
+      total: selectedItemsList.length,
+      currentItem: ''
+    });
+    
+    let successful = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    const fullLog: string[] = [];
+    
+    fullLog.push(`Starting bulk delete operation for ${selectedItemsList.length} ${selectedTab} items`);
+    fullLog.push(`Operation started at: ${new Date().toISOString()}`);
+    fullLog.push('');
+
+    try {
+      for (let i = 0; i < selectedItemsList.length; i++) {
+        // Check for cancellation before processing each item
+        if (deleteCancelledRef.current) {
+          const remainingCount = selectedItemsList.length - i;
+          fullLog.push('');
+          fullLog.push(`Operation cancelled by user at: ${new Date().toISOString()}`);
+          fullLog.push(`Items processed before cancellation: ${i}`);
+          fullLog.push(`Items cancelled (not processed): ${remainingCount}`);
+          
+          // Calculate cancelled count and break immediately
+          const cancelled = remainingCount;
+          
+          // Update local state - remove only successfully deleted items
+          const deletedItemIds = new Set<string>();
+          for (let j = 0; j < successful; j++) {
+            deletedItemIds.add(selectedItemsList[j].id);
+          }
+
+          if (selectedTab === 'users') {
+            setUsers(prev => prev.filter(user => !deletedItemIds.has(user.id)));
+          } else {
+            setChannels(prev => prev.filter(channel => !deletedItemIds.has(channel.id)));
+          }
+
+          // Show results immediately
+          fullLog.push('');
+          fullLog.push(`Operation cancelled at: ${new Date().toISOString()}`);
+          fullLog.push(`Total items selected: ${selectedItemsList.length}`);
+          fullLog.push(`Successfully deleted: ${successful}`);
+          fullLog.push(`Failed to delete: ${failed}`);
+          fullLog.push(`Cancelled (not processed): ${cancelled}`);
+
+          setDeleteResults({
+            successful,
+            failed,
+            cancelled,
+            errors,
+            fullLog: fullLog.join('\n')
+          });
+          
+          // Clear selection and show results
+          setSelectedItems(new Set());
+          setShowDeleteResults(true);
+          setShowDeleteConfirm(false);
+          return;
+        }
+        
+        const item = selectedItemsList[i];
+        
+        // Update progress
+        setDeleteProgress({
+          current: i + 1,
+          total: selectedItemsList.length,
+          currentItem: selectedTab === 'users' ? (item as UserMetadata).id : (item as ChannelMetadata).id
+        });
+
+        try {
+          fullLog.push(`Attempting to delete: ${item.id}`);
+          
+          if (selectedTab === 'users') {
+            await pubnubRef.current.objects.removeUUIDMetadata({
+              uuid: item.id
+            });
+          } else {
+            await pubnubRef.current.objects.removeChannelMetadata({
+              channel: item.id
+            });
+          }
+          
+          successful++;
+          fullLog.push(`✓ Successfully deleted: ${item.id}`);
+          
+          // Additional cancellation check after successful delete
+          if (deleteCancelledRef.current) {
+            const remainingCount = selectedItemsList.length - (i + 1);
+            if (remainingCount > 0) {
+              // Handle remaining items as cancelled
+              fullLog.push('');
+              fullLog.push(`Operation cancelled by user after successful delete at: ${new Date().toISOString()}`);
+              fullLog.push(`Items processed (including this one): ${i + 1}`);
+              fullLog.push(`Items cancelled (not processed): ${remainingCount}`);
+              
+              const cancelled = remainingCount;
+              
+              // Update local state - remove successfully deleted items
+              const deletedItemIds = new Set<string>();
+              for (let j = 0; j <= i; j++) {
+                deletedItemIds.add(selectedItemsList[j].id);
+              }
+
+              if (selectedTab === 'users') {
+                setUsers(prev => prev.filter(user => !deletedItemIds.has(user.id)));
+              } else {
+                setChannels(prev => prev.filter(channel => !deletedItemIds.has(channel.id)));
+              }
+
+              setDeleteResults({
+                successful,
+                failed,
+                cancelled,
+                errors,
+                fullLog: fullLog.join('\n')
+              });
+              
+              setSelectedItems(new Set());
+              setShowDeleteResults(true);
+              setShowDeleteConfirm(false);
+              return;
+            }
+          }
+          
+        } catch (error) {
+          failed++;
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`${item.id}: ${errorMsg}`);
+          fullLog.push(`✗ Failed to delete ${item.id}: ${errorMsg}`);
+        }
+      }
+
+      // Update local state - remove all successfully deleted items
+      const deletedItemIds = new Set<string>();
+      for (let i = 0; i < selectedItemsList.length; i++) {
+        if (i < successful) {
+          deletedItemIds.add(selectedItemsList[i].id);
+        }
+      }
+
+      if (selectedTab === 'users') {
+        setUsers(prev => prev.filter(user => !deletedItemIds.has(user.id)));
+      } else {
+        setChannels(prev => prev.filter(channel => !deletedItemIds.has(channel.id)));
+      }
+
+      // Final results
+      fullLog.push('');
+      fullLog.push(`Operation completed at: ${new Date().toISOString()}`);
+      fullLog.push(`Total items selected: ${selectedItemsList.length}`);
+      fullLog.push(`Successfully deleted: ${successful}`);
+      fullLog.push(`Failed to delete: ${failed}`);
+
+      setDeleteResults({
+        successful,
+        failed,
+        cancelled: 0,
+        errors,
+        fullLog: fullLog.join('\n')
+      });
+
+      // Clear selection and show results
+      setSelectedItems(new Set());
+      setShowDeleteResults(true);
+      setShowDeleteConfirm(false);
+
+      if (successful > 0) {
+        toastRef.current({
+          title: "Bulk delete completed",
+          description: `Successfully deleted ${successful} of ${selectedItemsList.length} ${selectedTab}`,
+        });
+      }
+
+    } catch (error) {
+      console.error('Bulk delete operation failed:', error);
+      toastRef.current({
+        title: "Bulk delete failed",
+        description: error instanceof Error ? error.message : "Failed to complete bulk delete operation",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+      setDeleteCancelled(false);
+      deleteCancelledRef.current = false;
+    }
+  };
+
   // Show memberships for a specific user
   const showUserMemberships = (userId: string) => {
     setCurrentMembershipsUserId(userId);
@@ -1114,6 +1363,18 @@ export default function AppContextPage() {
                           Clear
                         </Button>
                       )}
+
+                      {selectedItems.size > 0 && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setShowDeleteConfirm(true)}
+                          className="bg-red-600 hover:bg-red-700"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete Selected ({selectedItems.size})
+                        </Button>
+                      )}
                       
                       <Button
                         variant="outline"
@@ -1122,6 +1383,41 @@ export default function AppContextPage() {
                         disabled={filteredAndSortedData.length === 0}
                       >
                         Select Visible
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const currentData = selectedTab === 'users' ? users : channels;
+                          const filteredData = currentData.filter(item => {
+                            if (!searchTerm) return true;
+                            const searchLower = searchTerm.toLowerCase();
+                            if (selectedTab === 'users') {
+                              const user = item as UserMetadata;
+                              return (
+                                user.id.toLowerCase().includes(searchLower) ||
+                                (user.name || '').toLowerCase().includes(searchLower) ||
+                                (user.email || '').toLowerCase().includes(searchLower)
+                              );
+                            } else {
+                              const channel = item as ChannelMetadata;
+                              return (
+                                channel.id.toLowerCase().includes(searchLower) ||
+                                (channel.name || '').toLowerCase().includes(searchLower) ||
+                                (channel.description || '').toLowerCase().includes(searchLower)
+                              );
+                            }
+                          });
+                          if (filteredData.length > pageSize) {
+                            setShowSelectAllWarning(true);
+                          } else {
+                            selectAll();
+                          }
+                        }}
+                        disabled={filteredAndSortedData.length === 0}
+                      >
+                        Select All
                       </Button>
 
                       {selectedItems.size > 0 && (
@@ -1799,6 +2095,206 @@ export default function AppContextPage() {
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete {selectedTab === 'users' ? 'User' : 'Channel'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Select All Warning Dialog */}
+        <Dialog open={showSelectAllWarning} onOpenChange={setShowSelectAllWarning}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Select All {searchTerm ? 'Filtered ' : ''}{selectedTab === 'users' ? 'Users' : 'Channels'}?</DialogTitle>
+              <DialogDescription>
+                This will select all {(() => {
+                  const currentData = selectedTab === 'users' ? users : channels;
+                  const filteredData = currentData.filter(item => {
+                    if (!searchTerm) return true;
+                    const searchLower = searchTerm.toLowerCase();
+                    if (selectedTab === 'users') {
+                      const user = item as UserMetadata;
+                      return (
+                        user.id.toLowerCase().includes(searchLower) ||
+                        (user.name || '').toLowerCase().includes(searchLower) ||
+                        (user.email || '').toLowerCase().includes(searchLower)
+                      );
+                    } else {
+                      const channel = item as ChannelMetadata;
+                      return (
+                        channel.id.toLowerCase().includes(searchLower) ||
+                        (channel.name || '').toLowerCase().includes(searchLower) ||
+                        (channel.description || '').toLowerCase().includes(searchLower)
+                      );
+                    }
+                  });
+                  return filteredData.length;
+                })()} {searchTerm ? 'filtered ' : ''}{selectedTab === 'users' ? 'users' : 'channels'}{searchTerm ? ` matching "${searchTerm}"` : ''}, not just the {paginatedData.length} items displayed on this page.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowSelectAllWarning(false)}>
+                Cancel
+              </Button>
+              <Button onClick={selectAll} className="bg-pubnub-red hover:bg-pubnub-red/90">
+                Select All {(() => {
+                  const currentData = selectedTab === 'users' ? users : channels;
+                  const filteredData = currentData.filter(item => {
+                    if (!searchTerm) return true;
+                    const searchLower = searchTerm.toLowerCase();
+                    if (selectedTab === 'users') {
+                      const user = item as UserMetadata;
+                      return (
+                        user.id.toLowerCase().includes(searchLower) ||
+                        (user.name || '').toLowerCase().includes(searchLower) ||
+                        (user.email || '').toLowerCase().includes(searchLower)
+                      );
+                    } else {
+                      const channel = item as ChannelMetadata;
+                      return (
+                        channel.id.toLowerCase().includes(searchLower) ||
+                        (channel.name || '').toLowerCase().includes(searchLower) ||
+                        (channel.description || '').toLowerCase().includes(searchLower)
+                      );
+                    }
+                  });
+                  return filteredData.length;
+                })()} {selectedTab === 'users' ? 'Users' : 'Channels'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bulk Delete Confirmation Dialog */}
+        <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Selected {selectedTab === 'users' ? 'Users' : 'Channels'}?</DialogTitle>
+              <DialogDescription>
+                This will permanently delete {selectedItems.size} selected {selectedTab === 'users' ? 'user' : 'channel'}{selectedItems.size === 1 ? '' : 's'}. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {/* Progress Section - Only show when deleting */}
+            {deleting && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Progress</span>
+                    <span>{deleteProgress.current} of {deleteProgress.total}</span>
+                  </div>
+                  <Progress 
+                    value={(deleteProgress.current / deleteProgress.total) * 100} 
+                    className="w-full"
+                  />
+                </div>
+                
+                {deleteProgress.currentItem && (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">Currently deleting:</div>
+                    <div className="text-sm text-gray-600 truncate">{deleteProgress.currentItem}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                if (deleting) {
+                  setDeleteCancelled(true);
+                  deleteCancelledRef.current = true;
+                } else {
+                  setShowDeleteConfirm(false);
+                }
+              }}>
+                Cancel
+              </Button>
+              {!deleting && (
+                <Button 
+                  variant="destructive" 
+                  onClick={handleBulkDelete}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete {selectedItems.size} {selectedTab === 'users' ? 'User' : 'Channel'}{selectedItems.size === 1 ? '' : 's'}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bulk Delete Results Dialog */}
+        <Dialog open={showDeleteResults} onOpenChange={setShowDeleteResults}>
+          <DialogContent className="max-w-2xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle>Delete Operation Results</DialogTitle>
+              <DialogDescription>
+                Results of bulk delete operation for {selectedTab}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className={`grid gap-4 p-4 bg-gray-50 rounded-lg ${
+                deleteResults.cancelled > 0 ? 'grid-cols-4' : 'grid-cols-3'
+              }`}>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{deleteResults.successful}</div>
+                  <div className="text-sm text-gray-600">Successful</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{deleteResults.failed}</div>
+                  <div className="text-sm text-gray-600">Failed</div>
+                </div>
+                {deleteResults.cancelled > 0 && (
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">{deleteResults.cancelled}</div>
+                    <div className="text-sm text-gray-600">Cancelled</div>
+                  </div>
+                )}
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-600">{deleteResults.successful + deleteResults.failed + deleteResults.cancelled}</div>
+                  <div className="text-sm text-gray-600">Total</div>
+                </div>
+              </div>
+
+              {/* Full Log */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">Full Operation Log:</h4>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(deleteResults.fullLog);
+                        toast({
+                          title: "Copied to clipboard",
+                          description: "Full operation log copied to clipboard",
+                        });
+                      } catch (error) {
+                        toast({
+                          title: "Copy failed",
+                          description: "Failed to copy log to clipboard",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy Log
+                  </Button>
+                </div>
+                <textarea
+                  value={deleteResults.fullLog}
+                  readOnly
+                  className="w-full h-64 p-3 text-sm font-mono bg-gray-50 border rounded resize-none"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button onClick={() => setShowDeleteResults(false)}>
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>
