@@ -62,6 +62,8 @@ interface UserMetadata {
   email?: string;
   externalId?: string;
   profileUrl?: string;
+  status?: string;
+  type?: string;
   custom?: Record<string, any>;
   updated: string;
   eTag: string;
@@ -71,6 +73,8 @@ interface ChannelMetadata {
   id: string;
   name?: string;
   description?: string;
+  status?: string;
+  type?: string;
   custom?: Record<string, any>;
   updated: string;
   eTag: string;
@@ -220,7 +224,9 @@ export default function AppContextPage() {
   const [loadingProgress, setLoadingProgress] = useState<{current: number, total?: number, message: string} | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
+  const [deletingItem, setDeletingItem] = useState<any>(null);
   const [newItemData, setNewItemData] = useState<any>({});
 
   // Cache tracking
@@ -809,6 +815,161 @@ export default function AppContextPage() {
     setCurrentChannelMembersChannelId('');
   };
 
+  // Handle saving edited item
+  const handleSaveEdit = useCallback(async (updatedData: any) => {
+    if (!pubnubRef.current || !editingItem) return;
+
+    try {
+      if (selectedTab === 'users') {
+        // Update user metadata
+        const userData = {
+          name: updatedData.name || undefined,
+          email: updatedData.email || undefined,
+          externalId: updatedData.externalId || undefined,
+          profileUrl: updatedData.profileUrl || undefined,
+          status: updatedData.status || undefined,
+          type: updatedData.type || undefined,
+          custom: updatedData.custom || undefined
+        };
+
+        // Remove undefined values to avoid overwriting with null
+        Object.keys(userData).forEach(key => {
+          if (userData[key as keyof typeof userData] === undefined || userData[key as keyof typeof userData] === '') {
+            delete userData[key as keyof typeof userData];
+          }
+        });
+
+        const result = await pubnubRef.current.objects.setUUIDMetadata({
+          uuid: updatedData.id,
+          data: userData,
+          include: { customFields: true }
+        });
+
+        // Update local state
+        setUsers(prevUsers => 
+          prevUsers.map(user => 
+            user.id === updatedData.id 
+              ? { ...user, ...result.data }
+              : user
+          )
+        );
+
+        toastRef.current({
+          title: "User updated",
+          description: `User ${updatedData.name || updatedData.id} has been updated successfully.`,
+        });
+
+      } else if (selectedTab === 'channels') {
+        // Update channel metadata
+        const channelData = {
+          name: updatedData.name || undefined,
+          description: updatedData.description || undefined,
+          status: updatedData.status || undefined,
+          type: updatedData.type || undefined,
+          custom: updatedData.custom || undefined
+        };
+
+        // Remove undefined values to avoid overwriting with null
+        Object.keys(channelData).forEach(key => {
+          if (channelData[key as keyof typeof channelData] === undefined || channelData[key as keyof typeof channelData] === '') {
+            delete channelData[key as keyof typeof channelData];
+          }
+        });
+
+        const result = await pubnubRef.current.objects.setChannelMetadata({
+          channel: updatedData.id,
+          data: channelData,
+          include: { customFields: true }
+        });
+
+        // Update local state
+        setChannels(prevChannels => 
+          prevChannels.map(channel => 
+            channel.id === updatedData.id 
+              ? { ...channel, ...result.data }
+              : channel
+          )
+        );
+
+        toastRef.current({
+          title: "Channel updated",
+          description: `Channel ${updatedData.name || updatedData.id} has been updated successfully.`,
+        });
+      }
+
+      // Close dialog and reset state
+      setShowEditDialog(false);
+      setEditingItem(null);
+
+    } catch (error) {
+      console.error('Error updating metadata:', error);
+      toastRef.current({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Failed to update metadata",
+        variant: "destructive",
+      });
+    }
+  }, [selectedTab, editingItem]);
+
+  // Handle deleting item
+  const handleDeleteItem = useCallback(async () => {
+    if (!pubnubRef.current || !deletingItem) return;
+
+    try {
+      if (selectedTab === 'users') {
+        // Delete user metadata
+        await pubnubRef.current.objects.removeUUIDMetadata({
+          uuid: deletingItem.id
+        });
+
+        // Update local state
+        setUsers(prevUsers => 
+          prevUsers.filter(user => user.id !== deletingItem.id)
+        );
+
+        toastRef.current({
+          title: "User deleted",
+          description: `User ${deletingItem.name || deletingItem.id} has been deleted successfully.`,
+        });
+
+      } else if (selectedTab === 'channels') {
+        // Delete channel metadata
+        await pubnubRef.current.objects.removeChannelMetadata({
+          channel: deletingItem.id
+        });
+
+        // Update local state
+        setChannels(prevChannels => 
+          prevChannels.filter(channel => channel.id !== deletingItem.id)
+        );
+
+        toastRef.current({
+          title: "Channel deleted",
+          description: `Channel ${deletingItem.name || deletingItem.id} has been deleted successfully.`,
+        });
+      }
+
+      // Close dialog and reset state
+      setShowDeleteDialog(false);
+      setDeletingItem(null);
+
+      // Clear selection if the deleted item was selected
+      setSelectedItems(prev => {
+        const newSelection = new Set(prev);
+        newSelection.delete(deletingItem.id);
+        return newSelection;
+      });
+
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      toastRef.current({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Failed to delete item",
+        variant: "destructive",
+      });
+    }
+  }, [selectedTab, deletingItem]);
+
   // Track if we've already loaded initial data
   const initialDataLoaded = useRef(false);
   
@@ -1100,6 +1261,7 @@ export default function AppContextPage() {
                             onClick={() => handleSort('id')}
                           >
                             User ID
+                            <Edit className="w-3 h-3 opacity-50" title="Click User ID to edit" />
                             {sortBy === 'id' && (
                               sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                             )}
@@ -1156,7 +1318,15 @@ export default function AppContextPage() {
                                     className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
                                   />
                                 </div>
-                                <div className="truncate font-medium text-pubnub-blue">
+                                <div 
+                                  className="truncate font-medium text-pubnub-blue cursor-pointer hover:underline hover:text-pubnub-blue/80 transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingItem(userData);
+                                    setShowEditDialog(true);
+                                  }}
+                                  title="Click to edit user"
+                                >
                                   {userData.id}
                                 </div>
                                 <div className="truncate">
@@ -1218,6 +1388,16 @@ export default function AppContextPage() {
                                       }}>
                                         <Copy className="w-4 h-4 mr-2" />
                                         Copy ID
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem 
+                                        onClick={() => {
+                                          setDeletingItem(userData);
+                                          setShowDeleteDialog(true);
+                                        }}
+                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      >
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        Delete
                                       </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
@@ -1350,6 +1530,7 @@ export default function AppContextPage() {
                             onClick={() => handleSort('id')}
                           >
                             Channel ID
+                            <Edit className="w-3 h-3 opacity-50" title="Click Channel ID to edit" />
                             {sortBy === 'id' && (
                               sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                             )}
@@ -1406,7 +1587,15 @@ export default function AppContextPage() {
                                     className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
                                   />
                                 </div>
-                                <div className="truncate font-medium text-pubnub-blue">
+                                <div 
+                                  className="truncate font-medium text-pubnub-blue cursor-pointer hover:underline hover:text-pubnub-blue/80 transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingItem(channelData);
+                                    setShowEditDialog(true);
+                                  }}
+                                  title="Click to edit channel"
+                                >
                                   {channelData.id}
                                 </div>
                                 <div className="truncate">
@@ -1469,6 +1658,16 @@ export default function AppContextPage() {
                                         <Copy className="w-4 h-4 mr-2" />
                                         Copy ID
                                       </DropdownMenuItem>
+                                      <DropdownMenuItem 
+                                        onClick={() => {
+                                          setDeletingItem(channelData);
+                                          setShowDeleteDialog(true);
+                                        }}
+                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      >
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        Delete
+                                      </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                 </div>
@@ -1517,7 +1716,492 @@ export default function AppContextPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* User Edit Dialog */}
+        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedTab === 'users' ? 'Edit User' : 'Edit Channel'}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedTab === 'users' 
+                  ? 'Update user metadata and custom fields'
+                  : 'Update channel metadata and custom fields'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            {editingItem && (
+              <UserEditForm
+                item={editingItem}
+                itemType={selectedTab as 'users' | 'channels'}
+                onSave={handleSaveEdit}
+                onCancel={() => {
+                  setShowEditDialog(false);
+                  setEditingItem(null);
+                }}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Confirm Delete</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this {selectedTab === 'users' ? 'user' : 'channel'}? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {deletingItem && (
+              <div className="py-4">
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    {selectedTab === 'users' ? (
+                      <Users className="w-8 h-8 text-gray-400" />
+                    ) : (
+                      <Hash className="w-8 h-8 text-gray-400" />
+                    )}
+                    <div>
+                      <p className="font-medium text-gray-900">{deletingItem.name || deletingItem.id}</p>
+                      <p className="text-sm text-gray-500">ID: {deletingItem.id}</p>
+                      {deletingItem.email && (
+                        <p className="text-sm text-gray-500">Email: {deletingItem.email}</p>
+                      )}
+                      {deletingItem.description && (
+                        <p className="text-sm text-gray-500">Description: {deletingItem.description}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowDeleteDialog(false);
+                  setDeletingItem(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDeleteItem}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete {selectedTab === 'users' ? 'User' : 'Channel'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
+  );
+}
+
+// User Edit Form Component
+interface UserEditFormProps {
+  item: UserMetadata | ChannelMetadata;
+  itemType: 'users' | 'channels';
+  onSave: (updatedData: any) => Promise<void>;
+  onCancel: () => void;
+}
+
+function UserEditForm({ item, itemType, onSave, onCancel }: UserEditFormProps) {
+  const [formData, setFormData] = useState(() => {
+    if (itemType === 'users') {
+      const user = item as UserMetadata;
+      return {
+        id: user.id,
+        name: user.name || '',
+        email: user.email || '',
+        externalId: user.externalId || '',
+        profileUrl: user.profileUrl || '',
+        status: user.status || '',
+        type: user.type || '',
+        custom: user.custom || {}
+      };
+    } else {
+      const channel = item as ChannelMetadata;
+      return {
+        id: channel.id,
+        name: channel.name || '',
+        description: channel.description || '',
+        status: channel.status || '',
+        type: channel.type || '',
+        custom: channel.custom || {}
+      };
+    }
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [customFields, setCustomFields] = useState<Array<{key: string, value: string, type: 'string' | 'number' | 'boolean', error?: string}>>(() => {
+    const custom = formData.custom as Record<string, any>;
+    return Object.entries(custom).map(([key, value]) => ({
+      key,
+      value: String(value),
+      type: typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string'
+    }));
+  });
+
+  const addCustomField = () => {
+    setCustomFields(prev => [...prev, { key: '', value: '', type: 'string' }]);
+  };
+
+  const removeCustomField = (index: number) => {
+    setCustomFields(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const validateFieldValue = (value: string, type: 'string' | 'number' | 'boolean'): string | undefined => {
+    if (!value.trim()) return undefined; // Empty values are allowed
+    
+    switch (type) {
+      case 'number':
+        const num = parseFloat(value);
+        if (isNaN(num)) {
+          return 'Must be a valid number';
+        }
+        return undefined;
+      case 'boolean':
+        const lowerValue = value.toLowerCase().trim();
+        if (lowerValue !== 'true' && lowerValue !== 'false') {
+          return 'Must be "true" or "false"';
+        }
+        return undefined;
+      default:
+        return undefined; // Strings are always valid
+    }
+  };
+
+  const updateCustomField = (index: number, field: 'key' | 'value' | 'type', newValue: string) => {
+    setCustomFields(prev => prev.map((item, i) => {
+      if (i !== index) return item;
+      
+      const updatedItem = { ...item, [field]: newValue };
+      
+      // Validate when value or type changes
+      if (field === 'value' || field === 'type') {
+        const error = validateFieldValue(
+          field === 'value' ? newValue : item.value,
+          field === 'type' ? newValue as 'string' | 'number' | 'boolean' : item.type
+        );
+        updatedItem.error = error;
+      }
+      
+      return updatedItem;
+    }));
+  };
+
+  const convertValue = (value: string, type: 'string' | 'number' | 'boolean') => {
+    if (!value.trim()) return undefined; // Don't include empty values
+    
+    switch (type) {
+      case 'number':
+        const num = parseFloat(value);
+        return isNaN(num) ? 0 : num;
+      case 'boolean':
+        return value.toLowerCase().trim() === 'true';
+      default:
+        return value;
+    }
+  };
+
+  // Check if there are any validation errors
+  const hasValidationErrors = customFields.some(field => field.error);
+  const hasEmptyKeys = customFields.some(field => field.key.trim() && !field.value.trim());
+  const hasDuplicateKeys = customFields.some((field, index) => 
+    field.key.trim() && customFields.findIndex(f => f.key.trim() === field.key.trim()) !== index
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Check for validation errors
+    if (hasValidationErrors) {
+      return; // Don't submit if there are validation errors
+    }
+
+    if (hasDuplicateKeys) {
+      return; // Don't submit if there are duplicate keys
+    }
+
+    setLoading(true);
+    try {
+      // Build custom object from custom fields
+      const customData: Record<string, any> = {};
+      customFields.forEach(field => {
+        if (field.key.trim() && field.value.trim()) {
+          customData[field.key.trim()] = convertValue(field.value, field.type);
+        }
+      });
+
+      const updateData: any = {
+        ...formData,
+        custom: Object.keys(customData).length > 0 ? customData : undefined
+      };
+
+      // Remove empty fields to avoid overwriting with empty strings
+      Object.keys(updateData).forEach(key => {
+        if (updateData[key] === '' && key !== 'id') {
+          delete updateData[key];
+        }
+      });
+
+      await onSave(updateData);
+    } catch (error) {
+      console.error('Error saving:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-2 gap-4">
+        {/* ID Field (Read-only) */}
+        <div className="col-span-2">
+          <Label htmlFor="id">ID</Label>
+          <Input
+            id="id"
+            value={formData.id}
+            disabled
+            className="bg-gray-50 text-gray-600"
+          />
+          <p className="text-xs text-gray-500 mt-1">ID cannot be changed</p>
+        </div>
+
+        {/* Name Field */}
+        <div className="col-span-1">
+          <Label htmlFor="name">
+            {itemType === 'users' ? 'Display Name' : 'Channel Name'}
+          </Label>
+          <Input
+            id="name"
+            value={formData.name}
+            onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+            placeholder={itemType === 'users' ? 'Enter display name' : 'Enter channel name'}
+          />
+        </div>
+
+        {/* Status Field */}
+        <div className="col-span-1">
+          <Label htmlFor="status">Status</Label>
+          <Input
+            id="status"
+            value={formData.status}
+            onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+            placeholder="Enter status (e.g., active, inactive)"
+          />
+        </div>
+
+        {/* Type Field */}
+        <div className="col-span-1">
+          <Label htmlFor="type">Type</Label>
+          <Input
+            id="type"
+            value={formData.type}
+            onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
+            placeholder={itemType === 'users' ? 'Enter user type (e.g., admin, member)' : 'Enter channel type (e.g., public, private)'}
+          />
+        </div>
+
+        {/* Email Field (Users only) */}
+        {itemType === 'users' && (
+          <div className="col-span-1">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              value={(formData as any).email}
+              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              placeholder="Enter email address"
+            />
+          </div>
+        )}
+
+        {/* Description Field (Channels only) */}
+        {itemType === 'channels' && (
+          <div className="col-span-1">
+            <Label htmlFor="description">Description</Label>
+            <Input
+              id="description"
+              value={(formData as any).description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Enter channel description"
+            />
+          </div>
+        )}
+
+        {/* External ID Field (Users only) */}
+        {itemType === 'users' && (
+          <div className="col-span-1">
+            <Label htmlFor="externalId">External ID</Label>
+            <Input
+              id="externalId"
+              value={(formData as any).externalId}
+              onChange={(e) => setFormData(prev => ({ ...prev, externalId: e.target.value }))}
+              placeholder="Enter external system ID"
+            />
+          </div>
+        )}
+
+        {/* Profile URL Field (Users only) */}
+        {itemType === 'users' && (
+          <div className="col-span-1">
+            <Label htmlFor="profileUrl">Profile URL</Label>
+            <Input
+              id="profileUrl"
+              type="url"
+              value={(formData as any).profileUrl}
+              onChange={(e) => setFormData(prev => ({ ...prev, profileUrl: e.target.value }))}
+              placeholder="Enter profile picture URL"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Custom Fields */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <Label>Custom Fields</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addCustomField}
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Add Field
+          </Button>
+        </div>
+        
+        {customFields.length === 0 ? (
+          <div className="text-center py-6 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+            <Database className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p>No custom fields</p>
+            <p className="text-xs">Click "Add Field" to add custom metadata</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-64 overflow-y-auto">
+            {customFields.map((field, index) => {
+              const isDuplicateKey = field.key.trim() && 
+                customFields.findIndex(f => f.key.trim() === field.key.trim()) !== index;
+              
+              return (
+                <div key={index} className="space-y-2">
+                  <div className={`grid grid-cols-12 gap-2 items-center p-3 border rounded-lg ${
+                    field.error || isDuplicateKey ? 'border-red-300 bg-red-50' : ''
+                  }`}>
+                    <div className="col-span-4">
+                      <Input
+                        placeholder="Field name"
+                        value={field.key}
+                        onChange={(e) => updateCustomField(index, 'key', e.target.value)}
+                        className={`text-sm ${isDuplicateKey ? 'border-red-500' : ''}`}
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <Input
+                        placeholder="Field value"
+                        value={field.value}
+                        onChange={(e) => updateCustomField(index, 'value', e.target.value)}
+                        className={`text-sm ${field.error ? 'border-red-500' : ''}`}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <Select
+                        value={field.type}
+                        onValueChange={(value: 'string' | 'number' | 'boolean') => updateCustomField(index, 'type', value)}
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="string">String</SelectItem>
+                          <SelectItem value="number">Number</SelectItem>
+                          <SelectItem value="boolean">Boolean</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeCustomField(index)}
+                        className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* Error Messages */}
+                  {field.error && (
+                    <p className="text-sm text-red-600 ml-3 flex items-center">
+                      <AlertCircle className="w-4 h-4 mr-1" />
+                      {field.error}
+                    </p>
+                  )}
+                  {isDuplicateKey && (
+                    <p className="text-sm text-red-600 ml-3 flex items-center">
+                      <AlertCircle className="w-4 h-4 mr-1" />
+                      Duplicate field name
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        
+        <div className="mt-2 space-y-1">
+          <p className="text-xs text-gray-500">
+            Add custom metadata fields with proper data types. Boolean values should be "true" or "false".
+          </p>
+          {(hasValidationErrors || hasDuplicateKeys) && (
+            <p className="text-xs text-red-600 flex items-center">
+              <AlertCircle className="w-3 h-3 mr-1" />
+              Please fix validation errors before saving
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={loading}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={loading || hasValidationErrors || hasDuplicateKeys}
+          className="bg-pubnub-blue hover:bg-pubnub-blue/90"
+        >
+          {loading ? (
+            <>
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            'Save Changes'
+          )}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
