@@ -229,6 +229,12 @@ export default function AppContextPage() {
   const [usersLastLoaded, setUsersLastLoaded] = useState<Date | null>(null);
   const [channelsLastLoaded, setChannelsLastLoaded] = useState<Date | null>(null);
 
+  // Contextual view tracking
+  const [showMemberships, setShowMemberships] = useState(false);
+  const [showChannelMembers, setShowChannelMembers] = useState(false);
+  const [currentMembershipsUserId, setCurrentMembershipsUserId] = useState<string>('');
+  const [currentChannelMembersChannelId, setCurrentChannelMembersChannelId] = useState<string>('');
+
   // Computed values from pageSettings (with null safety)
   const selectedTab = pageSettings?.appContext?.selectedTab || FIELD_DEFINITIONS['appContext.selectedTab'].default;
   const searchTerm = pageSettings?.appContext?.searchTerm || FIELD_DEFINITIONS['appContext.searchTerm'].default;
@@ -630,16 +636,13 @@ export default function AppContextPage() {
     updateField('appContext.selectedTab', value);
     updateField('appContext.currentPage', 1);
     setSelectedItems(new Set());
+    hideContextualViews(); // Hide any contextual views when switching tabs
     
     // Load data for the selected tab
     if (value === 'users') {
       loadUsers();
     } else if (value === 'channels') {
       loadChannels();
-    } else if (value === 'memberships' && selectedUserId) {
-      loadMemberships();
-    } else if (value === 'channel-members' && selectedChannelId) {
-      loadChannelMembers();
     }
   };
 
@@ -650,10 +653,6 @@ export default function AppContextPage() {
         return users;
       case 'channels':
         return channels;
-      case 'memberships':
-        return memberships;
-      case 'channel-members':
-        return channelMembers;
       default:
         return [];
     }
@@ -686,16 +685,6 @@ export default function AppContextPage() {
           if (channel && channel.id) {
             searchFields.push(channel.id, channel.name, channel.description);
           }
-        } else if (selectedTab === 'memberships') {
-          const membership = item as MembershipData;
-          if (membership && membership.channel && membership.channel.id) {
-            searchFields.push(membership.channel.id, membership.channel.name, membership.channel.description);
-          }
-        } else if (selectedTab === 'channel-members') {
-          const member = item as ChannelMemberData;
-          if (member && member.uuid && member.uuid.id) {
-            searchFields.push(member.uuid.id, member.uuid.name, member.uuid.email);
-          }
         }
         
         return searchFields.some(field => 
@@ -712,20 +701,8 @@ export default function AppContextPage() {
       
       switch (sortBy) {
         case 'id':
-          if (selectedTab === 'memberships') {
-            const membershipA = a as MembershipData;
-            const membershipB = b as MembershipData;
-            aValue = membershipA?.channel?.id || '';
-            bValue = membershipB?.channel?.id || '';
-          } else if (selectedTab === 'channel-members') {
-            const memberA = a as ChannelMemberData;
-            const memberB = b as ChannelMemberData;
-            aValue = memberA?.uuid?.id || '';
-            bValue = memberB?.uuid?.id || '';
-          } else {
-            aValue = (a as any)?.id || '';
-            bValue = (b as any)?.id || '';
-          }
+          aValue = (a as any)?.id || '';
+          bValue = (b as any)?.id || '';
           break;
         case 'name':
           if (selectedTab === 'users') {
@@ -738,16 +715,6 @@ export default function AppContextPage() {
             const channelB = b as ChannelMetadata;
             aValue = channelA?.name || channelA?.id || '';
             bValue = channelB?.name || channelB?.id || '';
-          } else if (selectedTab === 'memberships') {
-            const membershipA = a as MembershipData;
-            const membershipB = b as MembershipData;
-            aValue = membershipA?.channel?.name || membershipA?.channel?.id || '';
-            bValue = membershipB?.channel?.name || membershipB?.channel?.id || '';
-          } else if (selectedTab === 'channel-members') {
-            const memberA = a as ChannelMemberData;
-            const memberB = b as ChannelMemberData;
-            aValue = memberA?.uuid?.name || memberA?.uuid?.id || '';
-            bValue = memberB?.uuid?.name || memberB?.uuid?.id || '';
           }
           break;
         case 'updated':
@@ -803,14 +770,6 @@ export default function AppContextPage() {
   const selectAllVisible = () => {
     const visibleItemIds = new Set(paginatedData.map(item => {
       if (!item) return null;
-      
-      if (selectedTab === 'memberships') {
-        const membership = item as MembershipData;
-        return membership?.channel?.id;
-      } else if (selectedTab === 'channel-members') {
-        const member = item as ChannelMemberData;
-        return member?.uuid?.id;
-      }
       return (item as any)?.id;
     }).filter(id => id != null)); // Filter out null/undefined IDs
     setSelectedItems(visibleItemIds);
@@ -820,22 +779,34 @@ export default function AppContextPage() {
     setSelectedItems(new Set());
   };
 
-  // Navigate to memberships tab with pre-populated user ID
-  const navigateToMemberships = (userId: string) => {
+  // Show memberships for a specific user
+  const showUserMemberships = (userId: string) => {
+    setCurrentMembershipsUserId(userId);
+    setShowMemberships(true);
+    setShowChannelMembers(false);
     updateField('appContext.selectedUserId', userId);
-    updateField('appContext.selectedTab', 'memberships');
     updateField('appContext.currentPage', 1);
     setSelectedItems(new Set());
     loadMemberships(userId);
   };
 
-  // Navigate to channel members tab with pre-populated channel ID
-  const navigateToChannelMembers = (channelId: string) => {
+  // Show members for a specific channel
+  const showChannelMembersList = (channelId: string) => {
+    setCurrentChannelMembersChannelId(channelId);
+    setShowChannelMembers(true);
+    setShowMemberships(false);
     updateField('appContext.selectedChannelId', channelId);
-    updateField('appContext.selectedTab', 'channel-members');
     updateField('appContext.currentPage', 1);
     setSelectedItems(new Set());
     loadChannelMembers(channelId);
+  };
+
+  // Hide contextual views
+  const hideContextualViews = () => {
+    setShowMemberships(false);
+    setShowChannelMembers(false);
+    setCurrentMembershipsUserId('');
+    setCurrentChannelMembersChannelId('');
   };
 
   // Track if we've already loaded initial data
@@ -905,8 +876,6 @@ export default function AppContextPage() {
                   onClick={() => {
                     if (selectedTab === 'users') loadUsers(true);
                     else if (selectedTab === 'channels') loadChannels(true);
-                    else if (selectedTab === 'memberships') loadMemberships();
-                    else if (selectedTab === 'channel-members') loadChannelMembers();
                   }}
                   disabled={loading}
                   variant="outline"
@@ -920,7 +889,7 @@ export default function AppContextPage() {
             <CardContent className="p-0 flex-1 flex flex-col">
               <Tabs value={selectedTab} onValueChange={handleTabChange} className="flex-1 flex flex-col">
                 <div className="px-6 border-b">
-                  <TabsList className="grid w-full grid-cols-4">
+                  <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="users" className="flex items-center gap-2">
                       <Users className="w-4 h-4" />
                       Users ({users.length}){usersLoaded && <span className="text-xs opacity-60">•</span>}
@@ -928,14 +897,6 @@ export default function AppContextPage() {
                     <TabsTrigger value="channels" className="flex items-center gap-2">
                       <Hash className="w-4 h-4" />
                       Channels ({channels.length}){channelsLoaded && <span className="text-xs opacity-60">•</span>}
-                    </TabsTrigger>
-                    <TabsTrigger value="memberships" className="flex items-center gap-2">
-                      <UserPlus className="w-4 h-4" />
-                      Memberships ({memberships.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="channel-members" className="flex items-center gap-2">
-                      <Settings className="w-4 h-4" />
-                      Channel Members ({channelMembers.length})
                     </TabsTrigger>
                   </TabsList>
                 </div>
@@ -957,44 +918,6 @@ export default function AppContextPage() {
                       />
                     </div>
 
-                    {/* User/Channel selector for memberships */}
-                    {selectedTab === 'memberships' && (
-                      <div className="flex items-center gap-2">
-                        <Label>User ID:</Label>
-                        <Input
-                          placeholder="Enter user ID"
-                          value={selectedUserId}
-                          onChange={(e) => updateField('appContext.selectedUserId', e.target.value)}
-                          className="w-48"
-                        />
-                        <Button
-                          onClick={() => loadMemberships()}
-                          disabled={!selectedUserId || loading}
-                          size="sm"
-                        >
-                          Load
-                        </Button>
-                      </div>
-                    )}
-
-                    {selectedTab === 'channel-members' && (
-                      <div className="flex items-center gap-2">
-                        <Label>Channel ID:</Label>
-                        <Input
-                          placeholder="Enter channel ID"
-                          value={selectedChannelId}
-                          onChange={(e) => updateField('appContext.selectedChannelId', e.target.value)}
-                          className="w-48"
-                        />
-                        <Button
-                          onClick={() => loadChannelMembers()}
-                          disabled={!selectedChannelId || loading}
-                          size="sm"
-                        >
-                          Load
-                        </Button>
-                      </div>
-                    )}
 
                     {/* Page Size Selector */}
                     <div className="flex flex-col items-center">
@@ -1059,7 +982,71 @@ export default function AppContextPage() {
                 {/* Data Tables */}
                 <div className="flex-1 flex flex-col">
                   <TabsContent value="users" className="flex-1 flex flex-col m-0">
-                    {loading ? (
+                    {showMemberships ? (
+                      // Memberships View
+                      <div className="flex-1 flex flex-col">
+                        <div className="p-4 bg-gray-50 flex items-center justify-between border-b">
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={hideContextualViews}
+                              className="hover:bg-gray-200"
+                            >
+                              ← Back to Users
+                            </Button>
+                            <div className="h-4 w-px bg-gray-300" />
+                            <h3 className="text-lg font-medium">
+                              Memberships for User: <span className="text-pubnub-blue font-mono">{currentMembershipsUserId}</span>
+                            </h3>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={hideContextualViews}
+                            className="hover:bg-gray-200"
+                          >
+                            ✕ Close
+                          </Button>
+                        </div>
+                        <div className="flex-1 p-4">
+                          {loading ? (
+                            <div className="text-center py-8">
+                              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
+                              <p>Loading memberships...</p>
+                            </div>
+                          ) : memberships.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              <UserPlus className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                              <p>User has no channel memberships</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {memberships.map((membership, index) => {
+                                const channelId = membership.channel.id;
+                                return (
+                                  <div
+                                    key={`membership-${channelId}-${index}`}
+                                    className="flex items-center justify-between p-3 bg-white border rounded-lg hover:bg-gray-50"
+                                  >
+                                    <div>
+                                      <div className="font-medium text-pubnub-blue">{channelId}</div>
+                                      <div className="text-sm text-gray-600">{membership.channel.name || 'No name'}</div>
+                                      {membership.channel.description && (
+                                        <div className="text-xs text-gray-500 mt-1">{membership.channel.description}</div>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-gray-400">
+                                      {formatDate(membership.updated)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : loading ? (
                       <div className="p-8 text-center">
                         <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" />
                         {loadingProgress ? (
@@ -1187,7 +1174,7 @@ export default function AppContextPage() {
                                     size="sm"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      navigateToMemberships(userData.id);
+                                      showUserMemberships(userData.id);
                                     }}
                                     className="hover:bg-pubnub-blue hover:text-white"
                                     title={`View memberships for ${userData.name || userData.id}`}
@@ -1241,10 +1228,75 @@ export default function AppContextPage() {
                         </div>
                       </div>
                     )}
+
                   </TabsContent>
 
                   <TabsContent value="channels" className="flex-1 flex flex-col m-0">
-                    {loading ? (
+                    {showChannelMembers ? (
+                      // Channel Members View
+                      <div className="flex-1 flex flex-col">
+                        <div className="p-4 bg-gray-50 flex items-center justify-between border-b">
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={hideContextualViews}
+                              className="hover:bg-gray-200"
+                            >
+                              ← Back to Channels
+                            </Button>
+                            <div className="h-4 w-px bg-gray-300" />
+                            <h3 className="text-lg font-medium">
+                              Members of Channel: <span className="text-pubnub-blue font-mono">{currentChannelMembersChannelId}</span>
+                            </h3>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={hideContextualViews}
+                            className="hover:bg-gray-200"
+                          >
+                            ✕ Close
+                          </Button>
+                        </div>
+                        <div className="flex-1 p-4">
+                          {loading ? (
+                            <div className="text-center py-8">
+                              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
+                              <p>Loading channel members...</p>
+                            </div>
+                          ) : channelMembers.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              <Settings className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                              <p>Channel has no members</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {channelMembers.map((member, index) => {
+                                const userId = member.uuid.id;
+                                return (
+                                  <div
+                                    key={`member-${userId}-${index}`}
+                                    className="flex items-center justify-between p-3 bg-white border rounded-lg hover:bg-gray-50"
+                                  >
+                                    <div>
+                                      <div className="font-medium text-pubnub-blue">{userId}</div>
+                                      <div className="text-sm text-gray-600">{member.uuid.name || 'No name'}</div>
+                                      {member.uuid.email && (
+                                        <div className="text-xs text-gray-500 mt-1">{member.uuid.email}</div>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-gray-400">
+                                      {formatDate(member.updated)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : loading ? (
                       <div className="p-8 text-center">
                         <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" />
                         {loadingProgress ? (
@@ -1372,7 +1424,7 @@ export default function AppContextPage() {
                                     size="sm"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      navigateToChannelMembers(channelData.id);
+                                      showChannelMembersList(channelData.id);
                                     }}
                                     className="hover:bg-pubnub-blue hover:text-white"
                                     title={`View members for ${channelData.name || channelData.id}`}
@@ -1426,335 +1478,9 @@ export default function AppContextPage() {
                         </div>
                       </div>
                     )}
+
                   </TabsContent>
 
-                  <TabsContent value="memberships" className="flex-1 flex flex-col m-0">
-                    {!selectedUserId ? (
-                      <div className="flex-1 flex items-center justify-center">
-                        <div className="p-8 text-center">
-                          <UserPlus className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">Select a User</h3>
-                          <p className="text-gray-500">Enter a User ID above to view their channel memberships</p>
-                        </div>
-                      </div>
-                    ) : loading ? (
-                      <div className="p-8 text-center">
-                        <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" />
-                        <p>Loading memberships...</p>
-                      </div>
-                    ) : filteredAndSortedData.length === 0 ? (
-                      <div className="flex-1 flex items-center justify-center">
-                        <div className="p-8 text-center">
-                          <UserPlus className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">No memberships found</h3>
-                          <p className="text-gray-500">
-                            {searchTerm ? 'No memberships match your search criteria' : `User ${selectedUserId} has no channel memberships`}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex flex-col">
-                        {/* Column Headers */}
-                        <div className="grid grid-cols-[auto,200px,200px,300px,150px,auto] gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-600">
-                          <div className="flex items-center">
-                            <Checkbox
-                              checked={paginatedData.length > 0 && paginatedData.every(item => {
-                                const membership = item as MembershipData;
-                                return membership?.channel?.id && selectedItems.has(membership.channel.id);
-                              })}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  selectAllVisible();
-                                } else {
-                                  clearSelection();
-                                }
-                              }}
-                              className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
-                            />
-                          </div>
-                          <button
-                            className="flex items-center gap-1 hover:text-gray-900 transition-colors text-left"
-                            onClick={() => handleSort('id')}
-                          >
-                            Channel ID
-                            {sortBy === 'id' && (
-                              sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                            )}
-                            {sortBy !== 'id' && <ChevronsUpDown className="w-4 h-4 opacity-50" />}
-                          </button>
-                          <button
-                            className="flex items-center gap-1 hover:text-gray-900 transition-colors text-left"
-                            onClick={() => handleSort('name')}
-                          >
-                            Channel Name
-                            {sortBy === 'name' && (
-                              sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                            )}
-                            {sortBy !== 'name' && <ChevronsUpDown className="w-4 h-4 opacity-50" />}
-                          </button>
-                          <div>Description</div>
-                          <button
-                            className="flex items-center gap-1 hover:text-gray-900 transition-colors text-left"
-                            onClick={() => handleSort('updated')}
-                          >
-                            Updated
-                            {sortBy === 'updated' && (
-                              sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                            )}
-                            {sortBy !== 'updated' && <ChevronsUpDown className="w-4 h-4 opacity-50" />}
-                          </button>
-                          <div className="w-10"></div>
-                        </div>
-                        
-                        {/* Membership Rows */}
-                        <div className="flex-1 divide-y overflow-y-auto">
-                          {paginatedData
-                            .filter((membership) => {
-                              const membershipData = membership as MembershipData;
-                              return membershipData?.channel?.id && typeof membershipData.channel.id === 'string';
-                            })
-                            .map((membership, index) => {
-                            const membershipData = membership as MembershipData;
-                            const channelId = membershipData.channel.id; // Safe to access since we filtered
-                            
-                            return (
-                              <div 
-                                key={`membership-${channelId || 'unknown'}-${index}`} 
-                                className={`grid grid-cols-[auto,200px,200px,300px,150px,auto] gap-4 p-4 items-center transition-colors cursor-pointer ${
-                                  selectedItems.has(channelId) 
-                                    ? 'bg-blue-50 hover:bg-blue-100' 
-                                    : 'bg-white hover:bg-gray-50'
-                                }`}
-                                onClick={() => toggleItemSelection(channelId)}
-                              >
-                                <div 
-                                  className="flex items-center"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleItemSelection(channelId);
-                                  }}
-                                >
-                                  <Checkbox
-                                    checked={selectedItems.has(channelId)}
-                                    className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
-                                  />
-                                </div>
-                                <div className="truncate font-medium text-pubnub-blue">
-                                  {channelId}
-                                </div>
-                                <div className="truncate">
-                                  {membershipData.channel?.name || '-'}
-                                </div>
-                                <div className="truncate">
-                                  {membershipData.channel?.description || '-'}
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                  {formatDate(membershipData.updated)}
-                                </div>
-                                <div>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <MoreVertical className="w-4 h-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent>
-                                      <DropdownMenuItem onClick={async () => {
-                                        try {
-                                          await navigator.clipboard.writeText(channelId);
-                                          toast({
-                                            title: "Channel ID copied",
-                                            description: "Channel ID copied to clipboard",
-                                          });
-                                        } catch (error) {
-                                          toast({
-                                            title: "Copy failed",
-                                            description: "Failed to copy channel ID",
-                                            variant: "destructive",
-                                          });
-                                        }
-                                      }}>
-                                        <Copy className="w-4 h-4 mr-2" />
-                                        Copy Channel ID
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="channel-members" className="flex-1 flex flex-col m-0">
-                    {!selectedChannelId ? (
-                      <div className="flex-1 flex items-center justify-center">
-                        <div className="p-8 text-center">
-                          <Settings className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">Select a Channel</h3>
-                          <p className="text-gray-500">Enter a Channel ID above to view its members</p>
-                        </div>
-                      </div>
-                    ) : loading ? (
-                      <div className="p-8 text-center">
-                        <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" />
-                        <p>Loading channel members...</p>
-                      </div>
-                    ) : filteredAndSortedData.length === 0 ? (
-                      <div className="flex-1 flex items-center justify-center">
-                        <div className="p-8 text-center">
-                          <Settings className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">No members found</h3>
-                          <p className="text-gray-500">
-                            {searchTerm ? 'No members match your search criteria' : `Channel ${selectedChannelId} has no members`}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex flex-col">
-                        {/* Column Headers */}
-                        <div className="grid grid-cols-[auto,200px,200px,200px,150px,auto] gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-600">
-                          <div className="flex items-center">
-                            <Checkbox
-                              checked={paginatedData.length > 0 && paginatedData.every(item => {
-                                const member = item as ChannelMemberData;
-                                return member?.uuid?.id && selectedItems.has(member.uuid.id);
-                              })}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  selectAllVisible();
-                                } else {
-                                  clearSelection();
-                                }
-                              }}
-                              className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
-                            />
-                          </div>
-                          <button
-                            className="flex items-center gap-1 hover:text-gray-900 transition-colors text-left"
-                            onClick={() => handleSort('id')}
-                          >
-                            User ID
-                            {sortBy === 'id' && (
-                              sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                            )}
-                            {sortBy !== 'id' && <ChevronsUpDown className="w-4 h-4 opacity-50" />}
-                          </button>
-                          <button
-                            className="flex items-center gap-1 hover:text-gray-900 transition-colors text-left"
-                            onClick={() => handleSort('name')}
-                          >
-                            Name
-                            {sortBy === 'name' && (
-                              sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                            )}
-                            {sortBy !== 'name' && <ChevronsUpDown className="w-4 h-4 opacity-50" />}
-                          </button>
-                          <div>Email</div>
-                          <button
-                            className="flex items-center gap-1 hover:text-gray-900 transition-colors text-left"
-                            onClick={() => handleSort('updated')}
-                          >
-                            Updated
-                            {sortBy === 'updated' && (
-                              sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                            )}
-                            {sortBy !== 'updated' && <ChevronsUpDown className="w-4 h-4 opacity-50" />}
-                          </button>
-                          <div className="w-10"></div>
-                        </div>
-                        
-                        {/* Channel Member Rows */}
-                        <div className="flex-1 divide-y overflow-y-auto">
-                          {paginatedData
-                            .filter((member) => {
-                              const memberData = member as ChannelMemberData;
-                              return memberData?.uuid?.id && typeof memberData.uuid.id === 'string';
-                            })
-                            .map((member, index) => {
-                            const memberData = member as ChannelMemberData;
-                            const userId = memberData.uuid.id; // Safe to access since we filtered
-                            
-                            return (
-                              <div 
-                                key={`member-${userId || 'unknown'}-${index}`} 
-                                className={`grid grid-cols-[auto,200px,200px,200px,150px,auto] gap-4 p-4 items-center transition-colors cursor-pointer ${
-                                  selectedItems.has(userId) 
-                                    ? 'bg-blue-50 hover:bg-blue-100' 
-                                    : 'bg-white hover:bg-gray-50'
-                                }`}
-                                onClick={() => toggleItemSelection(userId)}
-                              >
-                                <div 
-                                  className="flex items-center"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleItemSelection(userId);
-                                  }}
-                                >
-                                  <Checkbox
-                                    checked={selectedItems.has(userId)}
-                                    className="data-[state=checked]:bg-pubnub-blue data-[state=checked]:border-pubnub-blue"
-                                  />
-                                </div>
-                                <div className="truncate font-medium text-pubnub-blue">
-                                  {userId}
-                                </div>
-                                <div className="truncate">
-                                  {memberData.uuid?.name || '-'}
-                                </div>
-                                <div className="truncate">
-                                  {memberData.uuid?.email || '-'}
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                  {formatDate(memberData.updated)}
-                                </div>
-                                <div>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <MoreVertical className="w-4 h-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent>
-                                      <DropdownMenuItem onClick={async () => {
-                                        try {
-                                          await navigator.clipboard.writeText(userId);
-                                          toast({
-                                            title: "User ID copied",
-                                            description: "User ID copied to clipboard",
-                                          });
-                                        } catch (error) {
-                                          toast({
-                                            title: "Copy failed",
-                                            description: "Failed to copy user ID",
-                                            variant: "destructive",
-                                          });
-                                        }
-                                      }}>
-                                        <Copy className="w-4 h-4 mr-2" />
-                                        Copy User ID
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </TabsContent>
                 </div>
 
                 {/* Pagination Controls */}
