@@ -32,13 +32,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
 import { storage } from '@/lib/storage';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
   DialogFooter,
-  DialogDescription,
 } from '@/components/ui/dialog';
 import {
   Tooltip,
@@ -74,6 +68,7 @@ import {
 import {
   GrantTokenDialog
 } from '@/components/access-manager';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 export default function AccessManagerPage() {
   const { toast } = useToast();
@@ -94,8 +89,8 @@ export default function AccessManagerPage() {
   const [isRevoking, setIsRevoking] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   
-  // Dialog states
-  const [grantDialogOpen, setGrantDialogOpen] = useState(false);
+  // Panel states
+  const [createTokenExpanded, setCreateTokenExpanded] = useState(false);
   
   // Grant token form state
   const [grantForm, setGrantForm] = useState(DEFAULT_GRANT_FORM);
@@ -529,29 +524,62 @@ export default function AccessManagerPage() {
         </div>
       )}
 
-      {/* Token Management Operations */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Create Token Panel */}
+      {/* Create Token Panel */}
+      <div className="mb-6">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5 text-green-600" />
-              Create Access Token
-            </CardTitle>
-            <p className="text-sm text-gray-600">
-              Generate new tokens with specific permissions for your PubNub resources.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center py-8">
-              <Button onClick={() => setGrantDialogOpen(true)} disabled={!isPamConfigurationValid}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Token
-              </Button>
-            </div>
-          </CardContent>
+          <Collapsible open={createTokenExpanded} onOpenChange={setCreateTokenExpanded}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Plus className="h-5 w-5 text-green-600" />
+                Create Access Token
+              </CardTitle>
+              <p className="text-sm text-gray-600">
+                Generate new tokens with specific permissions for your PubNub resources.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {!createTokenExpanded ? (
+                <div className="text-center py-8">
+                  <CollapsibleTrigger asChild>
+                    <Button disabled={!isPamConfigurationValid}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create Token
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
+              ) : (
+                <CollapsibleContent>
+                  <div className="space-y-4">
+                    <GrantTokenDialog
+                      grantForm={grantForm}
+                      setGrantForm={setGrantForm}
+                      onGrant={grantToken}
+                      isGranting={isGranting}
+                      curlCommand={grantTokenCurl}
+                      onCreateAnother={() => {
+                        setGrantTokenCurl('');
+                        setGrantForm(DEFAULT_GRANT_FORM);
+                        toast({
+                          title: 'Ready for new token',
+                          description: 'Form has been reset. Configure permissions for your next token.',
+                        });
+                      }}
+                      onCancel={() => {
+                        setCreateTokenExpanded(false);
+                        setGrantTokenCurl('');
+                        setGrantForm(DEFAULT_GRANT_FORM);
+                      }}
+                    />
+                  </div>
+                </CollapsibleContent>
+              )}
+            </CardContent>
+          </Collapsible>
         </Card>
+      </div>
 
+      {/* Token Operations */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Revoke Token Panel */}
         <Card>
           <CardHeader>
@@ -605,10 +633,9 @@ export default function AccessManagerPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      {/* Parse Token Panel */}
-      <Card className="mb-6">
+        {/* Parse Token Panel */}
+        <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
@@ -682,40 +709,9 @@ export default function AccessManagerPage() {
             )}
           </div>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
 
-      {/* Dialogs */}
-      {/* Grant Token Dialog */}
-      <Dialog open={grantDialogOpen} onOpenChange={setGrantDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Access Token</DialogTitle>
-            <DialogDescription>
-              Configure permissions and generate a new access token
-            </DialogDescription>
-          </DialogHeader>
-          <GrantTokenDialog
-            grantForm={grantForm}
-            setGrantForm={setGrantForm}
-            onGrant={grantToken}
-            isGranting={isGranting}
-            curlCommand={grantTokenCurl}
-            onCreateAnother={() => {
-              setGrantTokenCurl('');
-              setGrantForm(DEFAULT_GRANT_FORM);
-              toast({
-                title: 'Ready for new token',
-                description: 'Form has been reset. Configure permissions for your next token.',
-              });
-            }}
-            onCancel={() => {
-              setGrantDialogOpen(false);
-              setGrantTokenCurl('');
-              setGrantForm(DEFAULT_GRANT_FORM);
-            }}
-          />
-        </DialogContent>
-      </Dialog>
 
 
 

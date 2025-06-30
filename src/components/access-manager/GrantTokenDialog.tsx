@@ -10,7 +10,6 @@ import {
   Key,
   RefreshCw,
   AlertCircle,
-  Copy,
   RotateCcw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -56,16 +55,6 @@ export function GrantTokenDialog({
   const [activeTab, setActiveTab] = useState<'channels' | 'groups' | 'uuids' | 'patterns' | 'meta'>('channels');
   const { toast } = useToast();
 
-  // Copy curl command to clipboard
-  const copyCurlCommand = () => {
-    if (curlCommand) {
-      navigator.clipboard.writeText(curlCommand);
-      toast({
-        title: 'Copied to clipboard',
-        description: 'Curl command has been copied to your clipboard',
-      });
-    }
-  };
 
   // Channel functions
   const addChannel = () => {
@@ -726,39 +715,6 @@ export function GrantTokenDialog({
         </div>
       )}
 
-      {/* Curl Command Display */}
-      {curlCommand && (
-        <Card className="mt-4 border-orange-200 bg-orange-50">
-          <CardHeader>
-            <CardTitle className="text-orange-800 flex items-center gap-2">
-              <Key className="h-5 w-5" />
-              Token Creation Command
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-orange-700 mb-3">
-              Execute this curl command in your terminal to create the token:
-            </p>
-            <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-auto">
-              {curlCommand}
-            </div>
-            <div className="flex gap-2 mt-3">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={copyCurlCommand}
-                className="border-orange-300 text-orange-700 hover:bg-orange-100"
-              >
-                <Copy className="h-4 w-4 mr-2" />
-                Copy Command
-              </Button>
-            </div>
-            <p className="text-xs text-orange-600 mt-2">
-              After running the command, you can manually add the returned token to your token list.
-            </p>
-          </CardContent>
-        </Card>
-      )}
 
       <DialogFooter>
         {curlCommand ? (
