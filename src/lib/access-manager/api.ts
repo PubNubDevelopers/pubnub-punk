@@ -1,6 +1,7 @@
 // PubNub Access Manager API functions
 
 import type { GrantRequest } from '@/types/access-manager';
+import CryptoJS from 'crypto-js';
 
 // Generate HMAC-SHA256 signature for PubNub REST API
 export async function generateSignature(
@@ -27,23 +28,9 @@ export async function generateSignature(
     body || ''
   ].join('\n');
   
-  
-  // Use Web Crypto API for HMAC-SHA256
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secretKey),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    key,
-    new TextEncoder().encode(stringToSign)
-  );
-  
-  const base64Signature = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  // Use crypto-js for HMAC-SHA256 (works in all environments)
+  const signature = CryptoJS.HmacSHA256(stringToSign, secretKey);
+  const base64Signature = CryptoJS.enc.Base64.stringify(signature);
   
   // Convert to URL-safe Base64 and remove padding
   const urlSafeSignature = base64Signature
