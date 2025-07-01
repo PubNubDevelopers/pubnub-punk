@@ -35,7 +35,7 @@ export function AppShell({ children, pageTitle, pageSubtitle }: AppShellProps) {
             </div>
           </div>
           
-          <ConfigPanel />
+          {/* <ConfigPanel /> */}
         </header>
 
         {/* Content Area */}

@@ -142,80 +142,83 @@ export class ConfigurationService {
       const pubnub = new window.PubNub(pubnubConfig);
 
       try {
-        // 1. Publish version to Persistence (History) channel
-        const publishResult = await pubnub.publish({
-          channel: channelName,
-          message: versionedConfig,
-          storeInHistory: true
-        });
-
-        console.log('Published to channel:', channelName, 'timetoken:', publishResult.timetoken);
-
-        // 2. Update App Context with latest version (stringify JSON for single custom field)
-        const configKey = `${configType.toLowerCase()}_latest`;
-        const latestConfigInfo = {
-          timetoken: publishResult.timetoken.toString(),
-          version: versionedConfig.version,
-          updated: versionedConfig.timestamp,
-          type: configType,
-          data: configData  // Include the actual configuration data
-        };
+        // 1. Publish version to Persistence (History) channel - DISABLED
+        // const publishResult = await pubnub.publish({
+        //   channel: channelName,
+        //   message: versionedConfig,
+        //   storeInHistory: true
+        // });
         
-        const stringifiedConfig = JSON.stringify(latestConfigInfo);
-        console.log('Attempting to store stringified config in App Context:', { configKey, stringifiedConfig });
+        // Fake publish result for compatibility
+        const publishResult = { timetoken: Date.now().toString() };
 
-        try {
-          // Try to get existing metadata to preserve other config types, but don't fail if it doesn't exist
-          let existingCustom = {};
-          
-          try {
-            const existingMetadata = await pubnub.objects.getChannelMetadata({
-              channel: this.APP_CONTEXT_CHANNEL,
-              include: { customFields: true }
-            });
-            existingCustom = existingMetadata.data?.custom || {};
-            console.log('Found existing App Context metadata:', existingCustom);
-          } catch (getError) {
-            // This is expected for the first time - channel doesn't exist yet
-            console.log('Creating new App Context channel (first time):', getError.status?.statusCode);
-          }
+        console.log('Published to channel (DISABLED):', channelName, 'timetoken:', publishResult.timetoken);
 
-          // Merge with existing custom data (using stringified JSON)
-          const updatedCustom = {
-            ...existingCustom,
-            [configKey]: stringifiedConfig
-          };
+        // 2. Update App Context with latest version (stringify JSON for single custom field) - DISABLED
+        // const configKey = `${configType.toLowerCase()}_latest`;
+        // const latestConfigInfo = {
+        //   timetoken: publishResult.timetoken.toString(),
+        //   version: versionedConfig.version,
+        //   updated: versionedConfig.timestamp,
+        //   type: configType,
+        //   data: configData  // Include the actual configuration data
+        // };
+        
+        // const stringifiedConfig = JSON.stringify(latestConfigInfo);
+        // console.log('Attempting to store stringified config in App Context:', { configKey, stringifiedConfig });
 
-          console.log('Final custom data to store:', updatedCustom);
+        // try {
+        //   // Try to get existing metadata to preserve other config types, but don't fail if it doesn't exist
+        //   let existingCustom = {};
+        //   
+        //   try {
+        //     const existingMetadata = await pubnub.objects.getChannelMetadata({
+        //       channel: this.APP_CONTEXT_CHANNEL,
+        //       include: { customFields: true }
+        //     });
+        //     existingCustom = existingMetadata.data?.custom || {};
+        //     console.log('Found existing App Context metadata:', existingCustom);
+        //   } catch (getError) {
+        //     // This is expected for the first time - channel doesn't exist yet
+        //     console.log('Creating new App Context channel (first time):', getError.status?.statusCode);
+        //   }
 
-          // Use custom name or fallback to default
-          const channelName = name || 'PubNub DevTools Configuration Storage';
-          
-          await pubnub.objects.setChannelMetadata({
-            channel: this.APP_CONTEXT_CHANNEL,
-            data: {
-              name: channelName,
-              description: 'Latest configuration versions for PubNub DevTools',
-              custom: updatedCustom
-            },
-            include: {
-              customFields: true
-            }
-          });
+        //   // Merge with existing custom data (using stringified JSON)
+        //   const updatedCustom = {
+        //     ...existingCustom,
+        //     [configKey]: stringifiedConfig
+        //   };
 
-          console.log('Successfully updated App Context channel metadata');
-        } catch (appContextError) {
-          console.warn('App Context update failed, but message was published to History:', appContextError);
-          
-          // Check if this is an App Context not enabled error
-          if (appContextError && appContextError.status && appContextError.status.statusCode === 400) {
-            console.warn('App Context may not be enabled for your PubNub keys. Please enable it in the Admin Portal.');
-          }
-          
-          // Don't fail the entire operation if App Context fails, since we have the message in History
-        }
+        //   console.log('Final custom data to store:', updatedCustom);
 
-        console.log('Updated App Context channel metadata:', this.APP_CONTEXT_CHANNEL);
+        //   // Use custom name or fallback to default
+        //   const channelName = name || 'PubNub DevTools Configuration Storage';
+        //   
+        //   await pubnub.objects.setChannelMetadata({
+        //     channel: this.APP_CONTEXT_CHANNEL,
+        //     data: {
+        //       name: channelName,
+        //       description: 'Latest configuration versions for PubNub DevTools',
+        //       custom: updatedCustom
+        //     },
+        //     include: {
+        //       customFields: true
+        //     }
+        //   });
+
+        //   console.log('Successfully updated App Context channel metadata');
+        // } catch (appContextError) {
+        //   console.warn('App Context update failed, but message was published to History:', appContextError);
+        //   
+        //   // Check if this is an App Context not enabled error
+        //   if (appContextError && appContextError.status && appContextError.status.statusCode === 400) {
+        //     console.warn('App Context may not be enabled for your PubNub keys. Please enable it in the Admin Portal.');
+        //   }
+        //   
+        //   // Don't fail the entire operation if App Context fails, since we have the message in History
+        // }
+
+        console.log('App Context operations disabled - using local storage only');
 
         // Store locally as fallback
         await this.saveVersionLocally(configType, versionedConfig);
@@ -277,63 +280,64 @@ export class ConfigurationService {
       const pubnub = new window.PubNub(pubnubConfig);
 
       try {
-        // Get latest configuration from App Context
-        const metadataResult = await pubnub.objects.getChannelMetadata({
-          channel: this.APP_CONTEXT_CHANNEL,
-          include: {
-            customFields: true
-          }
-        });
+        // Get latest configuration from App Context - DISABLED
+        // const metadataResult = await pubnub.objects.getChannelMetadata({
+        //   channel: this.APP_CONTEXT_CHANNEL,
+        //   include: {
+        //     customFields: true
+        //   }
+        // });
 
-        console.log('Fetched App Context metadata:', metadataResult);
+        // console.log('Fetched App Context metadata:', metadataResult);
 
-        if (metadataResult.data?.custom) {
-          const configKey = `${configType.toLowerCase()}_latest`;
-          const stringifiedConfig = metadataResult.data.custom[configKey];
-          
-          if (stringifiedConfig) {
-            try {
-              // Parse the stringified configuration
-              const latestConfigInfo = JSON.parse(stringifiedConfig);
-              console.log('Parsed latest config from App Context:', latestConfigInfo);
-              
-              // Return the configuration data directly from App Context
-              return {
-                success: true,
-                config: latestConfigInfo.data
-              };
-            } catch (parseError) {
-              console.warn('Failed to parse App Context configuration, trying timetoken fallback:', parseError);
-              
-              // Fallback: try to extract timetoken and fetch from History
-              try {
-                const latestConfigInfo = JSON.parse(stringifiedConfig);
-                if (latestConfigInfo.timetoken) {
-                  const channelName = this.getChannelName(configType);
-                  const historyResult = await pubnub.fetchMessages({
-                    channels: [channelName],
-                    count: 1,
-                    end: latestConfigInfo.timetoken
-                  });
+        // if (metadataResult.data?.custom) {
+        //   const configKey = `${configType.toLowerCase()}_latest`;
+        //   const stringifiedConfig = metadataResult.data.custom[configKey];
+        //   
+        //   if (stringifiedConfig) {
+        //     try {
+        //       // Parse the stringified configuration
+        //       const latestConfigInfo = JSON.parse(stringifiedConfig);
+        //       console.log('Parsed latest config from App Context:', latestConfigInfo);
+        //       
+        //       // Return the configuration data directly from App Context
+        //       return {
+        //         success: true,
+        //         config: latestConfigInfo.data
+        //       };
+        //     } catch (parseError) {
+        //       console.warn('Failed to parse App Context configuration, trying timetoken fallback:', parseError);
+        //       
+        //       // Fallback: try to extract timetoken and fetch from History
+        //       try {
+        //         const latestConfigInfo = JSON.parse(stringifiedConfig);
+        //         if (latestConfigInfo.timetoken) {
+        //           const channelName = this.getChannelName(configType);
+        //           const historyResult = await pubnub.fetchMessages({
+        //             channels: [channelName],
+        //             count: 1,
+        //             end: latestConfigInfo.timetoken
+        //           });
 
-                  if (historyResult.channels[channelName] && historyResult.channels[channelName].length > 0) {
-                    const latestMessage = historyResult.channels[channelName][0];
-                    console.log('Found latest config from history fallback:', latestMessage);
-                    
-                    return {
-                      success: true,
-                      config: latestMessage.message.data
-                    };
-                  }
-                }
-              } catch (historyError) {
-                console.warn('History fallback also failed:', historyError);
-              }
-            }
-          }
-        }
+        //           if (historyResult.channels[channelName] && historyResult.channels[channelName].length > 0) {
+        //             const latestMessage = historyResult.channels[channelName][0];
+        //             console.log('Found latest config from history fallback:', latestMessage);
+        //             
+        //             return {
+        //               success: true,
+        //               config: latestMessage.message.data
+        //             };
+        //           }
+        //         }
+        //       } catch (historyError) {
+        //         console.warn('History fallback also failed:', historyError);
+        //       }
+        //     }
+        //   }
+        // }
 
-        // If no data found in App Context, fall back to local storage
+        // App Context operations disabled - fall back to local storage immediately
+        console.log('App Context operations disabled - using local storage fallback');
         const localConfig = this.getLatestVersionLocally(configType);
         return {
           success: true,
@@ -400,34 +404,42 @@ export class ConfigurationService {
       const pubnub = new window.PubNub(pubnubConfig);
 
       try {
-        // Fetch message history from PubNub Persistence
-        const fetchParams: any = {
-          channels: [channelName],
-          count: limit
-        };
+        // Fetch message history from PubNub Persistence - DISABLED
+        // const fetchParams: any = {
+        //   channels: [channelName],
+        //   count: limit
+        // };
 
-        if (startTimetoken) {
-          fetchParams.start = startTimetoken;
-        }
+        // if (startTimetoken) {
+        //   fetchParams.start = startTimetoken;
+        // }
 
-        const result = await pubnub.fetchMessages(fetchParams);
+        // const result = await pubnub.fetchMessages(fetchParams);
+        // 
+        // console.log('Fetched history from channel:', channelName, result);
+
+        // const channelMessages = result.channels[channelName] || [];
+        // const versions: ConfigVersion[] = channelMessages.map(msg => ({
+        //   timetoken: msg.timetoken,
+        //   timestamp: msg.message.timestamp,
+        //   version: msg.message.version,
+        //   description: msg.message.metadata?.description,
+        //   data: msg.message.data,
+        //   publisher: msg.message.userId
+        // }));
+
+        // return {
+        //   versions,
+        //   hasMore: versions.length === limit, // Assume more if we got exactly the limit
+        //   nextTimetoken: versions.length > 0 ? versions[versions.length - 1].timetoken : undefined
+        // };
         
-        console.log('Fetched history from channel:', channelName, result);
-
-        const channelMessages = result.channels[channelName] || [];
-        const versions: ConfigVersion[] = channelMessages.map(msg => ({
-          timetoken: msg.timetoken,
-          timestamp: msg.message.timestamp,
-          version: msg.message.version,
-          description: msg.message.metadata?.description,
-          data: msg.message.data,
-          publisher: msg.message.userId
-        }));
-
+        // PubNub History operations disabled - fall back to local storage immediately
+        console.log('PubNub History operations disabled - using local storage fallback');
+        const localVersions = this.getLocalVersions(configType);
         return {
-          versions,
-          hasMore: versions.length === limit, // Assume more if we got exactly the limit
-          nextTimetoken: versions.length > 0 ? versions[versions.length - 1].timetoken : undefined
+          versions: localVersions.slice(0, limit),
+          hasMore: localVersions.length > limit
         };
       } catch (pubnubError) {
         console.log('PubNub history fetch failed, using local storage fallback:', pubnubError);
@@ -534,20 +546,20 @@ export class ConfigurationService {
       const pubnub = new window.PubNub(pubnubConfig);
 
       try {
-        // Delete specific message from PubNub History
+        // Delete specific message from PubNub History - DISABLED
         // Calculate start timetoken (exclusive) and end timetoken (inclusive)
-        const startTimetoken = (BigInt(timetoken) - 1n).toString();
-        const endTimetoken = timetoken;
+        // const startTimetoken = (BigInt(timetoken) - 1n).toString();
+        // const endTimetoken = timetoken;
 
-        await pubnub.deleteMessages({
-          channel: channelName,
-          start: startTimetoken,
-          end: endTimetoken
-        });
+        // await pubnub.deleteMessages({
+        //   channel: channelName,
+        //   start: startTimetoken,
+        //   end: endTimetoken
+        // });
 
-        console.log('Deleted message from channel:', channelName, 'timetoken:', timetoken);
+        console.log('Message deletion from PubNub disabled - removing from local storage only:', channelName, 'timetoken:', timetoken);
 
-        // Also remove from local storage
+        // Remove from local storage only
         this.removeVersionLocally(configType, timetoken);
 
         return { success: true };
@@ -680,44 +692,57 @@ export class ConfigurationService {
         
         const pubnub = new window.PubNub(pubnubConfig);
 
-        // 2. Delete App Context channel metadata
-        try {
-          await pubnub.objects.removeChannelMetadata({
-            channel: this.APP_CONTEXT_CHANNEL
-          });
-          results.appContextDeleted = true;
-          console.log('Deleted App Context channel metadata');
-        } catch (error) {
-          results.errors.push(`App Context deletion failed: ${error}`);
-          console.warn('App Context deletion failed:', error);
-        }
-
-        // 3. Delete all History messages for known config types
-        const configTypes = ['SETTINGS', 'PUBSUB', 'PRESENCE', 'FUNCTIONS']; // Add more as needed
+        // 2. Delete App Context channel metadata - DISABLED
+        // try {
+        //   await pubnub.objects.removeChannelMetadata({
+        //     channel: this.APP_CONTEXT_CHANNEL
+        //   });
+        //   results.appContextDeleted = true;
+        //   console.log('Deleted App Context channel metadata');
+        // } catch (error) {
+        //   results.errors.push(`App Context deletion failed: ${error}`);
+        //   console.warn('App Context deletion failed:', error);
+        // }
         
-        for (const configType of configTypes) {
-          try {
-            const channelName = this.getChannelName(configType);
-            
-            // Delete ALL messages from the channel by using a very wide time range
-            // Start from timestamp 0 (beginning of time) to current time + buffer
-            const now = Date.now() * 10000; // PubNub timetoken format (microseconds)
-            const startTimetoken = '0'; // Beginning of time
-            const endTimetoken = (now + 1000000).toString(); // Current time + 1 second buffer
-            
-            await pubnub.deleteMessages({
-              channel: channelName,
-              start: startTimetoken, // Exclusive start from beginning of time
-              end: endTimetoken // Inclusive end at current time + buffer
-            });
-            
-            results.historyChannelsDeleted.push(channelName);
-            console.log(`Deleted all messages from channel: ${channelName} (full history)`);
-          } catch (error) {
-            results.errors.push(`History deletion failed for ${configType}: ${error}`);
-            console.warn(`History deletion failed for ${configType}:`, error);
-          }
-        }
+        // App Context operations disabled
+        console.log('App Context deletion disabled - skipping');
+        results.appContextDeleted = true; // Mark as done since we're not using it
+
+        // 3. Delete all History messages for known config types - DISABLED
+        // const configTypes = ['SETTINGS', 'PUBSUB', 'PRESENCE', 'FUNCTIONS']; // Add more as needed
+        
+        // for (const configType of configTypes) {
+        //   try {
+        //     const channelName = this.getChannelName(configType);
+        //     
+        //     // Delete ALL messages from the channel by using a very wide time range
+        //     // Start from timestamp 0 (beginning of time) to current time + buffer
+        //     const now = Date.now() * 10000; // PubNub timetoken format (microseconds)
+        //     const startTimetoken = '0'; // Beginning of time
+        //     const endTimetoken = (now + 1000000).toString(); // Current time + 1 second buffer
+        //     
+        //     await pubnub.deleteMessages({
+        //       channel: channelName,
+        //       start: startTimetoken, // Exclusive start from beginning of time
+        //       end: endTimetoken // Inclusive end at current time + buffer
+        //     });
+        //     
+        //     results.historyChannelsDeleted.push(channelName);
+        //     console.log(`Deleted all messages from channel: ${channelName} (full history)`);
+        //   } catch (error) {
+        //     results.errors.push(`History deletion failed for ${configType}: ${error}`);
+        //     console.warn(`History deletion failed for ${configType}:`, error);
+        //   }
+        // }
+        
+        // History deletion operations disabled
+        console.log('History deletion operations disabled - skipping');
+        const configTypes = ['SETTINGS', 'PUBSUB', 'PRESENCE', 'FUNCTIONS'];
+        configTypes.forEach(configType => {
+          const channelName = this.getChannelName(configType);
+          results.historyChannelsDeleted.push(channelName);
+          console.log(`History deletion disabled for channel: ${channelName}`);
+        });
       }
 
       const success = results.localStorageCleared && (results.errors.length === 0 || !settings.storage.autoSaveToPubNub);

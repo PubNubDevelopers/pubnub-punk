@@ -221,43 +221,43 @@ export default function SettingsPage() {
     },
   });
 
-  // Auto-load latest configuration when keys are populated
-  const loadLatestConfiguration = async () => {
-    try {
-      const result = await configService.loadLatestConfig('SETTINGS');
-      if (result.success && result.config) {
-        const latestConfig = result.config as AppSettings;
-        
-        // Update form with latest configuration
-        form.reset({
-          publishKey: latestConfig.credentials.publishKey,
-          subscribeKey: latestConfig.credentials.subscribeKey,
-          secretKey: latestConfig.credentials.secretKey || '',
-          userId: latestConfig.credentials.userId,
-          pamToken: latestConfig.credentials.pamToken || '',
-          origin: latestConfig.environment.origin,
-          ssl: latestConfig.environment.ssl,
-          logVerbosity: latestConfig.environment.logVerbosity,
-          heartbeatInterval: latestConfig.environment.heartbeatInterval,
-          storeMessageHistory: latestConfig.storage.storeMessageHistory,
-          autoSaveToPubNub: latestConfig.storage.autoSaveToPubNub,
-          saveVersionHistory: latestConfig.storage.saveVersionHistory ?? true,
-          maxVersionsToKeep: latestConfig.storage.maxVersionsToKeep || 50,
-        });
-        
-        // Update local state
-        setSettings(latestConfig);
-        storage.saveSettings(latestConfig);
-        
-        toast({
-          title: "Configuration Loaded",
-          description: "Latest configuration loaded from PubNub App Context.",
-        });
-      }
-    } catch (error) {
-      console.log('No latest configuration found or failed to load:', error);
-    }
-  };
+  // Auto-load latest configuration when keys are populated - DISABLED
+  // const loadLatestConfiguration = async () => {
+  //   try {
+  //     const result = await configService.loadLatestConfig('SETTINGS');
+  //     if (result.success && result.config) {
+  //       const latestConfig = result.config as AppSettings;
+  //       
+  //       // Update form with latest configuration
+  //       form.reset({
+  //         publishKey: latestConfig.credentials.publishKey,
+  //         subscribeKey: latestConfig.credentials.subscribeKey,
+  //         secretKey: latestConfig.credentials.secretKey || '',
+  //         userId: latestConfig.credentials.userId,
+  //         pamToken: latestConfig.credentials.pamToken || '',
+  //         origin: latestConfig.environment.origin,
+  //         ssl: latestConfig.environment.ssl,
+  //         logVerbosity: latestConfig.environment.logVerbosity,
+  //         heartbeatInterval: latestConfig.environment.heartbeatInterval,
+  //         storeMessageHistory: latestConfig.storage.storeMessageHistory,
+  //         autoSaveToPubNub: latestConfig.storage.autoSaveToPubNub,
+  //         saveVersionHistory: latestConfig.storage.saveVersionHistory ?? true,
+  //         maxVersionsToKeep: latestConfig.storage.maxVersionsToKeep || 50,
+  //       });
+  //       
+  //       // Update local state
+  //       setSettings(latestConfig);
+  //       storage.saveSettings(latestConfig);
+  //       
+  //       toast({
+  //         title: "Configuration Loaded",
+  //         description: "Latest configuration loaded from PubNub App Context.",
+  //       });
+  //     }
+  //   } catch (error) {
+  //     console.log('No latest configuration found or failed to load:', error);
+  //   }
+  // };
 
   // Auto-sync: Watch all form values and update pageSettings automatically
   const watchedValues = form.watch();
@@ -298,19 +298,20 @@ export default function SettingsPage() {
   const publishKey = form.watch('publishKey');
   const subscribeKey = form.watch('subscribeKey');
 
-  useEffect(() => {
-    const bothKeysPresent = publishKey && subscribeKey && publishKey.trim() && subscribeKey.trim();
-    
-    // Only attempt auto-load once when both keys are first populated
-    if (bothKeysPresent && !hasAttemptedAutoLoad) {
-      setHasAttemptedAutoLoad(true);
-      
-      // Small delay to ensure form is ready
-      setTimeout(() => {
-        loadLatestConfiguration();
-      }, 500);
-    }
-  }, [publishKey, subscribeKey, hasAttemptedAutoLoad]);
+  // Auto-load configuration disabled
+  // useEffect(() => {
+  //   const bothKeysPresent = publishKey && subscribeKey && publishKey.trim() && subscribeKey.trim();
+  //   
+  //   // Only attempt auto-load once when both keys are first populated
+  //   if (bothKeysPresent && !hasAttemptedAutoLoad) {
+  //     setHasAttemptedAutoLoad(true);
+  //     
+  //     // Small delay to ensure form is ready
+  //     setTimeout(() => {
+  //       loadLatestConfiguration();
+  //     }, 500);
+  //   }
+  // }, [publishKey, subscribeKey, hasAttemptedAutoLoad]);
 
   const publishConfigToPubNub = async (settings: AppSettings) => {
     try {
@@ -371,37 +372,42 @@ export default function SettingsPage() {
     storage.saveSettings(newSettings);
     setSettings(newSettings);
     
-    // If auto-save to PubNub is enabled, save using the config service for versioning
-    if (data.autoSaveToPubNub && data.saveVersionHistory) {
-      const description = `Settings updated by ${newSettings.credentials.userId}`;
-      const result = await configService.saveVersionedConfig('SETTINGS', newSettings, description);
-      
-      if (result.success) {
-        toast({
-          title: "Settings saved with versioning",
-          description: `Configuration saved locally and as version ${result.version?.version} in PubNub.`,
-        });
-      } else {
-        // Fall back to old method if versioning fails
-        await publishConfigToPubNub(newSettings);
-        toast({
-          title: "Settings saved",
-          description: "Configuration saved locally and to PubNub (versioning unavailable).",
-        });
-      }
-    } else if (data.autoSaveToPubNub) {
-      // Use old method if versioning is disabled
-      await publishConfigToPubNub(newSettings);
-      toast({
-        title: "Settings saved",
-        description: "Your PubNub configuration has been saved successfully.",
-      });
-    } else {
-      toast({
-        title: "Settings saved",
-        description: "Your configuration has been saved locally.",
-      });
-    }
+    // PubNub save functionality disabled - only save locally
+    // if (data.autoSaveToPubNub && data.saveVersionHistory) {
+    //   const description = `Settings updated by ${newSettings.credentials.userId}`;
+    //   const result = await configService.saveVersionedConfig('SETTINGS', newSettings, description);
+    //   
+    //   if (result.success) {
+    //     toast({
+    //       title: "Settings saved with versioning",
+    //       description: `Configuration saved locally and as version ${result.version?.version} in PubNub.`,
+    //     });
+    //   } else {
+    //     // Fall back to old method if versioning fails
+    //     await publishConfigToPubNub(newSettings);
+    //     toast({
+    //       title: "Settings saved",
+    //       description: "Configuration saved locally and to PubNub (versioning unavailable).",
+    //     });
+    //   }
+    // } else if (data.autoSaveToPubNub) {
+    //   // Use old method if versioning is disabled
+    //   await publishConfigToPubNub(newSettings);
+    //   toast({
+    //     title: "Settings saved",
+    //     description: "Your PubNub configuration has been saved successfully.",
+    //   });
+    // } else {
+    //   toast({
+    //     title: "Settings saved",
+    //     description: "Your configuration has been saved locally.",
+    //   });
+    // }
+    
+    toast({
+      title: "Settings saved",
+      description: "Your configuration has been saved locally.",
+    });
   };
 
   const handleConfigRestore = (restoredConfig: AppSettings) => {
@@ -760,12 +766,12 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            {/* Version History Panel */}
-            <VersionHistoryPanel
+            {/* Version History Panel - DISABLED */}
+            {/* <VersionHistoryPanel
               configType="SETTINGS"
               currentConfig={settings}
               onConfigRestore={handleConfigRestore}
-            />
+            /> */}
 
             {/* Save Configuration Button */}
             <div className="flex justify-center pt-8 border-t border-gray-200">
@@ -779,8 +785,8 @@ export default function SettingsPage() {
               </Button>
             </div>
 
-            {/* Danger Zone */}
-            <Card className="mt-8 border-red-200 bg-red-50">
+            {/* Danger Zone - DISABLED */}
+            {/* <Card className="mt-8 border-red-200 bg-red-50">
               <CardHeader>
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 bg-red-500 rounded-lg flex items-center justify-center">
@@ -815,17 +821,17 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
           </form>
         </Form>
 
-        {/* Delete All Configuration Dialog */}
-        <DeleteAllConfigDialog
+        {/* Delete All Configuration Dialog - DISABLED */}
+        {/* <DeleteAllConfigDialog
           isOpen={showDeleteAllDialog}
           onConfirm={handleDeleteAllConfig}
           onCancel={() => setShowDeleteAllDialog(false)}
           isDeleting={isDeleting}
-        />
+        /> */}
       </div>
     </div>
   );
