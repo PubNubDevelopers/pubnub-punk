@@ -56,7 +56,7 @@ const navigationConfig: (NavItem | NavCategory)[] = [
       { id: 'file-sharing', label: 'File Sharing', icon: Upload, path: '/file-sharing' },
       { id: 'presence', label: 'Presence', icon: Users, path: '/presence' },
       { id: 'functions', label: 'Functions', icon: Code, path: '/functions' },
-      { id: 'app-context', label: 'App Context', icon: Database, path: '/app-context' },
+      // { id: 'app-context', label: 'App Context', icon: Database, path: '/app-context' },
     ],
   },
   {
