@@ -8,6 +8,7 @@ export interface PubNubCredentials {
 
 export interface EnvironmentSettings {
   origin: string;
+  customOrigin?: string;
   ssl: boolean;
   logVerbosity: 'debug' | 'info' | 'error' | 'none';
   heartbeatInterval: number;

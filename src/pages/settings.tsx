@@ -25,6 +25,7 @@ const settingsSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
   pamToken: z.string().optional(),
   origin: z.string().min(1, 'Origin is required'),
+  customOrigin: z.string().optional(),
   ssl: z.boolean(),
   logVerbosity: z.enum(['debug', 'info', 'error', 'none']),
   heartbeatInterval: z.number().min(1).max(3600),
@@ -44,6 +45,7 @@ const FIELD_DEFINITIONS = {
   userId: { section: 'credentials', type: 'string', default: '' },
   pamToken: { section: 'credentials', type: 'string', default: '' },
   origin: { section: 'environment', type: 'string', default: 'ps.pndsn.com' },
+  customOrigin: { section: 'environment', type: 'string', default: '' },
   ssl: { section: 'environment', type: 'boolean', default: true },
   logVerbosity: { section: 'environment', type: 'string', default: 'info' },
   heartbeatInterval: { section: 'environment', type: 'number', default: 300 },
@@ -165,6 +167,7 @@ export default function SettingsPage() {
       userId: settings.credentials.userId,
       pamToken: settings.credentials.pamToken || '',
       origin: settings.environment.origin,
+      customOrigin: settings.environment.customOrigin || '',
       ssl: settings.environment.ssl,
       logVerbosity: settings.environment.logVerbosity,
       heartbeatInterval: settings.environment.heartbeatInterval,
@@ -211,6 +214,7 @@ export default function SettingsPage() {
       userId: settings.credentials.userId,
       pamToken: settings.credentials.pamToken || '',
       origin: settings.environment.origin,
+      customOrigin: settings.environment.customOrigin || '',
       ssl: settings.environment.ssl,
       logVerbosity: settings.environment.logVerbosity,
       heartbeatInterval: settings.environment.heartbeatInterval,
@@ -274,6 +278,7 @@ export default function SettingsPage() {
     watchedValues.userId,
     watchedValues.pamToken,
     watchedValues.origin,
+    watchedValues.customOrigin,
     watchedValues.ssl,
     watchedValues.logVerbosity,
     watchedValues.heartbeatInterval,
@@ -356,7 +361,8 @@ export default function SettingsPage() {
         pamToken: data.pamToken,
       },
       environment: {
-        origin: data.origin,
+        origin: data.origin === 'custom' ? data.customOrigin : data.origin,
+        customOrigin: data.customOrigin,
         ssl: data.ssl,
         logVerbosity: data.logVerbosity,
         heartbeatInterval: data.heartbeatInterval,
@@ -419,6 +425,7 @@ export default function SettingsPage() {
       userId: restoredConfig.credentials.userId,
       pamToken: restoredConfig.credentials.pamToken || '',
       origin: restoredConfig.environment.origin,
+      customOrigin: restoredConfig.environment.customOrigin || '',
       ssl: restoredConfig.environment.ssl,
       logVerbosity: restoredConfig.environment.logVerbosity,
       heartbeatInterval: restoredConfig.environment.heartbeatInterval,
@@ -599,7 +606,6 @@ export default function SettingsPage() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="ps.pndsn.com">ps.pndsn.com (Default)</SelectItem>
-                            <SelectItem value="localhost:8080">localhost:8080</SelectItem>
                             <SelectItem value="custom">Custom Origin</SelectItem>
                           </SelectContent>
                         </Select>
@@ -607,6 +613,21 @@ export default function SettingsPage() {
                       </FormItem>
                     )}
                   />
+                  {form.watch('origin') === 'custom' && (
+                    <FormField
+                      control={form.control}
+                      name="customOrigin"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Custom Origin</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter custom origin (e.g., custom.domain.com)" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                   <FormField
                     control={form.control}
                     name="ssl"
