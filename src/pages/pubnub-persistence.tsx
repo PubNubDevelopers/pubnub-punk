@@ -1,91 +1,29 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { 
-  Archive, 
-  Clock, 
-  Database, 
-  Search, 
-  Download, 
-  Trash2, 
-  RefreshCw, 
-  Calendar, 
-  MessageSquare, 
-  Filter,
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  AlertCircle,
-  MoreVertical,
-  Info,
-  Zap,
-  BarChart3,
-  PlayCircle,
-  Pause,
-  History,
-  Hash
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
+import { useState, useEffect } from 'react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
 import { storage } from '@/lib/storage';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-
-interface HistoryMessage {
-  message: any;
-  timetoken: string;
-  uuid?: string;
-  meta?: any;
-  messageType?: string;
-  channel?: string;
-}
-
-interface ChannelHistory {
-  channel: string;
-  messages: HistoryMessage[];
-  totalMessages: number;
-  startTimetoken?: string;
-  endTimetoken?: string;
-}
-
-// Field definitions for config management
-const FIELD_DEFINITIONS = {
-  'persistence.selectedChannels': { section: 'persistence', field: 'selectedChannels', type: 'string', default: 'hello_world' },
-  'persistence.count': { section: 'persistence', field: 'count', type: 'number', default: 25 },
-  'persistence.includeTimetoken': { section: 'persistence', field: 'includeTimetoken', type: 'boolean', default: true },
-  'persistence.includeMeta': { section: 'persistence', field: 'includeMeta', type: 'boolean', default: false },
-  'persistence.includeMessageActions': { section: 'persistence', field: 'includeMessageActions', type: 'boolean', default: false },
-  'persistence.includeUUID': { section: 'persistence', field: 'includeUUID', type: 'boolean', default: true },
-  'persistence.reverse': { section: 'persistence', field: 'reverse', type: 'boolean', default: false },
-  'persistence.startTimetoken': { section: 'persistence', field: 'startTimetoken', type: 'string', default: '' },
-  'persistence.endTimetoken': { section: 'persistence', field: 'endTimetoken', type: 'string', default: '' },
-  'persistence.searchTerm': { section: 'persistence', field: 'searchTerm', type: 'string', default: '' },
-  'persistence.showRawData': { section: 'persistence', field: 'showRawData', type: 'boolean', default: false },
-} as const;
+import { 
+  ControlsPanel, 
+  ResultsPanel, 
+  DeleteMessageDialog, 
+  MessageCountsDialog, 
+  FetchProgressDialog 
+} from '@/components/persistence';
+import { PersistenceAPI } from '@/lib/persistence/api';
+import { 
+  timetokenToDatetimeLocal, 
+  datetimeLocalToTimetoken, 
+  copyToClipboard 
+} from '@/lib/persistence/utils';
+import { 
+  ChannelHistory, 
+  PersistenceSettings, 
+  MessageDeleteRequest, 
+  FetchProgress,
+  FIELD_DEFINITIONS 
+} from '@/types/persistence';
 
 // Declare PubNub as a global variable from the CDN
 declare global {
@@ -102,10 +40,50 @@ export default function PubNubPersistencePage() {
   const [mounted, setMounted] = useState(false);
   const [pubnubReady, setPubnubReady] = useState(false);
   const [pubnub, setPubnub] = useState<any>(null);
+  const [persistenceAPI, setPersistenceAPI] = useState<PersistenceAPI | null>(null);
   
-  // Mount check
+  // Form state
+  const [settings, setSettings] = useState<PersistenceSettings>({
+    selectedChannels: FIELD_DEFINITIONS['persistence.selectedChannels'].default as string,
+    count: FIELD_DEFINITIONS['persistence.count'].default as number,
+    includeTimetoken: FIELD_DEFINITIONS['persistence.includeTimetoken'].default as boolean,
+    includeMeta: FIELD_DEFINITIONS['persistence.includeMeta'].default as boolean,
+    includeMessageActions: FIELD_DEFINITIONS['persistence.includeMessageActions'].default as boolean,
+    includeUUID: FIELD_DEFINITIONS['persistence.includeUUID'].default as boolean,
+    reverse: FIELD_DEFINITIONS['persistence.reverse'].default as boolean,
+    startTimetoken: FIELD_DEFINITIONS['persistence.startTimetoken'].default as string,
+    endTimetoken: FIELD_DEFINITIONS['persistence.endTimetoken'].default as string,
+    searchTerm: FIELD_DEFINITIONS['persistence.searchTerm'].default as string,
+    showRawData: FIELD_DEFINITIONS['persistence.showRawData'].default as boolean,
+  });
+  
+  const [startTimestamp, setStartTimestamp] = useState('');
+  const [endTimestamp, setEndTimestamp] = useState('');
+  const [selectedTimezone, setSelectedTimezone] = useState('');
+  
+  // UI state
+  const [channelHistories, setChannelHistories] = useState<ChannelHistory[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedMessageForDelete, setSelectedMessageForDelete] = useState<MessageDeleteRequest | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showMessageCountDialog, setShowMessageCountDialog] = useState(false);
+  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
+  const [countLoading, setCountLoading] = useState(false);
+  const [showFetchProgress, setShowFetchProgress] = useState(false);
+  const [fetchProgress, setFetchProgress] = useState<FetchProgress>({
+    current: 0,
+    total: 0,
+    currentChannel: '',
+    currentBatch: 0,
+    totalBatches: 0
+  });
+
+  // Mount check and timezone initialization
   useEffect(() => {
     setMounted(true);
+    // Get browser timezone
+    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    setSelectedTimezone(browserTimezone);
   }, []);
 
   // Set config type for the config service
@@ -114,21 +92,9 @@ export default function PubNubPersistencePage() {
     
     // Initialize page settings
     setPageSettings({
-      persistence: {
-        selectedChannels: FIELD_DEFINITIONS['persistence.selectedChannels'].default,
-        count: FIELD_DEFINITIONS['persistence.count'].default,
-        includeTimetoken: FIELD_DEFINITIONS['persistence.includeTimetoken'].default,
-        includeMeta: FIELD_DEFINITIONS['persistence.includeMeta'].default,
-        includeMessageActions: FIELD_DEFINITIONS['persistence.includeMessageActions'].default,
-        includeUUID: FIELD_DEFINITIONS['persistence.includeUUID'].default,
-        reverse: FIELD_DEFINITIONS['persistence.reverse'].default,
-        startTimetoken: FIELD_DEFINITIONS['persistence.startTimetoken'].default,
-        endTimetoken: FIELD_DEFINITIONS['persistence.endTimetoken'].default,
-        searchTerm: FIELD_DEFINITIONS['persistence.searchTerm'].default,
-        showRawData: FIELD_DEFINITIONS['persistence.showRawData'].default,
-      },
+      persistence: settings,
       configForSaving: {
-        channels: [FIELD_DEFINITIONS['persistence.selectedChannels'].default],
+        channels: settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c),
         timestamp: new Date().toISOString(),
       }
     });
@@ -162,6 +128,7 @@ export default function PubNubPersistencePage() {
             
             const instance = new window.PubNub(pubnubConfig);
             setPubnub(instance);
+            setPersistenceAPI(new PersistenceAPI(instance));
           }
         } catch (error) {
           console.error('Failed to create PubNub instance:', error);
@@ -179,49 +146,14 @@ export default function PubNubPersistencePage() {
     
     checkPubNub();
   }, [mounted]);
-  
-  // Form state
-  const [selectedChannels, setSelectedChannels] = useState('hello_world');
-  const [count, setCount] = useState(25);
-  const [includeTimetoken, setIncludeTimetoken] = useState(true);
-  const [includeMeta, setIncludeMeta] = useState(false);
-  const [includeMessageActions, setIncludeMessageActions] = useState(false);
-  const [includeUUID, setIncludeUUID] = useState(true);
-  const [reverse, setReverse] = useState(false);
-  const [startTimetoken, setStartTimetoken] = useState('');
-  const [endTimetoken, setEndTimetoken] = useState('');
-  
-  // UI state
-  const [channelHistories, setChannelHistories] = useState<ChannelHistory[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showRawData, setShowRawData] = useState(false);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
-  const [selectedMessageForDelete, setSelectedMessageForDelete] = useState<{channel: string, timetoken: string} | null>(null);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showMessageCountDialog, setShowMessageCountDialog] = useState(false);
-  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
-  const [countLoading, setCountLoading] = useState(false);
-  
+
   // Update page settings when form changes
   const updatePageSettings = () => {
     setPageSettings(prev => ({
       ...prev,
-      persistence: {
-        selectedChannels,
-        count,
-        includeTimetoken,
-        includeMeta,
-        includeMessageActions,
-        includeUUID,
-        reverse,
-        startTimetoken,
-        endTimetoken,
-        searchTerm,
-        showRawData,
-      },
+      persistence: settings,
       configForSaving: {
-        channels: selectedChannels.split(',').map(c => c.trim()).filter(c => c),
+        channels: settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c),
         timestamp: new Date().toISOString(),
       }
     }));
@@ -229,38 +161,71 @@ export default function PubNubPersistencePage() {
 
   useEffect(() => {
     updatePageSettings();
-  }, [selectedChannels, count, includeTimetoken, includeMeta, includeMessageActions, includeUUID, reverse, startTimetoken, endTimetoken, searchTerm, showRawData]);
+  }, [settings, startTimestamp, endTimestamp, selectedTimezone]);
 
-  // Format timetoken for display
-  const formatTimetoken = (timetoken: string) => {
-    try {
-      const timestamp = Math.floor(parseInt(timetoken) / 10000); // Convert to milliseconds
-      return new Date(timestamp).toLocaleString();
-    } catch {
-      return timetoken;
+  // Handle timestamp input changes
+  const handleStartTimestampChange = (timestamp: string) => {
+    console.log('handleStartTimestampChange called with:', timestamp);
+    setStartTimestamp(timestamp);
+    const timetoken = datetimeLocalToTimetoken(timestamp, selectedTimezone);
+    console.log('Generated start timetoken:', timetoken);
+    setSettings(prev => ({ ...prev, startTimetoken: timetoken }));
+  };
+
+  const handleEndTimestampChange = (timestamp: string) => {
+    console.log('handleEndTimestampChange called with:', timestamp);
+    setEndTimestamp(timestamp);
+    const timetoken = datetimeLocalToTimetoken(timestamp, selectedTimezone);
+    console.log('Generated end timetoken:', timetoken);
+    setSettings(prev => ({ ...prev, endTimetoken: timetoken }));
+  };
+
+  // Handle timetoken input changes
+  const handleStartTimetokenChange = (timetoken: string) => {
+    console.log('handleStartTimetokenChange called with:', timetoken);
+    setSettings(prev => ({ ...prev, startTimetoken: timetoken }));
+    const timestamp = timetokenToDatetimeLocal(timetoken, selectedTimezone);
+    console.log('Generated start timestamp:', timestamp);
+    setStartTimestamp(timestamp);
+  };
+
+  const handleEndTimetokenChange = (timetoken: string) => {
+    console.log('handleEndTimetokenChange called with:', timetoken);
+    setSettings(prev => ({ ...prev, endTimetoken: timetoken }));
+    const timestamp = timetokenToDatetimeLocal(timetoken, selectedTimezone);
+    console.log('Generated end timestamp:', timestamp);
+    setEndTimestamp(timestamp);
+  };
+
+  // Handle timezone changes - update timestamp displays
+  const handleTimezoneChange = (timezone: string) => {
+    setSelectedTimezone(timezone);
+    // Re-convert existing timetokens to new timezone
+    if (settings.startTimetoken) {
+      const newStartTimestamp = timetokenToDatetimeLocal(settings.startTimetoken, timezone);
+      setStartTimestamp(newStartTimestamp);
+    }
+    if (settings.endTimetoken) {
+      const newEndTimestamp = timetokenToDatetimeLocal(settings.endTimetoken, timezone);
+      setEndTimestamp(newEndTimestamp);
     }
   };
 
-  // Copy to clipboard function
-  const copyToClipboard = async (text: string, description: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast({
-        title: "Copied!",
-        description: `${description} copied to clipboard`,
-      });
-    } catch (error) {
-      toast({
-        title: "Copy Failed",
-        description: "Failed to copy to clipboard",
-        variant: "destructive",
-      });
+  // Update timestamps when timezone changes
+  useEffect(() => {
+    if (selectedTimezone && settings.startTimetoken) {
+      const newStartTimestamp = timetokenToDatetimeLocal(settings.startTimetoken, selectedTimezone);
+      setStartTimestamp(newStartTimestamp);
     }
-  };
+    if (selectedTimezone && settings.endTimetoken) {
+      const newEndTimestamp = timetokenToDatetimeLocal(settings.endTimetoken, selectedTimezone);
+      setEndTimestamp(newEndTimestamp);
+    }
+  }, [selectedTimezone]);
 
   // Fetch message history
   const fetchHistory = async () => {
-    if (!pubnub) {
+    if (!persistenceAPI) {
       toast({
         title: "Configuration Required",
         description: "Please configure your PubNub keys in Settings first.",
@@ -269,7 +234,7 @@ export default function PubNubPersistencePage() {
       return;
     }
 
-    const channels = selectedChannels.split(',').map(c => c.trim()).filter(c => c);
+    const channels = settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c);
     if (channels.length === 0) {
       toast({
         title: "Channels Required",
@@ -280,76 +245,45 @@ export default function PubNubPersistencePage() {
     }
 
     setLoading(true);
-    const newChannelHistories: ChannelHistory[] = [];
+    
+    // Show progress dialog for large fetches (more than 100 messages)
+    if (settings.count > 100) {
+      setShowFetchProgress(true);
+      setFetchProgress({
+        current: 0,
+        total: settings.count * channels.length,
+        currentChannel: '',
+        currentBatch: 0,
+        totalBatches: Math.ceil(settings.count / 100) * channels.length
+      });
+    }
 
     try {
-      for (const channel of channels) {
-        try {
-          const params: any = {
-            channels: [channel],
-            count: Math.min(count, 100), // API limit
-            includeTimetoken,
-            includeMeta,
-            includeUUID,
-            includeMessageActions: includeMessageActions && channels.length === 1, // Only single channel
-            reverse,
-          };
-
-          // Add time range if specified
-          if (startTimetoken) {
-            params.start = startTimetoken;
+      const results = await persistenceAPI.fetchHistory(
+        channels,
+        settings.count,
+        settings.startTimetoken || undefined,
+        settings.endTimetoken || undefined,
+        {
+          includeTimetoken: settings.includeTimetoken,
+          includeMeta: settings.includeMeta,
+          includeUUID: settings.includeUUID,
+          includeMessageActions: settings.includeMessageActions && channels.length === 1,
+          reverse: settings.reverse,
+        },
+        (progress) => {
+          if (settings.count > 100) {
+            setFetchProgress(progress);
           }
-          if (endTimetoken) {
-            params.end = endTimetoken;
-          }
-
-          console.log('Fetching history with params:', params);
-
-          const result = await pubnub.fetchMessages(params);
-          console.log('History result:', result);
-
-          const channelData = result.channels && result.channels[channel] ? result.channels[channel] : [];
-          
-          const historyMessages: HistoryMessage[] = channelData.map((item: any) => ({
-            message: item.message,
-            timetoken: item.timetoken,
-            uuid: item.uuid,
-            meta: item.meta,
-            messageType: item.messageType,
-            channel: channel,
-          }));
-
-          newChannelHistories.push({
-            channel,
-            messages: historyMessages,
-            totalMessages: historyMessages.length,
-            startTimetoken: historyMessages.length > 0 ? historyMessages[historyMessages.length - 1].timetoken : undefined,
-            endTimetoken: historyMessages.length > 0 ? historyMessages[0].timetoken : undefined,
-          });
-
-        } catch (error) {
-          console.error(`Error fetching history for channel ${channel}:`, error);
-          toast({
-            title: `Error for channel ${channel}`,
-            description: error instanceof Error ? error.message : "Failed to fetch history",
-            variant: "destructive",
-          });
-          
-          // Still add empty entry to show the channel was attempted
-          newChannelHistories.push({
-            channel,
-            messages: [],
-            totalMessages: 0,
-          });
         }
-      }
+      );
 
-      setChannelHistories(newChannelHistories);
+      setChannelHistories(results);
       
-      const totalMessages = newChannelHistories.reduce((sum, ch) => sum + ch.totalMessages, 0);
+      const totalMessages = results.reduce((sum, ch) => sum + ch.totalMessages, 0);
       toast({
         title: "History Fetched",
-        description: `Retrieved ${totalMessages} messages from ${channels.length} channel${channels.length !== 1 ? 's' : ''}`,
+        description: `Retrieved ${totalMessages} messages from ${channels.length} channel${channels.length !== 1 ? 's' : ''}${settings.count > 100 ? ` (using ${Math.ceil(settings.count / 100)} API calls per channel)` : ''}`,
       });
 
     } catch (error) {
@@ -361,12 +295,13 @@ export default function PubNubPersistencePage() {
       });
     } finally {
       setLoading(false);
+      setShowFetchProgress(false);
     }
   };
 
   // Get message counts
   const getMessageCounts = async () => {
-    if (!pubnub) {
+    if (!persistenceAPI) {
       toast({
         title: "Configuration Required",
         description: "Please configure your PubNub keys in Settings first.",
@@ -375,7 +310,7 @@ export default function PubNubPersistencePage() {
       return;
     }
 
-    const channels = selectedChannels.split(',').map(c => c.trim()).filter(c => c);
+    const channels = settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c);
     if (channels.length === 0) {
       toast({
         title: "Channels Required",
@@ -387,17 +322,9 @@ export default function PubNubPersistencePage() {
 
     setCountLoading(true);
     try {
-      // Use a recent timetoken as baseline (last 30 days)
-      const thirtyDaysAgo = (Date.now() - 30 * 24 * 60 * 60 * 1000) * 10000; // Convert to PubNub timetoken
-      
-      const result = await pubnub.messageCounts({
-        channels: channels,
-        channelTimetokens: [thirtyDaysAgo.toString()]
-      });
-
-      setMessageCounts(result.channels || {});
+      const counts = await persistenceAPI.getMessageCounts(channels);
+      setMessageCounts(counts);
       setShowMessageCountDialog(true);
-
     } catch (error) {
       console.error('Error getting message counts:', error);
       toast({
@@ -411,25 +338,18 @@ export default function PubNubPersistencePage() {
   };
 
   // Delete messages from history
-  const deleteMessages = async () => {
-    if (!pubnub || !selectedMessageForDelete) return;
+  const deleteMessage = async () => {
+    if (!persistenceAPI || !selectedMessageForDelete) return;
 
     try {
-      const { channel, timetoken } = selectedMessageForDelete;
-      
-      // For deleting a specific message, we use the timetoken as both start and end
-      // with start being timetoken-1 (exclusive) and end being timetoken (inclusive)
-      const startTT = (BigInt(timetoken) - BigInt(1)).toString();
-      
-      await pubnub.deleteMessages({
-        channel: channel,
-        start: startTT,
-        end: timetoken
-      });
+      await persistenceAPI.deleteMessage(
+        selectedMessageForDelete.channel,
+        selectedMessageForDelete.timetoken
+      );
 
       toast({
         title: "Message Deleted",
-        description: `Successfully deleted message from ${channel}`,
+        description: `Successfully deleted message from ${selectedMessageForDelete.channel}`,
       });
 
       // Refresh history
@@ -451,11 +371,11 @@ export default function PubNubPersistencePage() {
               <div className="space-y-2">
                 <p>Message deletion requires the <strong>Delete-From-History</strong> feature to be enabled in your PubNub account.</p>
                 <p>Please enable <strong>Delete-From-History</strong> in your <strong>PubNub Dashboard</strong> under your keyset settings.</p>
-                <p className="text-xs">Note: This also requires Storage & Playback to be enabled.</p>
+                <p className="text-xs">Note: This also requires Storage & Playbook to be enabled.</p>
               </div>
             ),
             variant: "destructive",
-            duration: 8000, // Show longer since this is important information
+            duration: 8000,
           });
         } 
         // Check if this is an Access Manager permission error
@@ -514,25 +434,16 @@ export default function PubNubPersistencePage() {
     }
   };
 
-  // Filter messages based on search term
-  const filteredHistories = useMemo(() => {
-    if (!searchTerm) return channelHistories;
-    
-    return channelHistories.map(history => ({
-      ...history,
-      messages: history.messages.filter(msg => {
-        const messageStr = JSON.stringify(msg.message).toLowerCase();
-        const uuidStr = (msg.uuid || '').toLowerCase();
-        const metaStr = msg.meta ? JSON.stringify(msg.meta).toLowerCase() : '';
-        const search = searchTerm.toLowerCase();
-        
-        return messageStr.includes(search) || 
-               uuidStr.includes(search) || 
-               metaStr.includes(search) ||
-               msg.timetoken.includes(search);
-      })
-    }));
-  }, [channelHistories, searchTerm]);
+  // Handle delete message request
+  const handleDeleteMessage = (request: MessageDeleteRequest) => {
+    setSelectedMessageForDelete(request);
+    setShowDeleteDialog(true);
+  };
+
+  // Handle copy to clipboard
+  const handleCopyToClipboard = async (text: string, description: string) => {
+    await copyToClipboard(text, description, toast);
+  };
 
   // Show loading while mounting or PubNub is initializing
   if (!mounted || !pubnubReady) {
@@ -585,464 +496,55 @@ export default function PubNubPersistencePage() {
         </div>
 
         {/* Controls Panel */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="w-5 h-5" />
-              Message History Controls
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Basic Controls */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="channels">Channels *</Label>
-                <Input
-                  id="channels"
-                  placeholder="channel1, channel2"
-                  value={selectedChannels}
-                  onChange={(e) => setSelectedChannels(e.target.value)}
-                />
-                <p className="text-xs text-gray-500">Comma-separated channel names</p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="count">Message Count</Label>
-                <Select value={count.toString()} onValueChange={(value) => setCount(parseInt(value))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10 messages</SelectItem>
-                    <SelectItem value="25">25 messages</SelectItem>
-                    <SelectItem value="50">50 messages</SelectItem>
-                    <SelectItem value="100">100 messages</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Message Order</Label>
-                <div className="flex items-center space-x-2 pt-1">
-                  <Switch
-                    checked={reverse}
-                    onCheckedChange={setReverse}
-                  />
-                  <span className="text-sm">{reverse ? 'Oldest First' : 'Newest First'}</span>
-                </div>
-              </div>
-
-              <div className="flex items-end space-x-2">
-                <Button
-                  onClick={fetchHistory}
-                  disabled={loading}
-                  className="bg-pubnub-blue hover:bg-pubnub-blue/90 flex-1"
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Fetching...
-                    </>
-                  ) : (
-                    <>
-                      <Archive className="w-4 h-4 mr-2" />
-                      Fetch History
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {/* Advanced Options */}
-            <div>
-              <Button 
-                variant="outline" 
-                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                className="w-full justify-between"
-              >
-                Advanced Options
-                {showAdvancedOptions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
-              
-              {showAdvancedOptions && (
-                <div className="mt-4 space-y-4 p-4 bg-gray-50 rounded-lg">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="start-timetoken">Start Timetoken (Exclusive)</Label>
-                      <Input
-                        id="start-timetoken"
-                        placeholder="15123456789012345"
-                        value={startTimetoken}
-                        onChange={(e) => setStartTimetoken(e.target.value)}
-                      />
-                      <p className="text-xs text-gray-500">Messages after this timetoken</p>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="end-timetoken">End Timetoken (Inclusive)</Label>
-                      <Input
-                        id="end-timetoken"
-                        placeholder="15123456789012345"
-                        value={endTimetoken}
-                        onChange={(e) => setEndTimetoken(e.target.value)}
-                      />
-                      <p className="text-xs text-gray-500">Messages up to this timetoken</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        checked={includeTimetoken}
-                        onCheckedChange={setIncludeTimetoken}
-                      />
-                      <Label className="text-sm">Include Timetoken</Label>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        checked={includeUUID}
-                        onCheckedChange={setIncludeUUID}
-                      />
-                      <Label className="text-sm">Include UUID</Label>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        checked={includeMeta}
-                        onCheckedChange={setIncludeMeta}
-                      />
-                      <Label className="text-sm">Include Metadata</Label>
-                    </div>
-                    
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="flex items-center space-x-2">
-                            <Switch
-                              checked={includeMessageActions}
-                              onCheckedChange={setIncludeMessageActions}
-                              disabled={selectedChannels.split(',').length > 1}
-                            />
-                            <Label className="text-sm">Message Actions</Label>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Only available for single channel queries</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <Button
-                      variant="outline"
-                      onClick={getMessageCounts}
-                      disabled={countLoading}
-                    >
-                      {countLoading ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                          Counting...
-                        </>
-                      ) : (
-                        <>
-                          <BarChart3 className="w-4 h-4 mr-2" />
-                          Get Message Counts
-                        </>
-                      )}
-                    </Button>
-
-                    <div className="text-sm text-gray-500">
-                      Use timetokens to fetch specific time ranges
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <ControlsPanel
+          settings={settings}
+          onSettingsChange={(updates) => setSettings(prev => ({ ...prev, ...updates }))}
+          selectedTimezone={selectedTimezone}
+          onTimezoneChange={handleTimezoneChange}
+          startTimestamp={startTimestamp}
+          endTimestamp={endTimestamp}
+          onStartTimestampChange={handleStartTimestampChange}
+          onEndTimestampChange={handleEndTimestampChange}
+          onStartTimetokenChange={handleStartTimetokenChange}
+          onEndTimetokenChange={handleEndTimetokenChange}
+          loading={loading}
+          countLoading={countLoading}
+          onFetchHistory={fetchHistory}
+          onGetMessageCounts={getMessageCounts}
+        />
 
         {/* Results Panel */}
-        <Card className="flex-1 flex flex-col">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                Message History Results
-                {filteredHistories.length > 0 && (
-                  <span className="text-sm font-normal text-gray-500">
-                    ({filteredHistories.reduce((sum, h) => sum + h.messages.length, 0)} messages)
-                  </span>
-                )}
-              </CardTitle>
-              
-              <div className="flex items-center gap-2">
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={showRawData}
-                    onCheckedChange={setShowRawData}
-                  />
-                  <Label className="text-sm">Raw Data View</Label>
-                </div>
-                
-                {filteredHistories.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const allMessages = filteredHistories.flatMap(h => h.messages);
-                      copyToClipboard(JSON.stringify(allMessages, null, 2), 'All messages');
-                    }}
-                  >
-                    <Copy className="w-4 h-4 mr-2" />
-                    Copy All
-                  </Button>
-                )}
-              </div>
-            </div>
-            
-            {filteredHistories.length > 0 && (
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <Input
-                    placeholder="Search messages..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                {searchTerm && (
-                  <span className="text-sm text-gray-500">
-                    {filteredHistories.reduce((sum, h) => sum + h.messages.length, 0)} of {channelHistories.reduce((sum, h) => sum + h.messages.length, 0)} messages shown
-                  </span>
-                )}
-              </div>
-            )}
-          </CardHeader>
-          
-          <CardContent className="flex-1 overflow-y-auto">
-            {filteredHistories.length === 0 ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="text-center">
-                  <Archive className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Message History</h3>
-                  <p className="text-gray-500">
-                    Enter channel names and click "Fetch History" to retrieve stored messages
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Information banner about message deletion requirements */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                    <div className="space-y-2">
-                      <h4 className="font-medium text-blue-900">Message Deletion Requirements</h4>
-                      <p className="text-sm text-blue-700">
-                        To delete messages from history, your PubNub account must have the <strong>Delete-From-History</strong> feature enabled. 
-                        This can be configured in your PubNub Dashboard under your keyset settings.
-                      </p>
-                      <p className="text-xs text-blue-600">
-                        Without this feature enabled, you'll receive a 403 error when attempting to delete messages.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                {filteredHistories.map((history) => (
-                  <div key={history.channel} className="space-y-3">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Hash className="w-4 h-4" />
-                        {history.channel}
-                        <span className="text-sm font-normal text-gray-500">
-                          ({history.messages.length} messages)
-                        </span>
-                      </h3>
-                      
-                      {history.messages.length > 0 && (
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <Clock className="w-4 h-4" />
-                          {formatTimetoken(history.messages[0].timetoken)} - {formatTimetoken(history.messages[history.messages.length - 1].timetoken)}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {history.messages.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500">
-                        No messages found for this channel
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {history.messages.map((msg, index) => (
-                          <div key={`${msg.timetoken}-${index}`} className="bg-gray-50 rounded-lg p-4 border">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-2 text-sm text-gray-600">
-                                  <Clock className="w-3 h-3" />
-                                  <span className="font-mono">{formatTimetoken(msg.timetoken)}</span>
-                                  {msg.uuid && (
-                                    <>
-                                      <span>•</span>
-                                      <span>UUID: {msg.uuid}</span>
-                                    </>
-                                  )}
-                                  {msg.messageType && (
-                                    <>
-                                      <span>•</span>
-                                      <span>Type: {msg.messageType}</span>
-                                    </>
-                                  )}
-                                </div>
-                                
-                                {showRawData ? (
-                                  <pre className="font-mono text-sm bg-white p-3 rounded border overflow-x-auto whitespace-pre-wrap">
-                                    {JSON.stringify({
-                                      message: msg.message,
-                                      timetoken: msg.timetoken,
-                                      uuid: msg.uuid,
-                                      meta: msg.meta,
-                                      messageType: msg.messageType,
-                                    }, null, 2)}
-                                  </pre>
-                                ) : (
-                                  <div className="space-y-2">
-                                    <div className="bg-white p-3 rounded border">
-                                      <div className="text-sm font-medium text-gray-700 mb-1">Message:</div>
-                                      <pre className="font-mono text-sm overflow-x-auto whitespace-pre-wrap">
-                                        {JSON.stringify(msg.message, null, 2)}
-                                      </pre>
-                                    </div>
-                                    
-                                    {msg.meta && (
-                                      <div className="bg-blue-50 p-3 rounded border border-blue-200">
-                                        <div className="text-sm font-medium text-blue-700 mb-1">Metadata:</div>
-                                        <pre className="font-mono text-sm text-blue-600 overflow-x-auto whitespace-pre-wrap">
-                                          {JSON.stringify(msg.meta, null, 2)}
-                                        </pre>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                              
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm">
-                                    <MoreVertical className="w-4 h-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={() => copyToClipboard(JSON.stringify(msg, null, 2), 'Message')}
-                                  >
-                                    <Copy className="w-4 h-4 mr-2" />
-                                    Copy Message
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => copyToClipboard(msg.timetoken, 'Timetoken')}
-                                  >
-                                    <Clock className="w-4 h-4 mr-2" />
-                                    Copy Timetoken
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      setSelectedMessageForDelete({
-                                        channel: history.channel,
-                                        timetoken: msg.timetoken
-                                      });
-                                      setShowDeleteDialog(true);
-                                    }}
-                                    className="text-red-600"
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete Message
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <ResultsPanel
+          channelHistories={channelHistories}
+          searchTerm={settings.searchTerm}
+          onSearchTermChange={(searchTerm) => setSettings(prev => ({ ...prev, searchTerm }))}
+          showRawData={settings.showRawData}
+          onShowRawDataChange={(showRawData) => setSettings(prev => ({ ...prev, showRawData }))}
+          onCopyToClipboard={handleCopyToClipboard}
+          onDeleteMessage={handleDeleteMessage}
+        />
       </div>
       
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Message from History</DialogTitle>
-            <DialogDescription>
-              This will permanently delete the selected message from PubNub Message Persistence. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <div><strong>Channel:</strong> {selectedMessageForDelete?.channel}</div>
-              <div><strong>Timetoken:</strong> {selectedMessageForDelete?.timetoken}</div>
-              <div><strong>Timestamp:</strong> {selectedMessageForDelete?.timetoken && formatTimetoken(selectedMessageForDelete.timetoken)}</div>
-            </div>
-            
-            <div className="bg-orange-50 border border-orange-200 rounded p-3">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
-                <div className="text-sm">
-                  <p className="font-medium text-orange-800">Requirements:</p>
-                  <p className="text-orange-700">This operation requires <strong>Delete-From-History</strong> to be enabled in your PubNub Dashboard.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={deleteMessages} className="bg-red-600 hover:bg-red-700">
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete Message
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Dialogs */}
+      <DeleteMessageDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        selectedMessage={selectedMessageForDelete}
+        onConfirmDelete={deleteMessage}
+      />
 
-      {/* Message Counts Dialog */}
-      <Dialog open={showMessageCountDialog} onOpenChange={setShowMessageCountDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Message Counts (Last 30 Days)</DialogTitle>
-            <DialogDescription>
-              Number of messages stored in each channel since 30 days ago
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            {Object.entries(messageCounts).map(([channel, count]) => (
-              <div key={channel} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                <span className="font-mono">#{channel}</span>
-                <span className="font-semibold">{count.toLocaleString()} messages</span>
-              </div>
-            ))}
-            {Object.keys(messageCounts).length === 0 && (
-              <div className="text-center text-gray-500 py-4">
-                No message count data available
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setShowMessageCountDialog(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MessageCountsDialog
+        open={showMessageCountDialog}
+        onOpenChange={setShowMessageCountDialog}
+        messageCounts={messageCounts}
+      />
+
+      <FetchProgressDialog
+        open={showFetchProgress}
+        progress={fetchProgress}
+        selectedChannels={settings.selectedChannels}
+        count={settings.count}
+      />
     </div>
   );
 }
