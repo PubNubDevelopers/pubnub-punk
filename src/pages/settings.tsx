@@ -106,6 +106,34 @@ const formDataToPageSettings = (formData: any) => {
   return pageSettings;
 };
 
+// Helper function to determine origin form values
+const getOriginFormValues = (settings: any) => {
+  const savedOrigin = settings.environment.origin;
+  const savedCustomOrigin = settings.environment.customOrigin || '';
+  
+  // If the saved origin is neither the default nor 'custom', treat it as a custom origin
+  if (savedOrigin !== 'ps.pndsn.com' && savedOrigin !== 'custom') {
+    return {
+      origin: 'custom',
+      customOrigin: savedOrigin
+    };
+  }
+  
+  // If it's 'custom' and we have a customOrigin value, use that
+  if (savedOrigin === 'custom' && savedCustomOrigin) {
+    return {
+      origin: 'custom',
+      customOrigin: savedCustomOrigin
+    };
+  }
+  
+  // Otherwise use the saved values as-is
+  return {
+    origin: savedOrigin,
+    customOrigin: savedCustomOrigin
+  };
+};
+
 // Convert pageSettings to form data
 const pageSettingsToFormData = (pageSettings: any) => {
   const formData: any = {};
@@ -114,6 +142,17 @@ const pageSettingsToFormData = (pageSettings: any) => {
     const value = getNestedValue(pageSettings, `${definition.section}.${fieldName}`);
     formData[fieldName] = value ?? definition.default;
   });
+  
+  // Handle origin field conversion
+  const mockSettings = {
+    environment: {
+      origin: formData.origin,
+      customOrigin: formData.customOrigin
+    }
+  };
+  const originValues = getOriginFormValues(mockSettings);
+  formData.origin = originValues.origin;
+  formData.customOrigin = originValues.customOrigin;
   
   return formData;
 };
@@ -160,14 +199,16 @@ export default function SettingsPage() {
   const [pageSettings, setPageSettings] = useState(() => {
     // Initialize with current settings, merged with defaults
     const defaultSettings = createDefaultPageSettings();
+    // Get origin values for current settings
+    const originValues = getOriginFormValues(settings);
     const currentFormData = {
       publishKey: settings.credentials.publishKey,
       subscribeKey: settings.credentials.subscribeKey,
       secretKey: settings.credentials.secretKey || '',
       userId: settings.credentials.userId,
       pamToken: settings.credentials.pamToken || '',
-      origin: settings.environment.origin,
-      customOrigin: settings.environment.customOrigin || '',
+      origin: originValues.origin,
+      customOrigin: originValues.customOrigin,
       ssl: settings.environment.ssl,
       logVerbosity: settings.environment.logVerbosity,
       heartbeatInterval: settings.environment.heartbeatInterval,
@@ -205,6 +246,9 @@ export default function SettingsPage() {
     }
   };
 
+  // Get origin values for form initialization
+  const originValues = getOriginFormValues(settings);
+
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
@@ -213,8 +257,8 @@ export default function SettingsPage() {
       secretKey: settings.credentials.secretKey || '',
       userId: settings.credentials.userId,
       pamToken: settings.credentials.pamToken || '',
-      origin: settings.environment.origin,
-      customOrigin: settings.environment.customOrigin || '',
+      origin: originValues.origin,
+      customOrigin: originValues.customOrigin,
       ssl: settings.environment.ssl,
       logVerbosity: settings.environment.logVerbosity,
       heartbeatInterval: settings.environment.heartbeatInterval,
@@ -417,6 +461,8 @@ export default function SettingsPage() {
   };
 
   const handleConfigRestore = (restoredConfig: AppSettings) => {
+    const restoredOriginValues = getOriginFormValues(restoredConfig);
+    
     // Update the form with restored configuration
     form.reset({
       publishKey: restoredConfig.credentials.publishKey,
@@ -424,8 +470,8 @@ export default function SettingsPage() {
       secretKey: restoredConfig.credentials.secretKey || '',
       userId: restoredConfig.credentials.userId,
       pamToken: restoredConfig.credentials.pamToken || '',
-      origin: restoredConfig.environment.origin,
-      customOrigin: restoredConfig.environment.customOrigin || '',
+      origin: restoredOriginValues.origin,
+      customOrigin: restoredOriginValues.customOrigin,
       ssl: restoredConfig.environment.ssl,
       logVerbosity: restoredConfig.environment.logVerbosity,
       heartbeatInterval: restoredConfig.environment.heartbeatInterval,
@@ -598,7 +644,7 @@ export default function SettingsPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Origin</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select origin" />

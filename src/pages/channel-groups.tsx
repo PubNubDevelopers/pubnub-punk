@@ -69,6 +69,7 @@ export default function ChannelGroupsPage() {
   const [mounted, setMounted] = useState(false);
   const [pubnubReady, setPubnubReady] = useState(false);
   const [pubnub, setPubnub] = useState<any>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   
   // Mount check
   useEffect(() => {
@@ -111,8 +112,17 @@ export default function ChannelGroupsPage() {
             const pubnubConfig: any = {
               publishKey: settings.credentials.publishKey,
               subscribeKey: settings.credentials.subscribeKey,
-              userId: settings.credentials.userId || 'channel-groups-manager-user'
+              userId: settings.credentials.userId || 'channel-groups-manager-user',
+              origin: settings.environment.origin === 'custom' ? settings.environment.customOrigin : settings.environment.origin,
+              ssl: settings.environment.ssl,
+              logVerbosity: settings.environment.logVerbosity,
+              heartbeatInterval: settings.environment.heartbeatInterval,
             };
+            
+            // Add secret key if available
+            if (settings.credentials.secretKey) {
+              pubnubConfig.secretKey = settings.credentials.secretKey;
+            }
             
             // Add PAM token if available
             if (settings.credentials.pamToken) {
@@ -120,11 +130,33 @@ export default function ChannelGroupsPage() {
             }
             
             const instance = new window.PubNub(pubnubConfig);
-            setPubnub(instance);
+            
+            // Test the connection by making a simple API call
+            instance.time()
+              .then(() => {
+                // Connection successful
+                setPubnub(instance);
+                setConnectionError(null);
+              })
+              .catch((error: any) => {
+                // Connection failed
+                console.error('PubNub connection test failed:', error);
+                const errorMessage = error.message || 'Failed to connect to PubNub service';
+                setConnectionError(`Connection failed: ${errorMessage}`);
+                setPubnub(null);
+                
+                toast({
+                  title: "PubNub Connection Failed",
+                  description: errorMessage,
+                  variant: "destructive",
+                });
+              });
           }
         } catch (error) {
           console.error('Failed to create PubNub instance:', error);
-          // Continue anyway - user will see configuration required message
+          const errorMessage = error instanceof Error ? error.message : 'Failed to initialize PubNub';
+          setConnectionError(`Initialization failed: ${errorMessage}`);
+          setPubnub(null);
         }
       } else if (attempts < maxAttempts) {
         attempts++;
@@ -210,11 +242,23 @@ export default function ChannelGroupsPage() {
       
     } catch (error) {
       console.error('Error loading channel groups:', error);
-      toast({
-        title: "Error loading channel groups",
-        description: error instanceof Error ? error.message : "Failed to load channel groups",
-        variant: "destructive",
-      });
+      const errorMessage = error instanceof Error ? error.message : "Failed to load channel groups";
+      
+      // Check if it's a connection error
+      if (errorMessage.includes('network') || errorMessage.includes('timeout') || errorMessage.includes('connect')) {
+        setConnectionError(`Connection error: ${errorMessage}`);
+        toast({
+          title: "Connection Error",
+          description: "Unable to connect to PubNub service. Please check your settings.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error loading channel groups",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -495,14 +539,44 @@ export default function ChannelGroupsPage() {
       <div className="p-6">
         <Card>
           <CardContent className="p-8 text-center">
-            <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">PubNub Configuration Required</h3>
-            <p className="text-gray-600">Please configure your PubNub keys in Settings to use Channel Groups</p>
-            <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-              <p className="text-sm text-yellow-800">
+            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold mb-2">
+              {connectionError ? 'PubNub Connection Failed' : 'PubNub Configuration Required'}
+            </h3>
+            <p className="text-gray-600">
+              {connectionError ? 
+                'Unable to connect to PubNub service. Please check your settings and try again.' : 
+                'Please configure your PubNub keys in Settings to use Channel Groups'
+              }
+            </p>
+            
+            {connectionError && (
+              <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                <p className="text-sm text-red-800">
+                  <strong>Error Details:</strong> {connectionError}
+                </p>
+              </div>
+            )}
+            
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-sm text-blue-800">
                 <strong>Note:</strong> Channel Groups require the Stream Controller add-on to be enabled in your PubNub Admin Portal.
               </p>
             </div>
+            
+            {connectionError && (
+              <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                <p className="text-sm text-yellow-800">
+                  <strong>Common Issues:</strong>
+                </p>
+                <ul className="text-sm text-yellow-800 mt-2 text-left">
+                  <li>• Invalid custom origin URL</li>
+                  <li>• Network connectivity issues</li>
+                  <li>• Incorrect SSL/TLS settings</li>
+                  <li>• Invalid API keys</li>
+                </ul>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

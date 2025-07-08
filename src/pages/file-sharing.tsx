@@ -148,8 +148,17 @@ export default function FileSharingPage() {
             const pubnubConfig: any = {
               publishKey: settings.credentials.publishKey,
               subscribeKey: settings.credentials.subscribeKey,
-              userId: settings.credentials.userId || 'file-manager-user'
+              userId: settings.credentials.userId || 'file-manager-user',
+              origin: settings.environment.origin === 'custom' ? settings.environment.customOrigin : settings.environment.origin,
+              ssl: settings.environment.ssl,
+              logVerbosity: settings.environment.logVerbosity,
+              heartbeatInterval: settings.environment.heartbeatInterval,
             };
+            
+            // Add secret key if available
+            if (settings.credentials.secretKey) {
+              pubnubConfig.secretKey = settings.credentials.secretKey;
+            }
             
             // Add PAM token if available
             if (settings.credentials.pamToken) {
