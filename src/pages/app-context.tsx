@@ -32,6 +32,7 @@ import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
+import { usePubNub } from '@/hooks/usePubNub';
 import { storage } from '@/lib/storage';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -123,26 +124,35 @@ const FIELD_DEFINITIONS = {
   'appContext.selectedChannelId': { section: 'appContext', field: 'selectedChannelId', type: 'string', default: '' },
 } as const;
 
-// Declare PubNub as a global variable from the CDN
-declare global {
-  interface Window {
-    PubNub: any;
-  }
-}
+// PubNub instance is now provided by the centralized connection manager
 
 export default function AppContextPage() {
   const { toast } = useToast();
   const { pageSettings, setPageSettings, setConfigType } = useConfig();
   
-  // State for PubNub availability and instance
+  // State for component mounting
   const [mounted, setMounted] = useState(false);
-  const [pubnubReady, setPubnubReady] = useState(false);
-  const [pubnub, setPubnub] = useState<any>(null);
+  
+  // Use centralized PubNub connection
+  const { pubnub, isReady: pubnubReady, connectionError, isConnected } = usePubNub({
+    instanceId: 'app-context',
+    userId: 'app-context-manager-user',
+    onConnectionError: (error) => {
+      toast({
+        title: "PubNub Connection Failed",
+        description: error,
+        variant: "destructive",
+      });
+    },
+    onConnectionSuccess: () => {
+      console.log('App Context PubNub connection established');
+    }
+  });
   
   // Mount check
   useEffect(() => {
     setMounted(true);
-  }, [pubnub, toast]);
+  }, []);
 
   // Set config type for the config service
   useEffect(() => {
@@ -168,51 +178,7 @@ export default function AppContextPage() {
     });
   }, [setConfigType, setPageSettings]);
   
-  // Check for PubNub availability on mount and create instance
-  useEffect(() => {
-    if (!mounted || pubnub) return; // Don't recreate if already exists
-    
-    let attempts = 0;
-    const maxAttempts = 50; // 5 seconds max
-    
-    const checkPubNub = () => {
-      if (typeof window !== 'undefined' && window.PubNub) {
-        setPubnubReady(true);
-        
-        // Create PubNub instance now that SDK is loaded
-        try {
-          const settings = storage.getSettings();
-          if (settings?.credentials?.publishKey && settings?.credentials?.subscribeKey) {
-            const pubnubConfig: any = {
-              publishKey: settings.credentials.publishKey,
-              subscribeKey: settings.credentials.subscribeKey,
-              userId: settings.credentials.userId || 'app-context-admin'
-            };
-            
-            // Add PAM token if available
-            if (settings.credentials.pamToken) {
-              pubnubConfig.authKey = settings.credentials.pamToken;
-            }
-            
-            const instance = new window.PubNub(pubnubConfig);
-            setPubnub(instance);
-          }
-        } catch (error) {
-          console.error('Failed to create PubNub instance:', error);
-          // Continue anyway - user will see configuration required message
-        }
-      } else if (attempts < maxAttempts) {
-        attempts++;
-        setTimeout(checkPubNub, 100);
-      } else {
-        // Timeout - show as ready but PubNub will be null
-        console.warn('PubNub SDK failed to load after 5 seconds');
-        setPubnubReady(true);
-      }
-    };
-    
-    checkPubNub();
-  }, [mounted, pubnub]); // Include pubnub to prevent recreation
+  // No longer need manual PubNub initialization - handled by usePubNub hook
 
   
   // State management
@@ -1761,9 +1727,24 @@ export default function AppContextPage() {
       <div className="p-6">
         <Card>
           <CardContent className="p-8 text-center">
-            <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">PubNub Configuration Required</h3>
-            <p className="text-gray-600">Please configure your PubNub keys in Settings to use App Context Manager</p>
+            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold mb-2">
+              {connectionError ? 'PubNub Connection Failed' : 'PubNub Configuration Required'}
+            </h3>
+            <p className="text-gray-600">
+              {connectionError ? 
+                'Unable to connect to PubNub service. Please check your settings and try again.' : 
+                'Please configure your PubNub keys in Settings to use App Context Manager'
+              }
+            </p>
+            
+            {connectionError && (
+              <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                <p className="text-sm text-red-800">
+                  <strong>Error Details:</strong> {connectionError}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

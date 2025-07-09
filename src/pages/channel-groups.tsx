@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
+import { usePubNub } from '@/hooks/usePubNub';
 import { storage } from '@/lib/storage';
 import {
   Dialog,
@@ -54,22 +55,29 @@ const FIELD_DEFINITIONS = {
   'channelGroups.searchTerm': { section: 'channelGroups', field: 'searchTerm', type: 'string', default: '' },
 } as const;
 
-// Declare PubNub as a global variable from the CDN
-declare global {
-  interface Window {
-    PubNub: any;
-  }
-}
 
 export default function ChannelGroupsPage() {
   const { toast } = useToast();
   const { setPageSettings, setConfigType } = useConfig();
   
-  // State for PubNub availability and instance
+  // State for component mounting
   const [mounted, setMounted] = useState(false);
-  const [pubnubReady, setPubnubReady] = useState(false);
-  const [pubnub, setPubnub] = useState<any>(null);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
+  
+  // Use centralized PubNub connection
+  const { pubnub, isReady: pubnubReady, connectionError, isConnected } = usePubNub({
+    instanceId: 'channel-groups',
+    userId: 'channel-groups-manager-user',
+    onConnectionError: (error) => {
+      toast({
+        title: "PubNub Connection Failed",
+        description: error,
+        variant: "destructive",
+      });
+    },
+    onConnectionSuccess: () => {
+      console.log('Channel Groups PubNub connection established');
+    }
+  });
   
   // Mount check
   useEffect(() => {
@@ -94,82 +102,7 @@ export default function ChannelGroupsPage() {
     });
   }, [setConfigType, setPageSettings]);
   
-  // Check for PubNub availability on mount and create instance
-  useEffect(() => {
-    if (!mounted) return;
-    
-    let attempts = 0;
-    const maxAttempts = 50; // 5 seconds max
-    
-    const checkPubNub = () => {
-      if (typeof window !== 'undefined' && window.PubNub) {
-        setPubnubReady(true);
-        
-        // Create PubNub instance now that SDK is loaded
-        try {
-          const settings = storage.getSettings();
-          if (settings?.credentials?.publishKey && settings?.credentials?.subscribeKey) {
-            const pubnubConfig: any = {
-              publishKey: settings.credentials.publishKey,
-              subscribeKey: settings.credentials.subscribeKey,
-              userId: settings.credentials.userId || 'channel-groups-manager-user',
-              origin: settings.environment.origin === 'custom' ? settings.environment.customOrigin : settings.environment.origin,
-              ssl: settings.environment.ssl,
-              logVerbosity: settings.environment.logVerbosity,
-              heartbeatInterval: settings.environment.heartbeatInterval,
-            };
-            
-            // Add secret key if available
-            if (settings.credentials.secretKey) {
-              pubnubConfig.secretKey = settings.credentials.secretKey;
-            }
-            
-            // Add PAM token if available
-            if (settings.credentials.pamToken) {
-              pubnubConfig.authKey = settings.credentials.pamToken;
-            }
-            
-            const instance = new window.PubNub(pubnubConfig);
-            
-            // Test the connection by making a simple API call
-            instance.time()
-              .then(() => {
-                // Connection successful
-                setPubnub(instance);
-                setConnectionError(null);
-              })
-              .catch((error: any) => {
-                // Connection failed
-                console.error('PubNub connection test failed:', error);
-                const errorMessage = error.message || 'Failed to connect to PubNub service';
-                setConnectionError(`Connection failed: ${errorMessage}`);
-                setPubnub(null);
-                
-                toast({
-                  title: "PubNub Connection Failed",
-                  description: errorMessage,
-                  variant: "destructive",
-                });
-              });
-          }
-        } catch (error) {
-          console.error('Failed to create PubNub instance:', error);
-          const errorMessage = error instanceof Error ? error.message : 'Failed to initialize PubNub';
-          setConnectionError(`Initialization failed: ${errorMessage}`);
-          setPubnub(null);
-        }
-      } else if (attempts < maxAttempts) {
-        attempts++;
-        setTimeout(checkPubNub, 100);
-      } else {
-        // Timeout - show as ready but PubNub will be null
-        console.warn('PubNub SDK failed to load after 5 seconds');
-        setPubnubReady(true);
-      }
-    };
-    
-    checkPubNub();
-  }, [mounted]);
+  // No longer need manual PubNub initialization - handled by usePubNub hook
   
   // State management
   const [channelGroups, setChannelGroups] = useState<ChannelGroup[]>([]);
@@ -244,21 +177,12 @@ export default function ChannelGroupsPage() {
       console.error('Error loading channel groups:', error);
       const errorMessage = error instanceof Error ? error.message : "Failed to load channel groups";
       
-      // Check if it's a connection error
-      if (errorMessage.includes('network') || errorMessage.includes('timeout') || errorMessage.includes('connect')) {
-        setConnectionError(`Connection error: ${errorMessage}`);
-        toast({
-          title: "Connection Error",
-          description: "Unable to connect to PubNub service. Please check your settings.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Error loading channel groups",
-          description: errorMessage,
-          variant: "destructive",
-        });
-      }
+      // Show error toast for loading issues
+      toast({
+        title: "Error loading channel groups",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }

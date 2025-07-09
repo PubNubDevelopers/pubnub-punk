@@ -17,7 +17,8 @@ import {
   Archive,
   Layers,
   Shield,
-  Clock
+  Clock,
+  TestTube
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -68,6 +69,7 @@ const navigationConfig: (NavItem | NavCategory)[] = [
   {
     label: 'Advanced Tools',
     items: [
+      { id: 'test-connection', label: 'Test PN Connection', icon: TestTube, path: '/test-connection' },
       { id: 'stream-generator', label: 'Stream Generator', icon: Activity, path: '/stream-generator', comingSoon: true },
       { id: 'event-workflow', label: 'Event Workflow', icon: GitBranch, path: '/event-workflow', comingSoon: true },
     ],

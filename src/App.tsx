@@ -3,6 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
 import { ConfigProvider } from "@/contexts/config-context";
+import { PubNubProvider } from "@/contexts/pubnub-context";
 import SettingsPage from "@/pages/settings";
 import PubSubPage from "@/pages/pubsub";
 import PubNubPersistencePage from "@/pages/pubnub-persistence";
@@ -15,6 +16,7 @@ import AppContextPage from "@/pages/app-context";
 import AccessManagerPage from "@/pages/access-manager";
 import StreamGeneratorPage from "@/pages/stream-generator";
 import EventWorkflowPage from "@/pages/event-workflow";
+import TestConnectionPage from "@/pages/test-connection";
 import NotFound from "@/pages/not-found";
 
 const pageConfig: Record<string, { title: string; subtitle: string }> = {
@@ -66,6 +68,10 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
     title: 'Event Workflow',
     subtitle: 'Test complex service workflows'
   },
+  '/test-connection': {
+    title: 'Test PN Connection',
+    subtitle: 'Test the centralized PubNub connection system'
+  },
 };
 
 function Router() {
@@ -87,6 +93,7 @@ function Router() {
         <Route path="/access-manager" component={AccessManagerPage} />
         <Route path="/stream-generator" component={StreamGeneratorPage} />
         <Route path="/event-workflow" component={EventWorkflowPage} />
+        <Route path="/test-connection" component={TestConnectionPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>
@@ -96,10 +103,12 @@ function Router() {
 function App() {
   return (
     <TooltipProvider>
-      <ConfigProvider>
-        <Toaster />
-        <Router />
-      </ConfigProvider>
+      <PubNubProvider>
+        <ConfigProvider>
+          <Toaster />
+          <Router />
+        </ConfigProvider>
+      </PubNubProvider>
     </TooltipProvider>
   );
 }

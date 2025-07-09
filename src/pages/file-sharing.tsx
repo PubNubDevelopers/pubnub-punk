@@ -34,6 +34,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
+import { usePubNub } from '@/hooks/usePubNub';
 import { storage } from '@/lib/storage';
 import {
   DropdownMenu,
@@ -83,12 +84,6 @@ const FIELD_DEFINITIONS = {
   'files.currentPage': { section: 'files', field: 'currentPage', type: 'number', default: 1 },
 } as const;
 
-// Declare PubNub as a global variable from the CDN
-declare global {
-  interface Window {
-    PubNub: any;
-  }
-}
 
 export default function FileSharingPage() {
   const { toast } = useToast();
@@ -96,10 +91,24 @@ export default function FileSharingPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deleteCancelledRef = useRef(false);
   
-  // State for PubNub availability and instance
+  // State for component mounting
   const [mounted, setMounted] = useState(false);
-  const [pubnubReady, setPubnubReady] = useState(false);
-  const [pubnub, setPubnub] = useState<any>(null);
+  
+  // Use centralized PubNub connection
+  const { pubnub, isReady: pubnubReady, connectionError, isConnected } = usePubNub({
+    instanceId: 'file-sharing',
+    userId: 'file-sharing-manager-user',
+    onConnectionError: (error) => {
+      toast({
+        title: "PubNub Connection Failed",
+        description: error,
+        variant: "destructive",
+      });
+    },
+    onConnectionSuccess: () => {
+      console.log('File Sharing PubNub connection established');
+    }
+  });
   
   // Mount check
   useEffect(() => {
@@ -130,60 +139,7 @@ export default function FileSharingPage() {
     });
   }, [setConfigType, setPageSettings]);
   
-  // Check for PubNub availability on mount and create instance
-  useEffect(() => {
-    if (!mounted) return;
-    
-    let attempts = 0;
-    const maxAttempts = 50; // 5 seconds max
-    
-    const checkPubNub = () => {
-      if (typeof window !== 'undefined' && window.PubNub) {
-        setPubnubReady(true);
-        
-        // Create PubNub instance now that SDK is loaded
-        try {
-          const settings = storage.getSettings();
-          if (settings?.credentials?.publishKey && settings?.credentials?.subscribeKey) {
-            const pubnubConfig: any = {
-              publishKey: settings.credentials.publishKey,
-              subscribeKey: settings.credentials.subscribeKey,
-              userId: settings.credentials.userId || 'file-manager-user',
-              origin: settings.environment.origin === 'custom' ? settings.environment.customOrigin : settings.environment.origin,
-              ssl: settings.environment.ssl,
-              logVerbosity: settings.environment.logVerbosity,
-              heartbeatInterval: settings.environment.heartbeatInterval,
-            };
-            
-            // Add secret key if available
-            if (settings.credentials.secretKey) {
-              pubnubConfig.secretKey = settings.credentials.secretKey;
-            }
-            
-            // Add PAM token if available
-            if (settings.credentials.pamToken) {
-              pubnubConfig.authKey = settings.credentials.pamToken;
-            }
-            
-            const instance = new window.PubNub(pubnubConfig);
-            setPubnub(instance);
-          }
-        } catch (error) {
-          console.error('Failed to create PubNub instance:', error);
-          // Continue anyway - user will see configuration required message
-        }
-      } else if (attempts < maxAttempts) {
-        attempts++;
-        setTimeout(checkPubNub, 100);
-      } else {
-        // Timeout - show as ready but PubNub will be null
-        console.warn('PubNub SDK failed to load after 5 seconds');
-        setPubnubReady(true);
-      }
-    };
-    
-    checkPubNub();
-  }, [mounted]);
+  // No longer need manual PubNub initialization - handled by usePubNub hook
   
   // State management
   const [files, setFiles] = useState<FileItem[]>([]);

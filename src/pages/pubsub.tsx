@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { storage } from '@/lib/storage';
 import { useConfig } from '@/contexts/config-context';
+import { usePubNub } from '@/hooks/usePubNub';
 
 // Schema-driven field definitions for bidirectional sync
 const FIELD_DEFINITIONS = {
@@ -191,8 +192,29 @@ export default function PubSubPage() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [presenceEvents, setPresenceEvents] = useState<any[]>([]);
-  const [pubnubInstance, setPubnubInstance] = useState<any>(null);
-  const [subscription, setSubscription] = useState<any>(null);
+  const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
+
+  // Use centralized PubNub hook for stateless operations (publish, etc.)
+  const { 
+    pubnub, 
+    isReady: pubnubReady, 
+    connectionError, 
+    isConnected,
+  } = usePubNub({
+    instanceId: 'pubsub-page',
+    userId: 'pubsub-page-user',
+    onConnectionError: (error) => {
+      toast({
+        title: "PubNub Connection Failed",
+        description: error,
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Local subscription management (not centralized) - separate instance for subscriptions
+  const [localPubnubInstance, setLocalPubnubInstance] = useState<any>(null);
+  const [localSubscription, setLocalSubscription] = useState<any>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showMessages, setShowMessages] = useState(true);
@@ -596,12 +618,10 @@ export default function PubSubPage() {
   };
 
   const handlePublish = async () => {
-    const settings = storage.getSettings();
-    
-    if (!settings.credentials.publishKey || !settings.credentials.subscribeKey) {
+    if (!pubnub || !pubnubReady) {
       toast({
-        title: "Configuration Required",
-        description: "Please configure your PubNub keys in Settings first.",
+        title: "PubNub Not Ready",
+        description: "Please wait for PubNub to initialize or check your connection.",
         variant: "destructive",
       });
       return;
@@ -643,20 +663,6 @@ export default function PubSubPage() {
           metaPayload = publishData.meta;
         }
       }
-
-      // Initialize PubNub instance from global CDN
-      const pubnubConfig: any = {
-        publishKey: settings.credentials.publishKey,
-        subscribeKey: settings.credentials.subscribeKey,
-        userId: settings.credentials.userId || 'pubsub-page-user'
-      };
-      
-      // Add PAM token if available
-      if (settings.credentials.pamToken) {
-        pubnubConfig.authKey = settings.credentials.pamToken;
-      }
-      
-      const pubnub = new window.PubNub(pubnubConfig);
 
       // Prepare publish parameters
       const publishParams: any = {
@@ -772,27 +778,38 @@ export default function PubSubPage() {
     }
 
     try {
-      // Initialize PubNub instance from global CDN
-      const pubnubConfig: any = {
+      // Create local PubNub instance for subscription (not using centralized system)
+      const localPubnub = new (window as any).PubNub({
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         userId: settings.credentials.userId || 'pubsub-page-user',
         heartbeatInterval: subscribeData.heartbeat,
         restoreMessages: subscribeData.restoreOnReconnect
-      };
-      
-      // Add PAM token if available
-      if (settings.credentials.pamToken) {
-        pubnubConfig.authKey = settings.credentials.pamToken;
-      }
-      
-      const pubnub = new window.PubNub(pubnubConfig);
+      });
 
-      setPubnubInstance(pubnub);
+      setLocalPubnubInstance(localPubnub);
 
       // Generate filter expression for subscription
       const filterExpression = generateFilterExpression();
       
+      // Apply filter expression if provided (server-side filtering)
+      if (filterExpression && filterExpression.trim()) {
+        console.log('Applying server-side filter:', filterExpression);
+        
+        // Set filter expression on the local PubNub instance for server-side filtering
+        try {
+          localPubnub.setFilterExpression(filterExpression);
+          console.log('Filter expression set successfully:', filterExpression);
+        } catch (filterError) {
+          console.warn('Failed to set filter expression:', filterError);
+          toast({
+            title: "Filter Warning",
+            description: "Server-side filtering may not be applied. Check filter syntax.",
+            variant: "destructive"
+          });
+        }
+      }
+
       // Build subscription options
       const subscriptionOptions: any = {
         receivePresenceEvents: subscribeData.receivePresenceEvents
@@ -813,39 +830,32 @@ export default function PubSubPage() {
 
       // Create subscription using entity-based approach
       let subscriptionSet;
-      
       if (channelList.length > 0 && channelGroupList.length > 0) {
         // Both channels and channel groups
-        subscriptionSet = pubnub.subscriptionSet({
+        subscriptionSet = localPubnub.subscriptionSet({
           channels: channelList,
           channelGroups: channelGroupList,
           subscriptionOptions: subscriptionOptions
         });
       } else if (channelList.length > 0) {
         // Only channels
-        subscriptionSet = pubnub.subscriptionSet({
+        subscriptionSet = localPubnub.subscriptionSet({
           channels: channelList,
           subscriptionOptions: subscriptionOptions
         });
       } else {
         // Only channel groups
-        subscriptionSet = pubnub.subscriptionSet({
+        subscriptionSet = localPubnub.subscriptionSet({
           channelGroups: channelGroupList,
           subscriptionOptions: subscriptionOptions
         });
       }
 
-      // Add message listener
+      // Add message listener using the listener pattern
       subscriptionSet.addListener({
         message: (messageEvent: any) => {
           console.log('Received message:', messageEvent);
           
-          // Apply client-side filter if specified
-          if (filterExpression) {
-            // Note: Server-side filtering is preferred, but we can add client-side as fallback
-            console.log('Filter expression (for reference):', filterExpression);
-          }
-
           const newMessage = {
             channel: messageEvent.channel,
             message: messageEvent.message,
@@ -859,6 +869,7 @@ export default function PubSubPage() {
           setMessages(prev => [...prev, newMessage]);
 
           // Store message history if enabled
+          const settings = storage.getSettings();
           if (settings.storage.storeMessageHistory) {
             const storedMessages = JSON.parse(localStorage.getItem('pubsub_message_history') || '[]');
             storedMessages.unshift(newMessage);
@@ -898,43 +909,15 @@ export default function PubSubPage() {
           };
 
           setMessages(prev => [...prev, signalMessage]);
-        },
-
-        status: (statusEvent: any) => {
-          console.log('Status event:', statusEvent);
-          
-          if (statusEvent.category === 'PNConnectedCategory') {
-            console.log('Successfully connected and subscribed');
-          } else if (statusEvent.category === 'PNReconnectedCategory') {
-            console.log('Reconnected to PubNub');
-          } else if (statusEvent.category === 'PNDisconnectedCategory') {
-            console.log('Disconnected from PubNub');
-          }
         }
       });
 
-      // Apply filter expression if provided (server-side filtering)
-      if (filterExpression && filterExpression.trim()) {
-        console.log('Applying server-side filter:', filterExpression);
-        
-        // Set filter expression on the PubNub instance for server-side filtering
-        // Note: This is applied globally to the instance
-        try {
-          pubnub.setFilterExpression(filterExpression);
-          console.log('Filter expression set successfully:', filterExpression);
-        } catch (filterError) {
-          console.warn('Failed to set filter expression:', filterError);
-          toast({
-            title: "Filter Warning",
-            description: "Server-side filtering may not be applied. Check filter syntax.",
-            variant: "destructive"
-          });
-        }
-      }
-
-      // Subscribe to the channels/groups
+      // Subscribe
       subscriptionSet.subscribe();
-      setSubscription(subscriptionSet);
+
+      // Store subscription reference
+      setLocalSubscription(subscriptionSet);
+      setSubscriptionId('local-' + Date.now()); // Simple local ID for tracking
       setIsSubscribed(true);
 
       const hasFilters = filterExpression ? ' with filters' : '';
@@ -958,22 +941,22 @@ export default function PubSubPage() {
 
   const handleUnsubscribe = () => {
     try {
-      // Unsubscribe from current subscription
-      if (subscription) {
-        subscription.unsubscribe();
-        setSubscription(null);
+      // Unsubscribe using local subscription management
+      if (localSubscription) {
+        localSubscription.unsubscribe();
+        setLocalSubscription(null);
       }
 
-      // Clean up PubNub instance
-      if (pubnubInstance) {
-        pubnubInstance.removeAllListeners();
-        pubnubInstance.destroy();
-        setPubnubInstance(null);
+      // Clean up local PubNub instance
+      if (localPubnubInstance) {
+        localPubnubInstance.destroy();
+        setLocalPubnubInstance(null);
       }
 
       setIsSubscribed(false);
       setMessages([]);
       setPresenceEvents([]);
+      setSubscriptionId(null);
       
       toast({
         title: "Unsubscribed",
@@ -985,8 +968,9 @@ export default function PubSubPage() {
       setIsSubscribed(false);
       setMessages([]);
       setPresenceEvents([]);
-      setSubscription(null);
-      setPubnubInstance(null);
+      setSubscriptionId(null);
+      setLocalSubscription(null);
+      setLocalPubnubInstance(null);
       
       toast({
         title: "Unsubscribed",
@@ -1011,15 +995,14 @@ export default function PubSubPage() {
   // Cleanup on component unmount
   useEffect(() => {
     return () => {
-      if (subscription) {
-        subscription.unsubscribe();
+      if (localSubscription) {
+        localSubscription.unsubscribe();
       }
-      if (pubnubInstance) {
-        pubnubInstance.removeAllListeners();
-        pubnubInstance.destroy();
+      if (localPubnubInstance) {
+        localPubnubInstance.destroy();
       }
     };
-  }, [subscription, pubnubInstance]);
+  }, [localSubscription, localPubnubInstance]);
 
   return (
     <div className="p-6">
