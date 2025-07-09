@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { usePubNub } from '@/hooks/usePubNub';
 import { storage } from '@/lib/storage';
 import { useConfig } from '@/contexts/config-context';
 
@@ -109,8 +110,20 @@ export default function PresencePage() {
   // UI state
   const [showInstanceDetails, setShowInstanceDetails] = useState(true);
   
-  // Monitoring instance
-  const [monitorPubnub, setMonitorPubnub] = useState<any>(null);
+  // Use centralized connection manager for monitoring (stateless operations)
+  const { pubnub: monitorPubnub, isReady: monitorReady, isConnected: monitorConnected } = usePubNub({
+    instanceId: 'presence-monitor',
+    userId: 'presence-monitor-user',
+    onConnectionError: (error) => {
+      toast({
+        title: "Monitor Connection Failed",
+        description: error,
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Local subscription management (subscriptions stay local)
   const [monitorSubscription, setMonitorSubscription] = useState<any>(null);
   
   // Auto refresh timer
@@ -178,17 +191,13 @@ export default function PresencePage() {
     };
   }, [autoRefresh, isMonitoring, refreshInterval, monitorPubnub, enableHereNow, enableWhereNow, monitorChannel, userInstances]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount (monitor uses centralized manager, users use direct instances)
   useEffect(() => {
     return () => {
       if (monitorSubscription) {
         monitorSubscription.unsubscribe();
       }
-      if (monitorPubnub) {
-        monitorPubnub.removeAllListeners();
-        monitorPubnub.destroy();
-      }
-      // Cleanup all user instances
+      // Cleanup all user instances (they use direct PubNub instances)
       userInstances.forEach(instance => {
         if (instance.subscription) {
           instance.subscription.unsubscribe();
@@ -203,12 +212,10 @@ export default function PresencePage() {
 
   // Start monitoring function
   const startMonitoring = async () => {
-    const settings = storage.getSettings();
-    
-    if (!settings.credentials.subscribeKey) {
+    if (!monitorReady || !monitorConnected) {
       toast({
-        title: "Configuration Required",
-        description: "Please configure your PubNub Subscribe Key in Settings first.",
+        title: "Connection Not Ready",
+        description: "Please wait for PubNub connection to be established.",
         variant: "destructive",
       });
       return;
@@ -224,23 +231,9 @@ export default function PresencePage() {
     }
 
     try {
-      // Initialize PubNub instance for monitoring
-      const pubnubConfig: any = {
-        publishKey: settings.credentials.publishKey,
-        subscribeKey: settings.credentials.subscribeKey,
-        userId: 'presence-monitor-' + Date.now(),
-        enableEventEngine: true
-      };
-      
-      if (settings.credentials.pamToken) {
-        pubnubConfig.authKey = settings.credentials.pamToken;
-      }
-      
-      const pubnub = new window.PubNub(pubnubConfig);
-      setMonitorPubnub(pubnub);
 
-      // Create subscription for presence events
-      const channel = pubnub.channel(monitorChannel);
+      // Create subscription for presence events using centralized instance
+      const channel = monitorPubnub.channel(monitorChannel);
       const subscription = channel.subscription({
         receivePresenceEvents: true
       });
@@ -305,12 +298,6 @@ export default function PresencePage() {
         setMonitorSubscription(null);
       }
 
-      if (monitorPubnub) {
-        monitorPubnub.removeAllListeners();
-        monitorPubnub.destroy();
-        setMonitorPubnub(null);
-      }
-
       if (refreshTimerRef.current) {
         clearInterval(refreshTimerRef.current);
         refreshTimerRef.current = null;
@@ -335,7 +322,7 @@ export default function PresencePage() {
 
   // Refresh presence data function
   const refreshPresenceData = async () => {
-    if (!monitorPubnub || !enableHereNow) return;
+    if (!monitorPubnub || !monitorReady || !enableHereNow) return;
 
     try {
       // Get Here Now data
@@ -464,7 +451,7 @@ export default function PresencePage() {
     if (!instance) return;
 
     try {
-      // Cleanup PubNub instance
+      // Cleanup PubNub instance (direct instance, not centralized)
       if (instance.subscription) {
         instance.subscription.unsubscribe();
       }
@@ -576,7 +563,7 @@ export default function PresencePage() {
   // Remove all user instances
   const removeAllUserInstances = async () => {
     try {
-      // Cleanup all instances
+      // Cleanup all instances (direct instances, not centralized)
       userInstances.forEach(instance => {
         if (instance.subscription) {
           instance.subscription.unsubscribe();

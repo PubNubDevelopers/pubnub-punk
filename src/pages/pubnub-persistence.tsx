@@ -3,7 +3,7 @@ import { RefreshCw, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
-import { storage } from '@/lib/storage';
+import { usePubNub } from '@/hooks/usePubNub';
 import { 
   ControlsPanel, 
   ResultsPanel, 
@@ -25,21 +25,25 @@ import {
   FIELD_DEFINITIONS 
 } from '@/types/persistence';
 
-// Declare PubNub as a global variable from the CDN
-declare global {
-  interface Window {
-    PubNub: any;
-  }
-}
 
 export default function PubNubPersistencePage() {
   const { toast } = useToast();
   const { setPageSettings, setConfigType } = useConfig();
   
-  // State for PubNub availability and instance
-  const [mounted, setMounted] = useState(false);
-  const [pubnubReady, setPubnubReady] = useState(false);
-  const [pubnub, setPubnub] = useState<any>(null);
+  // Use centralized PubNub connection manager
+  const { pubnub, isReady: pubnubReady, connectionError, isConnected } = usePubNub({
+    instanceId: 'pubnub-persistence',
+    userId: 'persistence-manager-user',
+    onConnectionError: (error) => {
+      toast({
+        title: "PubNub Connection Failed",
+        description: error,
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // State for PersistenceAPI
   const [persistenceAPI, setPersistenceAPI] = useState<PersistenceAPI | null>(null);
   
   // Form state
@@ -78,9 +82,8 @@ export default function PubNubPersistencePage() {
     totalBatches: 0
   });
 
-  // Mount check and timezone initialization
+  // Initialize timezone
   useEffect(() => {
-    setMounted(true);
     // Get browser timezone
     const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setSelectedTimezone(browserTimezone);
@@ -100,52 +103,14 @@ export default function PubNubPersistencePage() {
     });
   }, [setConfigType, setPageSettings]);
   
-  // Check for PubNub availability on mount and create instance
+  // Create PersistenceAPI when PubNub instance is ready
   useEffect(() => {
-    if (!mounted) return;
-    
-    let attempts = 0;
-    const maxAttempts = 50; // 5 seconds max
-    
-    const checkPubNub = () => {
-      if (typeof window !== 'undefined' && window.PubNub) {
-        setPubnubReady(true);
-        
-        // Create PubNub instance now that SDK is loaded
-        try {
-          const settings = storage.getSettings();
-          if (settings?.credentials?.publishKey && settings?.credentials?.subscribeKey) {
-            const pubnubConfig: any = {
-              publishKey: settings.credentials.publishKey,
-              subscribeKey: settings.credentials.subscribeKey,
-              userId: settings.credentials.userId || 'persistence-manager-user'
-            };
-            
-            // Add PAM token if available
-            if (settings.credentials.pamToken) {
-              pubnubConfig.authKey = settings.credentials.pamToken;
-            }
-            
-            const instance = new window.PubNub(pubnubConfig);
-            setPubnub(instance);
-            setPersistenceAPI(new PersistenceAPI(instance));
-          }
-        } catch (error) {
-          console.error('Failed to create PubNub instance:', error);
-          // Continue anyway - user will see configuration required message
-        }
-      } else if (attempts < maxAttempts) {
-        attempts++;
-        setTimeout(checkPubNub, 100);
-      } else {
-        // Timeout - show as ready but PubNub will be null
-        console.warn('PubNub SDK failed to load after 5 seconds');
-        setPubnubReady(true);
-      }
-    };
-    
-    checkPubNub();
-  }, [mounted]);
+    if (pubnub && isConnected) {
+      setPersistenceAPI(new PersistenceAPI(pubnub));
+    } else {
+      setPersistenceAPI(null);
+    }
+  }, [pubnub, isConnected]);
 
   // Update page settings when form changes
   const updatePageSettings = () => {
@@ -445,17 +410,15 @@ export default function PubNubPersistencePage() {
     await copyToClipboard(text, description, toast);
   };
 
-  // Show loading while mounting or PubNub is initializing
-  if (!mounted || !pubnubReady) {
+  // Show loading while PubNub is initializing
+  if (!pubnubReady) {
     return (
       <div className="p-6">
         <Card>
           <CardContent className="p-8 text-center">
             <RefreshCw className="w-16 h-16 text-pubnub-blue mx-auto mb-4 animate-spin" />
             <h3 className="text-xl font-semibold mb-2">Loading PubNub Persistence Manager</h3>
-            <p className="text-gray-600">
-              {!mounted ? 'Starting up...' : 'Initializing PubNub SDK...'}
-            </p>
+            <p className="text-gray-600">Initializing PubNub SDK...</p>
           </CardContent>
         </Card>
       </div>
@@ -463,14 +426,18 @@ export default function PubNubPersistencePage() {
   }
 
   // PubNub connection check
-  if (!pubnub) {
+  if (!pubnub || !isConnected) {
     return (
       <div className="p-6">
         <Card>
           <CardContent className="p-8 text-center">
             <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">PubNub Configuration Required</h3>
-            <p className="text-gray-600">Please configure your PubNub keys in Settings to use Message Persistence</p>
+            <h3 className="text-xl font-semibold mb-2">
+              {connectionError ? 'PubNub Connection Failed' : 'PubNub Configuration Required'}
+            </h3>
+            <p className="text-gray-600">
+              {connectionError || 'Please configure your PubNub keys in Settings to use Message Persistence'}
+            </p>
             <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
               <p className="text-sm text-yellow-800">
                 <strong>Note:</strong> Message Persistence must be enabled in your PubNub Admin Portal to store and retrieve messages.
