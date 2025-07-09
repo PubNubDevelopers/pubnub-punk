@@ -18,7 +18,7 @@ import {
   Layers,
   Shield,
   Clock,
-  TestTube
+  Wifi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -57,7 +57,7 @@ const navigationConfig: (NavItem | NavCategory)[] = [
       { id: 'file-sharing', label: 'File Sharing', icon: Upload, path: '/file-sharing' },
       { id: 'presence', label: 'Presence', icon: Users, path: '/presence' },
       { id: 'functions', label: 'Functions', icon: Code, path: '/functions' },
-      // { id: 'app-context', label: 'App Context', icon: Database, path: '/app-context' },
+      { id: 'app-context', label: 'App Context', icon: Database, path: '/app-context' },
     ],
   },
   {
@@ -69,7 +69,7 @@ const navigationConfig: (NavItem | NavCategory)[] = [
   {
     label: 'Advanced Tools',
     items: [
-      { id: 'test-connection', label: 'Test PN Connection', icon: TestTube, path: '/test-connection' },
+      { id: 'test-connection', label: 'Test PN Connection', icon: Wifi, path: '/test-connection' },
       { id: 'stream-generator', label: 'Stream Generator', icon: Activity, path: '/stream-generator', comingSoon: true },
       { id: 'event-workflow', label: 'Event Workflow', icon: GitBranch, path: '/event-workflow', comingSoon: true },
     ],

@@ -1,11 +1,7 @@
 import { storage } from './storage';
 
-// Declare PubNub as a global variable from the CDN
-declare global {
-  interface Window {
-    PubNub: any;
-  }
-}
+// Note: PubNub instances are managed by the centralized connection manager
+// This service will use the centralized manager for all stateless API calls
 
 // Type definitions for versioned configurations
 export interface VersionedConfig {
@@ -40,12 +36,31 @@ export interface ConfigHistoryResponse {
 export class ConfigurationService {
   private static instance: ConfigurationService;
   private readonly APP_CONTEXT_CHANNEL = 'CONFIG_PN_DEVTOOLS';
+  private pubNubInstance: any = null;
+  private instanceReady: boolean = false;
+  private instanceError: string | null = null;
 
   static getInstance(): ConfigurationService {
     if (!ConfigurationService.instance) {
       ConfigurationService.instance = new ConfigurationService();
     }
     return ConfigurationService.instance;
+  }
+
+  /**
+   * Initialize the service with a PubNub instance from the centralized manager
+   */
+  public initialize(pubnubInstance: any, isReady: boolean, error: string | null = null): void {
+    this.pubNubInstance = pubnubInstance;
+    this.instanceReady = isReady;
+    this.instanceError = error;
+  }
+
+  /**
+   * Check if the service is ready to make API calls
+   */
+  private isReady(): boolean {
+    return this.instanceReady && this.pubNubInstance && !this.instanceError;
   }
 
   /**
@@ -127,19 +142,15 @@ export class ConfigurationService {
       const versionedConfig = this.createVersionedConfig(configType, configData, description, tags, name);
       const channelName = this.getChannelName(configType);
 
-      // Initialize PubNub instance from global CDN
-      const pubnubConfig: any = {
-        publishKey: settings.credentials.publishKey,
-        subscribeKey: settings.credentials.subscribeKey,
-        userId: settings.credentials.userId || 'config-service-user'
-      };
-      
-      // Add PAM token if available
-      if (settings.credentials.pamToken) {
-        pubnubConfig.authKey = settings.credentials.pamToken;
+      // Use centralized PubNub instance
+      if (!this.isReady()) {
+        return {
+          success: false,
+          error: 'PubNub instance not ready or not configured'
+        };
       }
       
-      const pubnub = new window.PubNub(pubnubConfig);
+      const pubnub = this.pubNubInstance;
 
       try {
         // 1. Publish version to Persistence (History) channel - DISABLED
@@ -265,19 +276,17 @@ export class ConfigurationService {
         };
       }
 
-      // Initialize PubNub instance from global CDN
-      const pubnubConfig: any = {
-        publishKey: settings.credentials.publishKey,
-        subscribeKey: settings.credentials.subscribeKey,
-        userId: settings.credentials.userId || 'config-service-user'
-      };
-      
-      // Add PAM token if available
-      if (settings.credentials.pamToken) {
-        pubnubConfig.authKey = settings.credentials.pamToken;
+      // Use centralized PubNub instance
+      if (!this.isReady()) {
+        // Fall back to local storage if PubNub not ready
+        const localConfig = this.getLatestVersionLocally(configType);
+        return {
+          success: true,
+          config: localConfig?.data
+        };
       }
       
-      const pubnub = new window.PubNub(pubnubConfig);
+      const pubnub = this.pubNubInstance;
 
       try {
         // Get latest configuration from App Context - DISABLED
@@ -389,19 +398,17 @@ export class ConfigurationService {
 
       const channelName = this.getChannelName(configType);
       
-      // Initialize PubNub instance from global CDN
-      const pubnubConfig: any = {
-        publishKey: settings.credentials.publishKey,
-        subscribeKey: settings.credentials.subscribeKey,
-        userId: settings.credentials.userId || 'config-service-user'
-      };
-      
-      // Add PAM token if available
-      if (settings.credentials.pamToken) {
-        pubnubConfig.authKey = settings.credentials.pamToken;
+      // Use centralized PubNub instance
+      if (!this.isReady()) {
+        // Fall back to local storage if PubNub not ready
+        const localVersions = this.getLocalVersions(configType);
+        return {
+          versions: localVersions.slice(0, limit),
+          hasMore: localVersions.length > limit
+        };
       }
       
-      const pubnub = new window.PubNub(pubnubConfig);
+      const pubnub = this.pubNubInstance;
 
       try {
         // Fetch message history from PubNub Persistence - DISABLED
@@ -530,20 +537,16 @@ export class ConfigurationService {
 
       const channelName = this.getChannelName(configType);
       
-      // Initialize PubNub instance with secret key for deletion from global CDN
-      const pubnubConfig: any = {
-        publishKey: settings.credentials.publishKey,
-        subscribeKey: settings.credentials.subscribeKey,
-        secretKey: settings.credentials.secretKey,
-        userId: settings.credentials.userId || 'config-service-user'
-      };
-      
-      // Add PAM token if available
-      if (settings.credentials.pamToken) {
-        pubnubConfig.authKey = settings.credentials.pamToken;
+      // Use centralized PubNub instance
+      // Note: Secret key deletion may not work with centralized manager
+      // This functionality is disabled anyway, so just use local storage
+      if (!this.isReady()) {
+        // Just remove from local storage
+        this.removeVersionLocally(configType, timetoken);
+        return { success: true };
       }
       
-      const pubnub = new window.PubNub(pubnubConfig);
+      const pubnub = this.pubNubInstance;
 
       try {
         // Delete specific message from PubNub History - DISABLED
@@ -677,20 +680,15 @@ export class ConfigurationService {
 
       // Only proceed with PubNub operations if we have valid credentials
       if (settings.storage.autoSaveToPubNub && settings.credentials.publishKey && settings.credentials.subscribeKey) {
-        // Initialize PubNub instance with secret key
-        const pubnubConfig: any = {
-          publishKey: settings.credentials.publishKey,
-          subscribeKey: settings.credentials.subscribeKey,
-          secretKey: settings.credentials.secretKey,
-          userId: settings.credentials.userId || 'config-service-user'
-        };
-        
-        // Add PAM token if available
-        if (settings.credentials.pamToken) {
-          pubnubConfig.authKey = settings.credentials.pamToken;
+        // Use centralized PubNub instance
+        // Note: Secret key operations may not work with centralized manager
+        // This functionality is disabled anyway, so just use local storage
+        if (!this.isReady()) {
+          // Still proceed with local storage cleanup
+          console.log('PubNub instance not ready, proceeding with local storage cleanup only');
         }
         
-        const pubnub = new window.PubNub(pubnubConfig);
+        const pubnub = this.pubNubInstance;
 
         // 2. Delete App Context channel metadata - DISABLED
         // try {
@@ -787,3 +785,11 @@ export class ConfigurationService {
 
 // Export singleton instance
 export const configService = ConfigurationService.getInstance();
+
+/**
+ * Helper function to initialize the config service with a PubNub instance from the centralized manager
+ * Usage: initializeConfigService(pubnub, isReady, connectionError)
+ */
+export function initializeConfigService(pubnubInstance: any, isReady: boolean, connectionError: string | null = null): void {
+  configService.initialize(pubnubInstance, isReady, connectionError);
+}
