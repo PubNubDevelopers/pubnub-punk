@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -64,6 +64,7 @@ export default function PubNubPersistencePage() {
   const [startTimestamp, setStartTimestamp] = useState('');
   const [endTimestamp, setEndTimestamp] = useState('');
   const [selectedTimezone, setSelectedTimezone] = useState('');
+  const [mounted, setMounted] = useState(false);
   
   // UI state
   const [channelHistories, setChannelHistories] = useState<ChannelHistory[]>([]);
@@ -82,6 +83,11 @@ export default function PubNubPersistencePage() {
     totalBatches: 0
   });
 
+  // Mount check
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Initialize timezone
   useEffect(() => {
     // Get browser timezone
@@ -92,16 +98,7 @@ export default function PubNubPersistencePage() {
   // Set config type for the config service
   useEffect(() => {
     setConfigType('PERSISTENCE');
-    
-    // Initialize page settings
-    setPageSettings({
-      persistence: settings,
-      configForSaving: {
-        channels: settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c),
-        timestamp: new Date().toISOString(),
-      }
-    });
-  }, [setConfigType, setPageSettings]);
+  }, [setConfigType]);
   
   // Create PersistenceAPI when PubNub instance is ready
   useEffect(() => {
@@ -112,21 +109,41 @@ export default function PubNubPersistencePage() {
     }
   }, [pubnub, isConnected]);
 
-  // Update page settings when form changes
-  const updatePageSettings = () => {
-    setPageSettings(prev => ({
-      ...prev,
-      persistence: settings,
-      configForSaving: {
-        channels: settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c),
-        timestamp: new Date().toISOString(),
-      }
-    }));
-  };
+  // Sync page settings for persistence (matching new-persistence pattern)
+  const pageSettings = useMemo(() => ({
+    persistence: settings,
+    ui: {
+      startTimestamp,
+      endTimestamp,
+      selectedTimezone,
+    },
+    configForSaving: {
+      channels: settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c),
+      count: settings.count,
+      includeTimetoken: settings.includeTimetoken,
+      includeMeta: settings.includeMeta,
+      includeMessageActions: settings.includeMessageActions,
+      includeUUID: settings.includeUUID,
+      reverse: settings.reverse,
+      startTimetoken: settings.startTimetoken,
+      endTimetoken: settings.endTimetoken,
+      searchTerm: settings.searchTerm,
+      showRawData: settings.showRawData,
+      startTimestamp,
+      endTimestamp,
+      selectedTimezone,
+      timestamp: new Date().toISOString(),
+    },
+  }), [
+    settings, startTimestamp, endTimestamp, selectedTimezone
+  ]);
 
+  // Update page settings when state changes
   useEffect(() => {
-    updatePageSettings();
-  }, [settings, startTimestamp, endTimestamp, selectedTimezone]);
+    if (mounted) {
+      setPageSettings(pageSettings);
+    }
+  }, [pageSettings, setPageSettings, mounted]);
 
   // Handle timestamp input changes
   const handleStartTimestampChange = (timestamp: string) => {
@@ -409,6 +426,10 @@ export default function PubNubPersistencePage() {
   const handleCopyToClipboard = async (text: string, description: string) => {
     await copyToClipboard(text, description, toast);
   };
+
+  if (!mounted) {
+    return null;
+  }
 
   // Show loading while PubNub is initializing
   if (!pubnubReady) {

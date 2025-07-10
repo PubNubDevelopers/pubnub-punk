@@ -1,7 +1,79 @@
 import { HistoryMessage, ChannelHistory, PubNubHistoryParams, FetchProgress } from '@/types/persistence';
 
+// Time Range Strategy Constants (from fetch_example.js)
+const TRS_NONE = 0;
+const TRS_AT = 1;
+const TRS_TT = 2;
+const TRS_DT = 3;
+
+// Create datetime string for PubNub
+function createDatetimeString(theDate: string, theTime: string): string | null {
+  if (!theDate || !theTime) return null;
+  
+  const theDateTime = new Date(`${theDate} ${theTime}`);
+  
+  const year = theDateTime.getFullYear();
+  const month = String(theDateTime.getMonth() + 1).padStart(2, '0');
+  const day = String(theDateTime.getDate()).padStart(2, '0');
+  const hour = String(theDateTime.getHours()).padStart(2, '0');
+  const minute = String(theDateTime.getMinutes()).padStart(2, '0');
+  const second = String(theDateTime.getSeconds()).padStart(2, '0');
+  const millisecond = String(theDateTime.getMilliseconds()).padStart(3, '0');
+  
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}:${millisecond}0000`;
+}
+
+// Build fetch parameters using the new methodology
+function buildFetchParams(config: any) {
+  const { channel, timeRangeStrategy, atTimetoken, startTimetoken, endTimetoken, startDate, endDate, startTime, endTime } = config;
+  
+  let params: any = {};
+  params.channels = [channel];
+
+  if (timeRangeStrategy === TRS_NONE) {
+    params.start = null;
+  }
+  else if (timeRangeStrategy === TRS_AT) {
+    params.end = atTimetoken;
+    params.count = 1;
+  }
+  else if (timeRangeStrategy === TRS_TT) {
+    params.start = startTimetoken;
+    params.end = endTimetoken;
+  }
+  else if (timeRangeStrategy === TRS_DT) {
+    params.end = createDatetimeString(endDate, endTime);
+    params.start = createDatetimeString(startDate, startTime);
+  }
+  
+  return params;
+}
+
+// Subtracts 1 from a timetoken string (used for message deletion)
+function ttMinus1(tt: string, tail: string = ''): string {
+  if (!tt) {
+    throw new Error('No timetoken provided');
+  }
+  if (Object.prototype.toString.call(tt) !== '[object String]') {
+    throw new Error('Invalid timetoken');
+  }
+  if (tt.length === 0) {
+    throw new Error('Timetoken was either 0 or empty');
+  }
+
+  tail = tt[tt.length - 1] + tail;
+  tt = tt.substring(0, tt.length - 1);
+
+  if (Number(tail) === 0) {
+    return ttMinus1(tt, tail);
+  } else {
+    return tt + (Number(tail) - 1);
+  }
+}
+
 /**
  * PubNub Message Persistence API Service
+ * Updated to use the new SDK methodology from fetch_example.js
  */
 export class PersistenceAPI {
   private pubnub: any;
@@ -12,6 +84,7 @@ export class PersistenceAPI {
 
   /**
    * Fetch message history for a single channel with pagination
+   * Updated to use the new SDK methodology from fetch_example.js
    */
   async fetchChannelHistory(
     channel: string,
@@ -21,15 +94,23 @@ export class PersistenceAPI {
     params: Partial<PubNubHistoryParams> = {},
     onProgress?: (progress: Partial<FetchProgress>) => void
   ): Promise<ChannelHistory> {
-    const allMessages: HistoryMessage[] = [];
-    let currentStart = startTimetoken || undefined;
-    let currentEnd = endTimetoken || undefined;
-    let remainingCount = count;
-    let iterationCount = 0;
-    const maxIterations = Math.ceil(count / 100); // Safety limit
-    const seen = new Set<string>(); // Deduplication set
+    const maxRows = count;
+    
+    // Determine time range strategy
+    let timeRangeStrategy = TRS_NONE;
+    if (startTimetoken || endTimetoken) {
+      timeRangeStrategy = TRS_TT;
+    }
 
-    console.log(`Fetching ${count} messages for channel ${channel}`);
+    const config = {
+      channel,
+      timeRangeStrategy,
+      maxRows,
+      startTimetoken: startTimetoken || undefined,
+      endTimetoken: endTimetoken || undefined,
+    };
+
+    console.log(`Fetching ${count} messages for channel ${channel} using new methodology`);
 
     // Update progress for current channel
     onProgress?.({
@@ -38,117 +119,24 @@ export class PersistenceAPI {
       totalBatches: Math.ceil(count / 100)
     });
 
-    // Iterate through multiple API calls if count > 100
-    while (remainingCount > 0 && iterationCount < maxIterations) {
-      const batchSize = Math.min(remainingCount, 100); // API limit is 100
-      
-      const fetchParams: any = {
-        channels: [channel],
-        count: batchSize,
-        includeTimetoken: params.includeTimetoken ?? true,
-        includeMeta: params.includeMeta ?? false,
-        includeUUID: params.includeUUID ?? true,
-        includeMessageActions: params.includeMessageActions ?? false,
-        reverse: params.reverse ?? false,
-      };
-
-      // Add time range if specified
-      if (currentStart) {
-        fetchParams.start = currentStart;
-      }
-      if (currentEnd) {
-        fetchParams.end = currentEnd;
-      }
-      
-      console.log(`Iteration ${iterationCount + 1}: Fetching ${batchSize} messages with params:`, fetchParams);
-
-      const result = await this.pubnub.fetchMessages(fetchParams);
-      console.log(`Iteration ${iterationCount + 1} result:`, result);
-
-      const channelData = result.channels && result.channels[channel] ? result.channels[channel] : [];
-      
-      console.log(`Iteration ${iterationCount + 1}: Received ${channelData.length} messages`);
-      
-      // If no messages returned, stop immediately
-      if (channelData.length === 0) {
-        console.log('No messages returned from API, stopping iteration');
-        break;
-      }
-
-      let batchMessages: HistoryMessage[] = channelData.map((item: any) => ({
-        message: item.message,
-        timetoken: item.timetoken,
-        uuid: item.uuid,
-        meta: item.meta,
-        messageType: item.messageType,
-        channel: channel,
-      }));
-
-      console.log(`Iteration ${iterationCount + 1}: Mapped ${batchMessages.length} messages to internal format`);
-
-      // Add messages to collection with deduplication
-      for (const msg of batchMessages) {
-        if (!seen.has(msg.timetoken)) {
-          allMessages.push(msg);
-          seen.add(msg.timetoken);
-        }
-      }
-      
-      remainingCount = count - allMessages.length;
-      iterationCount++;
-      
-      console.log(`After iteration ${iterationCount}: allMessages.length = ${allMessages.length}, remainingCount = ${remainingCount}`);
-      
-      // Update progress
+    // Use the new retrieveMessages function methodology
+    const results = await this.retrieveMessagesWithNewMethod(config, (current, total) => {
       onProgress?.({
-        current: allMessages.length,
-        currentBatch: iterationCount,
-        totalBatches: Math.ceil(count / 100)
+        current,
+        currentBatch: Math.ceil(current / 100),
+        totalBatches: Math.ceil(total / 100)
       });
-      
-      // Apply the fix: strict, parameter-aware pagination
-      if (batchMessages.length > 0) {
-        const oldest = BigInt(batchMessages[0].timetoken);
-        const newest = BigInt(batchMessages[batchMessages.length - 1].timetoken);
-        
-        if (!startTimetoken && !endTimetoken) {
-          // No boundaries: walk back in time
-          currentEnd = (oldest - 1n).toString();
-          console.log(`No boundaries mode: Setting end to ${currentEnd} for next batch`);
-        } else if (startTimetoken && !endTimetoken) {
-          // Start only: walk forward
-          currentStart = (newest + 1n).toString();
-          console.log(`Start-only mode: Setting start to ${currentStart} for next batch`);
-        } else if (!startTimetoken && endTimetoken) {
-          // End only: walk back
-          currentEnd = (oldest - 1n).toString();
-          console.log(`End-only mode: Setting end to ${currentEnd} for next batch`);
-        } else {
-          // Bounded window: walk forward until we hit or pass the user's end
-          const nextStart = newest + 1n;
-          if (nextStart >= BigInt(endTimetoken)) {
-            console.log(`Range complete: nextStart ${nextStart} >= endTimetoken ${endTimetoken}`);
-            break;
-          }
-          currentStart = nextStart.toString();
-          console.log(`Bounded mode: Setting start to ${currentStart} for next batch`);
-        }
-      } else {
-        console.log('No messages in batch, stopping iteration');
-        break;
-      }
+    });
 
-      // If we got fewer messages than requested, we've reached the end
-      if (batchMessages.length < batchSize) {
-        console.log(`Received ${batchMessages.length} messages, requested ${batchSize}. End of available messages.`);
-        break;
-      }
-      
-      // Small delay between requests to be respectful to the API
-      if (remainingCount > 0) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
+    // Convert results to HistoryMessage format
+    const allMessages: HistoryMessage[] = results.map((msg: any) => ({
+      message: msg.message,
+      timetoken: msg.timetoken,
+      uuid: msg.uuid,
+      meta: msg.meta,
+      messageType: msg.messageType,
+      channel: channel,
+    }));
 
     console.log(`Completed fetching for ${channel}. Total messages: ${allMessages.length}`);
 
@@ -159,6 +147,52 @@ export class PersistenceAPI {
       startTimetoken: allMessages.length > 0 ? allMessages[allMessages.length - 1].timetoken : undefined,
       endTimetoken: allMessages.length > 0 ? allMessages[0].timetoken : undefined,
     };
+  }
+
+  /**
+   * New retrieveMessages method using the fetch_example.js methodology
+   */
+  private async retrieveMessagesWithNewMethod(config: any, onProgress?: (current: number, total: number) => void): Promise<any[]> {
+    const { channel, maxRows = 1000 } = config;
+    let params = buildFetchParams(config);
+    let more = true;
+    let results: any[] = [];
+    let totalRecords = 0;
+
+    const limit = maxRows < 1000 ? maxRows : 1000;
+
+    do {
+      try {
+        const result = await this.pubnub.fetchMessages(params);
+        const resultCount = result.channels[channel].length;
+        totalRecords += resultCount;
+
+        if (result != null && totalRecords > 0) {
+          // Concatenate new results to the beginning to maintain chronological order
+          results = result.channels[channel].concat(results);
+          
+          // Continue if we haven't hit our limit and got a full batch (100 messages)
+          more = totalRecords < limit && resultCount === 100;
+          
+          // Update start parameter for next iteration
+          params.start = result.channels[channel][0].timetoken;
+          
+          // Call progress callback if provided
+          if (onProgress) {
+            onProgress(totalRecords, limit);
+          }
+        }
+        else {
+          more = false;
+        }
+      }
+      catch (error) {
+        console.error('Error retrieving messages:', error);
+        throw error;
+      }
+    } while (more);
+
+    return results;
   }
 
   /**
@@ -229,16 +263,20 @@ export class PersistenceAPI {
 
   /**
    * Delete a specific message from history
+   * Updated to use the new ttMinus1 methodology from fetch_example.js
    */
   async deleteMessage(channel: string, timetoken: string): Promise<void> {
-    // For deleting a specific message, we use the timetoken as both start and end
-    // with start being timetoken-1 (exclusive) and end being timetoken (inclusive)
-    const startTT = (BigInt(timetoken) - BigInt(1)).toString();
-    
-    await this.pubnub.deleteMessages({
-      channel: channel,
-      start: startTT,
-      end: timetoken
-    });
+    try {
+      const result = await this.pubnub.deleteMessages({
+        channel: channel,
+        start: ttMinus1(timetoken),
+        end: timetoken,
+      });
+      return result;
+    }
+    catch (error) {
+      console.error('Error deleting message:', error);
+      throw error;
+    }
   }
 }
