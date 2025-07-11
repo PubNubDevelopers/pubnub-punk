@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { UserMetadata, ChannelMetadata, MembershipData, ChannelMemberData, LoadingProgress } from '@/types/app-context';
 import { filterData, sortData, paginateData } from '@/utils/app-context';
+import { APP_CONTEXT_CONFIG } from '@/config/app-context';
 
 interface UseAppContextDataProps {
   pubnub: any;
@@ -30,6 +31,37 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
   const [channelsLoaded, setChannelsLoaded] = useState(false);
   const [usersLastLoaded, setUsersLastLoaded] = useState<Date | null>(null);
   const [channelsLastLoaded, setChannelsLastLoaded] = useState<Date | null>(null);
+  
+  // Total count tracking (for large datasets)
+  const [totalUserCount, setTotalUserCount] = useState<number | null>(null);
+  const [totalChannelCount, setTotalChannelCount] = useState<number | null>(null);
+  const [countChecked, setCountChecked] = useState(false);
+
+  // Check total counts without loading all data
+  const checkTotalCounts = useCallback(async () => {
+    if (!pubnubRef.current || !isReady || countChecked) return;
+
+    try {
+      // Get user count
+      const userResult = await pubnubRef.current.objects.getAllUUIDMetadata({
+        include: { totalCount: true },
+        limit: 1 // Only get one record to check total count
+      });
+      
+      // Get channel count
+      const channelResult = await pubnubRef.current.objects.getAllChannelMetadata({
+        include: { totalCount: true },
+        limit: 1 // Only get one record to check total count
+      });
+
+      setTotalUserCount(userResult.totalCount || 0);
+      setTotalChannelCount(channelResult.totalCount || 0);
+      setCountChecked(true);
+    } catch (error) {
+      console.error('Error checking total counts:', error);
+      setCountChecked(true); // Still mark as checked to avoid infinite loops
+    }
+  }, [pubnubRef, isReady, countChecked]);
 
   const loadUsers = useCallback(async (forceReload = false) => {
     if (!pubnubRef.current || !isReady) return;
@@ -49,8 +81,9 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
       let pageCount = 0;
       const seenIds = new Set<string>();
       let totalCount: number | undefined = undefined;
+      const MAX_RECORDS = APP_CONTEXT_CONFIG.MAX_LOCAL_RECORDS;
       
-      // Fetch all users using pagination
+      // Fetch users using pagination with limit
       do {
         const result = await pubnubRef.current.objects.getAllUUIDMetadata({
           include: {
@@ -64,6 +97,16 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
         // Get total count from first response
         if (totalCount === undefined && result.totalCount !== undefined) {
           totalCount = result.totalCount;
+          
+          // Warn if total count exceeds our limit
+          if (totalCount > MAX_RECORDS) {
+            console.warn(`Total user count (${totalCount}) exceeds recommended limit (${MAX_RECORDS}). Only first ${MAX_RECORDS} will be loaded.`);
+            toast({
+              title: "Large Dataset Warning",
+              description: `Found ${totalCount} users. Loading first ${MAX_RECORDS} for performance. Consider using search/filtering for specific users.`,
+              variant: "default",
+            });
+          }
         }
 
         if (result.data && result.data.length > 0) {
@@ -80,17 +123,24 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
           });
 
           // Update progress
-          if (totalCount) {
+          const displayTotal = totalCount && totalCount > MAX_RECORDS ? MAX_RECORDS : totalCount;
+          if (displayTotal) {
             setLoadingProgress({
               current: allUsers.length,
-              total: totalCount,
-              message: `Loading users... ${allUsers.length} of ${totalCount}`
+              total: displayTotal,
+              message: `Loading users... ${allUsers.length} of ${displayTotal}${totalCount && totalCount > MAX_RECORDS ? ` (${totalCount} total)` : ''}`
             });
           } else {
             setLoadingProgress({
               current: allUsers.length,
               message: `Loading users... ${allUsers.length} loaded`
             });
+          }
+
+          // Stop if we've reached our limit
+          if (allUsers.length >= MAX_RECORDS) {
+            console.log(`Reached maximum record limit (${MAX_RECORDS}), stopping pagination`);
+            break;
           }
         } else if (result.data && result.data.length === 0) {
           // Empty data response, stop pagination
@@ -113,9 +163,12 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
       setUsersLoaded(true);
       setUsersLastLoaded(new Date());
       
+      const loadedCount = allUsers.length;
+      const isLimited = totalCount && totalCount > MAX_RECORDS;
+      
       toast({
         title: "Users Loaded",
-        description: `Successfully loaded ${allUsers.length} users`,
+        description: `Successfully loaded ${loadedCount} users${isLimited ? ` (limited from ${totalCount} total)` : ''}`,
       });
     } catch (error) {
       console.error('Error loading users:', error);
@@ -148,8 +201,9 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
       let pageCount = 0;
       const seenIds = new Set<string>();
       let totalCount: number | undefined = undefined;
+      const MAX_RECORDS = APP_CONTEXT_CONFIG.MAX_LOCAL_RECORDS;
       
-      // Fetch all channels using pagination
+      // Fetch channels using pagination with limit
       do {
         const result = await pubnubRef.current.objects.getAllChannelMetadata({
           include: {
@@ -163,6 +217,16 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
         // Get total count from first response
         if (totalCount === undefined && result.totalCount !== undefined) {
           totalCount = result.totalCount;
+          
+          // Warn if total count exceeds our limit
+          if (totalCount > MAX_RECORDS) {
+            console.warn(`Total channel count (${totalCount}) exceeds recommended limit (${MAX_RECORDS}). Only first ${MAX_RECORDS} will be loaded.`);
+            toast({
+              title: "Large Dataset Warning",
+              description: `Found ${totalCount} channels. Loading first ${MAX_RECORDS} for performance. Consider using search/filtering for specific channels.`,
+              variant: "default",
+            });
+          }
         }
 
         if (result.data && result.data.length > 0) {
@@ -179,17 +243,24 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
           });
 
           // Update progress
-          if (totalCount) {
+          const displayTotal = totalCount && totalCount > MAX_RECORDS ? MAX_RECORDS : totalCount;
+          if (displayTotal) {
             setLoadingProgress({
               current: allChannels.length,
-              total: totalCount,
-              message: `Loading channels... ${allChannels.length} of ${totalCount}`
+              total: displayTotal,
+              message: `Loading channels... ${allChannels.length} of ${displayTotal}${totalCount && totalCount > MAX_RECORDS ? ` (${totalCount} total)` : ''}`
             });
           } else {
             setLoadingProgress({
               current: allChannels.length,
               message: `Loading channels... ${allChannels.length} loaded`
             });
+          }
+
+          // Stop if we've reached our limit
+          if (allChannels.length >= MAX_RECORDS) {
+            console.log(`Reached maximum record limit (${MAX_RECORDS}), stopping pagination`);
+            break;
           }
         } else if (result.data && result.data.length === 0) {
           // Empty data response, stop pagination
@@ -212,9 +283,12 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
       setChannelsLoaded(true);
       setChannelsLastLoaded(new Date());
       
+      const loadedCount = allChannels.length;
+      const isLimited = totalCount && totalCount > MAX_RECORDS;
+      
       toast({
         title: "Channels Loaded",
-        description: `Successfully loaded ${allChannels.length} channels`,
+        description: `Successfully loaded ${loadedCount} channels${isLimited ? ` (limited from ${totalCount} total)` : ''}`,
       });
     } catch (error) {
       console.error('Error loading channels:', error);
@@ -299,6 +373,254 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
     }
   }, [pubnubRef, isReady, toast]);
 
+  // Search users with filtering and pagination
+  const searchUsers = useCallback(async (searchParams: {
+    filter?: string;
+    sort?: { field: string; order: 'asc' | 'desc' };
+    limit?: number;
+  }) => {
+    if (!pubnubRef.current || !isReady) return { data: [], totalCount: 0, hasMore: false };
+
+    setLoading(true);
+    setLoadingProgress({ current: 0, message: 'Searching users...' });
+
+    try {
+      const { filter, sort, limit = APP_CONTEXT_CONFIG.DEFAULT_SEARCH_LIMIT } = searchParams;
+      
+      // First, get initial results to check total count
+      const initialConfig: any = {
+        include: {
+          customFields: true,
+          totalCount: true
+        },
+        limit: Math.min(limit, APP_CONTEXT_CONFIG.SEARCH_PAGE_SIZE)
+      };
+
+      if (filter) {
+        initialConfig.filter = filter;
+      }
+
+      if (sort) {
+        initialConfig.sort = { [sort.field]: sort.order };
+      }
+
+      const initialResult = await pubnubRef.current.objects.getAllUUIDMetadata(initialConfig);
+      const totalCount = initialResult.totalCount || 0;
+      
+      // If total count is small or under threshold, return initial results
+      if (totalCount <= APP_CONTEXT_CONFIG.SEARCH_PAGINATION_THRESHOLD) {
+        toast({
+          title: "Search Complete",
+          description: `Found ${initialResult.data?.length || 0} users`,
+        });
+
+        return {
+          data: initialResult.data || [],
+          totalCount,
+          hasMore: false
+        };
+      }
+
+      // For large result sets, paginate up to MAX_SEARCH_RESULTS_LOCAL
+      const allResults: UserMetadata[] = [...(initialResult.data || [])];
+      let nextToken = initialResult.next;
+      const maxResults = APP_CONTEXT_CONFIG.MAX_SEARCH_RESULTS_LOCAL;
+      const pageSize = APP_CONTEXT_CONFIG.SEARCH_PAGE_SIZE;
+      let pageCount = 1;
+
+      setLoadingProgress({ 
+        current: allResults.length, 
+        total: Math.min(totalCount, maxResults),
+        message: `Loading search results... ${allResults.length}/${Math.min(totalCount, maxResults)}` 
+      });
+
+      // Continue fetching until we have enough results or no more pages
+      while (nextToken && allResults.length < maxResults) {
+        const pageConfig: any = {
+          include: {
+            customFields: true,
+            totalCount: true
+          },
+          limit: Math.min(pageSize, maxResults - allResults.length),
+          page: { next: nextToken }
+        };
+
+        if (filter) {
+          pageConfig.filter = filter;
+        }
+
+        if (sort) {
+          pageConfig.sort = { [sort.field]: sort.order };
+        }
+
+        const pageResult = await pubnubRef.current.objects.getAllUUIDMetadata(pageConfig);
+        
+        if (pageResult.data && pageResult.data.length > 0) {
+          allResults.push(...pageResult.data);
+          pageCount++;
+          
+          setLoadingProgress({ 
+            current: allResults.length, 
+            total: Math.min(totalCount, maxResults),
+            message: `Loading search results... ${allResults.length}/${Math.min(totalCount, maxResults)}` 
+          });
+        }
+
+        nextToken = pageResult.next;
+      }
+
+      const hasMore = totalCount > allResults.length;
+      
+      toast({
+        title: "Search Complete",
+        description: hasMore 
+          ? `Loaded ${allResults.length} users locally (${totalCount.toLocaleString()} total found)`
+          : `Found ${allResults.length} users`,
+      });
+
+      return {
+        data: allResults,
+        totalCount,
+        hasMore
+      };
+    } catch (error) {
+      console.error('Error searching users:', error);
+      toast({
+        title: "Search Error",
+        description: "Failed to search users. Please try again.",
+        variant: "destructive",
+      });
+      return { data: [], totalCount: 0, hasMore: false };
+    } finally {
+      setLoading(false);
+      setLoadingProgress(null);
+    }
+  }, [pubnubRef, isReady, toast]);
+
+  // Search channels with filtering and pagination
+  const searchChannels = useCallback(async (searchParams: {
+    filter?: string;
+    sort?: { field: string; order: 'asc' | 'desc' };
+    limit?: number;
+  }) => {
+    if (!pubnubRef.current || !isReady) return { data: [], totalCount: 0, hasMore: false };
+
+    setLoading(true);
+    setLoadingProgress({ current: 0, message: 'Searching channels...' });
+
+    try {
+      const { filter, sort, limit = APP_CONTEXT_CONFIG.DEFAULT_SEARCH_LIMIT } = searchParams;
+      
+      // First, get initial results to check total count
+      const initialConfig: any = {
+        include: {
+          customFields: true,
+          totalCount: true
+        },
+        limit: Math.min(limit, APP_CONTEXT_CONFIG.SEARCH_PAGE_SIZE)
+      };
+
+      if (filter) {
+        initialConfig.filter = filter;
+      }
+
+      if (sort) {
+        initialConfig.sort = { [sort.field]: sort.order };
+      }
+
+      const initialResult = await pubnubRef.current.objects.getAllChannelMetadata(initialConfig);
+      const totalCount = initialResult.totalCount || 0;
+      
+      // If total count is small or under threshold, return initial results
+      if (totalCount <= APP_CONTEXT_CONFIG.SEARCH_PAGINATION_THRESHOLD) {
+        toast({
+          title: "Search Complete",
+          description: `Found ${initialResult.data?.length || 0} channels`,
+        });
+
+        return {
+          data: initialResult.data || [],
+          totalCount,
+          hasMore: false
+        };
+      }
+
+      // For large result sets, paginate up to MAX_SEARCH_RESULTS_LOCAL
+      const allResults: ChannelMetadata[] = [...(initialResult.data || [])];
+      let nextToken = initialResult.next;
+      const maxResults = APP_CONTEXT_CONFIG.MAX_SEARCH_RESULTS_LOCAL;
+      const pageSize = APP_CONTEXT_CONFIG.SEARCH_PAGE_SIZE;
+      let pageCount = 1;
+
+      setLoadingProgress({ 
+        current: allResults.length, 
+        total: Math.min(totalCount, maxResults),
+        message: `Loading search results... ${allResults.length}/${Math.min(totalCount, maxResults)}` 
+      });
+
+      // Continue fetching until we have enough results or no more pages
+      while (nextToken && allResults.length < maxResults) {
+        const pageConfig: any = {
+          include: {
+            customFields: true,
+            totalCount: true
+          },
+          limit: Math.min(pageSize, maxResults - allResults.length),
+          page: { next: nextToken }
+        };
+
+        if (filter) {
+          pageConfig.filter = filter;
+        }
+
+        if (sort) {
+          pageConfig.sort = { [sort.field]: sort.order };
+        }
+
+        const pageResult = await pubnubRef.current.objects.getAllChannelMetadata(pageConfig);
+        
+        if (pageResult.data && pageResult.data.length > 0) {
+          allResults.push(...pageResult.data);
+          pageCount++;
+          
+          setLoadingProgress({ 
+            current: allResults.length, 
+            total: Math.min(totalCount, maxResults),
+            message: `Loading search results... ${allResults.length}/${Math.min(totalCount, maxResults)}` 
+          });
+        }
+
+        nextToken = pageResult.next;
+      }
+
+      const hasMore = totalCount > allResults.length;
+      
+      toast({
+        title: "Search Complete",
+        description: hasMore 
+          ? `Loaded ${allResults.length} channels locally (${totalCount.toLocaleString()} total found)`
+          : `Found ${allResults.length} channels`,
+      });
+
+      return {
+        data: allResults,
+        totalCount,
+        hasMore
+      };
+    } catch (error) {
+      console.error('Error searching channels:', error);
+      toast({
+        title: "Search Error",
+        description: "Failed to search channels. Please try again.",
+        variant: "destructive",
+      });
+      return { data: [], totalCount: 0, hasMore: false };
+    } finally {
+      setLoading(false);
+      setLoadingProgress(null);
+    }
+  }, [pubnubRef, isReady, toast]);
+
   const getFilteredAndSortedData = useCallback((
     data: (UserMetadata | ChannelMetadata)[],
     searchTerm: string,
@@ -336,11 +658,19 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
     usersLastLoaded,
     channelsLastLoaded,
     
+    // Total count tracking
+    totalUserCount,
+    totalChannelCount,
+    countChecked,
+    
     // Actions
     loadUsers,
     loadChannels,
     loadMemberships,
     loadChannelMembers,
+    checkTotalCounts,
+    searchUsers,
+    searchChannels,
     
     // Utilities
     getFilteredAndSortedData,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { RefreshCw, Users, Hash } from 'lucide-react';
+import { RefreshCw, Users, Hash, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -25,12 +25,15 @@ import { UserEditForm } from '@/components/app-context/users/UserEditForm';
 import { ChannelEditForm } from '@/components/app-context/channels/ChannelEditForm';
 import { MembershipsView } from '@/components/app-context/memberships/MembershipsView';
 import { ChannelMembersView } from '@/components/app-context/channel-members/ChannelMembersView';
+import { AppContextSearchPanel } from '@/components/app-context/search/AppContextSearchPanel';
+import { SearchResults } from '@/components/app-context/search/SearchResults';
 
 // Import hooks
 import { useAppContextData } from '@/hooks/useAppContextData';
 
 // Import utils
 import { filterData, sortData, paginateData } from '@/utils/app-context';
+import { APP_CONTEXT_CONFIG } from '@/config/app-context';
 
 export default function AppContextPage() {
   const { toast } = useToast();
@@ -65,10 +68,16 @@ export default function AppContextPage() {
     loadingProgress,
     usersLoaded,
     channelsLoaded,
+    totalUserCount,
+    totalChannelCount,
+    countChecked,
     loadUsers,
     loadChannels,
     loadMemberships,
     loadChannelMembers,
+    checkTotalCounts,
+    searchUsers,
+    searchChannels,
     getFilteredAndSortedData,
     getPaginatedData,
     setUsers,
@@ -92,6 +101,26 @@ export default function AppContextPage() {
   const [showChannelMembers, setShowChannelMembers] = useState(false);
   const [currentMembershipsUserId, setCurrentMembershipsUserId] = useState<string>('');
   const [currentChannelMembersChannelId, setCurrentChannelMembersChannelId] = useState<string>('');
+
+  // Search states
+  const [searchMode, setSearchMode] = useState(false);
+  const [searchResults, setSearchResults] = useState<(UserMetadata | ChannelMetadata)[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResultCount, setSearchResultCount] = useState<number>(0);
+  const [searchHasMore, setSearchHasMore] = useState<boolean>(false);
+  const [showLargeResultDialog, setShowLargeResultDialog] = useState<boolean>(false);
+  
+  // Search cache for preserving search conditions when navigating back
+  const [searchCache, setSearchCache] = useState<{
+    [key: string]: {
+      conditions: any[];
+      logic: 'AND' | 'OR';
+      sort: { field: string; order: 'asc' | 'desc' };
+      limit: number;
+      rawFilter: string;
+      useRawFilter: boolean;
+    }
+  }>({});
 
   // Mount check
   useEffect(() => {
@@ -344,16 +373,132 @@ export default function AppContextPage() {
     loadChannelMembers(channel.id);
   };
 
-  // Auto-load data on mount
+  // Search handlers
+  const handleSearch = async (params: any) => {
+    try {
+      const { conditions, logic, sort, limit, rawFilter, useRawFilter } = params;
+      
+      // Cache search conditions for current tab
+      const cacheKey = selectedTab;
+      setSearchCache(prev => ({
+        ...prev,
+        [cacheKey]: {
+          conditions: conditions || [],
+          logic: logic || 'AND',
+          sort: sort || { field: 'updated', order: 'desc' },
+          limit: limit || 100,
+          rawFilter: rawFilter || '',
+          useRawFilter: useRawFilter || false,
+        }
+      }));
+      
+      // Build filter string
+      let filter = '';
+      if (rawFilter) {
+        // Use raw filter directly
+        filter = rawFilter.trim();
+      } else if (conditions && conditions.length > 0) {
+        // Build filter from conditions
+        const conditionStrings = conditions
+          .filter((c: any) => c.field && c.operator && c.value)
+          .map((c: any) => {
+            let value = c.value;
+            
+            // Handle string values (needs quotes)
+            if (c.operator === 'LIKE' || ['id', 'name', 'email', 'externalId', 'profileUrl', 'status', 'type', 'description'].includes(c.field)) {
+              value = `"${value}"`;
+            }
+            
+            return `${c.field} ${c.operator} ${value}`;
+          });
+
+        if (conditionStrings.length > 0) {
+          filter = conditionStrings.join(` ${logic} `);
+        }
+      }
+
+      setSearchQuery(filter);
+      
+      const searchParams = {
+        filter: filter || undefined,
+        sort: sort ? { field: sort.field, order: sort.order } : undefined,
+        limit
+      };
+
+      let result;
+      if (selectedTab === 'users') {
+        result = await searchUsers(searchParams);
+      } else {
+        result = await searchChannels(searchParams);
+      }
+
+      setSearchResults(result.data);
+      setSearchResultCount(result.totalCount);
+      setSearchHasMore(result.hasMore);
+      setSearchMode(true);
+
+      // Show large result dialog if there are more results than loaded locally
+      if (result.hasMore && result.totalCount > result.data.length) {
+        setShowLargeResultDialog(true);
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      toast({
+        title: "Search Error",
+        description: "Failed to perform search. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSearchClear = (clearCache = true) => {
+    setSearchMode(false);
+    setSearchResults([]);
+    setSearchQuery('');
+    setSearchResultCount(0);
+    setSearchHasMore(false);
+    setShowLargeResultDialog(false);
+    
+    // Only clear cache when explicitly requested (not when returning from search results)
+    if (clearCache) {
+      const cacheKey = selectedTab;
+      setSearchCache(prev => ({
+        ...prev,
+        [cacheKey]: {
+          conditions: [],
+          logic: 'AND',
+          sort: { field: 'updated', order: 'desc' },
+          limit: 100,
+          rawFilter: '',
+          useRawFilter: false,
+        }
+      }));
+    }
+  };
+
+  // Check total counts on mount
   useEffect(() => {
-    if (mounted && pubnubReady) {
-      if (selectedTab === 'users' && !usersLoaded) {
-        loadUsers();
-      } else if (selectedTab === 'channels' && !channelsLoaded) {
-        loadChannels();
+    if (mounted && pubnubReady && !countChecked) {
+      checkTotalCounts();
+    }
+  }, [mounted, pubnubReady, countChecked, checkTotalCounts]);
+
+  // Auto-load data based on count limits
+  useEffect(() => {
+    if (mounted && pubnubReady && countChecked) {
+      const currentCount = selectedTab === 'users' ? totalUserCount : totalChannelCount;
+      const isLoaded = selectedTab === 'users' ? usersLoaded : channelsLoaded;
+      
+      // Only auto-load if count is within limits
+      if (currentCount !== null && currentCount <= APP_CONTEXT_CONFIG.MAX_LOCAL_RECORDS && !isLoaded) {
+        if (selectedTab === 'users') {
+          loadUsers();
+        } else {
+          loadChannels();
+        }
       }
     }
-  }, [mounted, pubnubReady, selectedTab, usersLoaded, channelsLoaded, loadUsers, loadChannels]);
+  }, [mounted, pubnubReady, countChecked, selectedTab, totalUserCount, totalChannelCount, usersLoaded, channelsLoaded, loadUsers, loadChannels]);
 
   if (!mounted) {
     return null;
@@ -455,85 +600,172 @@ export default function AppContextPage() {
                 setSelectedChannelMembers(new Set());
               }}
             />
-          ) : (
-            <Card className="flex-1 flex flex-col">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">App Context Objects</CardTitle>
-                  <Button
-                    onClick={() => {
-                      if (selectedTab === 'users') loadUsers(true);
-                      else if (selectedTab === 'channels') loadChannels(true);
-                    }}
-                    disabled={loading}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                    Refresh
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 flex-1 flex flex-col">
-                <Tabs value={selectedTab} onValueChange={handleTabChange} className="flex-1 flex flex-col">
-                  <div className="px-6 border-b">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="users" className="flex items-center gap-2">
-                        <Users className="w-4 h-4" />
-                        Users ({users.length}){usersLoaded && <span className="text-xs opacity-60">•</span>}
-                      </TabsTrigger>
-                      <TabsTrigger value="channels" className="flex items-center gap-2">
-                        <Hash className="w-4 h-4" />
-                        Channels ({channels.length}){channelsLoaded && <span className="text-xs opacity-60">•</span>}
-                      </TabsTrigger>
-                    </TabsList>
+          ) : (() => {
+            const currentCount = selectedTab === 'users' ? totalUserCount : totalChannelCount;
+            const isLargeDataset = currentCount !== null && currentCount > APP_CONTEXT_CONFIG.MAX_LOCAL_RECORDS;
+            
+            // Show search panel for large datasets
+            if (isLargeDataset && !searchMode) {
+              return (
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold">App Context Objects</h2>
+                      <Tabs value={selectedTab} onValueChange={handleTabChange}>
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="users" className="flex items-center gap-2">
+                            <Users className="w-4 h-4" />
+                            Users ({totalUserCount?.toLocaleString() || 0})
+                          </TabsTrigger>
+                          <TabsTrigger value="channels" className="flex items-center gap-2">
+                            <Hash className="w-4 h-4" />
+                            Channels ({totalChannelCount?.toLocaleString() || 0})
+                          </TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                    </div>
                   </div>
+                  
+                  <AppContextSearchPanel
+                    type={selectedTab}
+                    onSearch={handleSearch}
+                    onClear={handleSearchClear}
+                    loading={loading}
+                    totalCount={currentCount}
+                    cachedParams={searchCache[selectedTab]}
+                  />
+                </div>
+              );
+            }
 
-                  <TabsContent value="users" className="flex-1 flex flex-col m-0">
-                    <UsersTab
-                      users={filteredAndSortedData as UserMetadata[]}
-                      selectedItems={selectedItems}
-                      pageSettings={pageSettings}
-                      loading={loading}
-                      loadingProgress={loadingProgress}
-                      onUpdateField={updateField}
-                      onItemSelection={toggleItemSelection}
-                      onSelectAll={selectAllVisible}
-                      onClearSelection={clearSelection}
-                      onSort={handleSort}
-                      onCreateNew={handleCreateNew}
-                      onBulkDelete={handleBulkDelete}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                      onCopy={handleCopy}
-                      onViewMemberships={handleViewMemberships}
-                    />
-                  </TabsContent>
+            // Show search results
+            if (searchMode) {
+              return (
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold">App Context Objects</h2>
+                      <Tabs value={selectedTab} onValueChange={handleTabChange}>
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="users" className="flex items-center gap-2">
+                            <Users className="w-4 h-4" />
+                            Users ({totalUserCount?.toLocaleString() || users.length})
+                          </TabsTrigger>
+                          <TabsTrigger value="channels" className="flex items-center gap-2">
+                            <Hash className="w-4 h-4" />
+                            Channels ({totalChannelCount?.toLocaleString() || channels.length})
+                          </TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                    </div>
+                    <Button
+                      onClick={handleSearchClear}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      <X className="w-4 h-4" />
+                      Back to Search
+                    </Button>
+                  </div>
+                  
+                  <SearchResults
+                    type={selectedTab}
+                    results={searchResults}
+                    totalCount={searchResultCount}
+                    searchQuery={searchQuery}
+                    hasMore={searchHasMore}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onCopy={handleCopy}
+                    onViewMemberships={selectedTab === 'users' ? handleViewMemberships : undefined}
+                    onViewMembers={selectedTab === 'channels' ? handleViewChannelMembers : undefined}
+                  />
+                </div>
+              );
+            }
 
-                  <TabsContent value="channels" className="flex-1 flex flex-col m-0">
-                    <ChannelsTab
-                      channels={filteredAndSortedData as ChannelMetadata[]}
-                      selectedItems={selectedItems}
-                      pageSettings={pageSettings}
-                      loading={loading}
-                      loadingProgress={loadingProgress}
-                      onUpdateField={updateField}
-                      onItemSelection={toggleItemSelection}
-                      onSelectAll={selectAllVisible}
-                      onClearSelection={clearSelection}
-                      onSort={handleSort}
-                      onCreateNew={handleCreateNew}
-                      onBulkDelete={handleBulkDelete}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                      onCopy={handleCopy}
-                      onViewMembers={handleViewChannelMembers}
-                    />
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          )}
+            // Show normal data tables for small datasets
+            return (
+              <Card className="flex-1 flex flex-col">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">App Context Objects</CardTitle>
+                    <Button
+                      onClick={() => {
+                        if (selectedTab === 'users') loadUsers(true);
+                        else if (selectedTab === 'channels') loadChannels(true);
+                      }}
+                      disabled={loading}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0 flex-1 flex flex-col">
+                  <Tabs value={selectedTab} onValueChange={handleTabChange} className="flex-1 flex flex-col">
+                    <div className="px-6 border-b">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="users" className="flex items-center gap-2">
+                          <Users className="w-4 h-4" />
+                          Users ({users.length}){usersLoaded && <span className="text-xs opacity-60">•</span>}
+                        </TabsTrigger>
+                        <TabsTrigger value="channels" className="flex items-center gap-2">
+                          <Hash className="w-4 h-4" />
+                          Channels ({channels.length}){channelsLoaded && <span className="text-xs opacity-60">•</span>}
+                        </TabsTrigger>
+                      </TabsList>
+                    </div>
+
+                    <TabsContent value="users" className="flex-1 flex flex-col m-0">
+                      <UsersTab
+                        users={filteredAndSortedData as UserMetadata[]}
+                        selectedItems={selectedItems}
+                        pageSettings={pageSettings}
+                        loading={loading}
+                        loadingProgress={loadingProgress}
+                        onUpdateField={updateField}
+                        onItemSelection={toggleItemSelection}
+                        onSelectAll={selectAllVisible}
+                        onClearSelection={clearSelection}
+                        onSort={handleSort}
+                        onCreateNew={handleCreateNew}
+                        onBulkDelete={handleBulkDelete}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onCopy={handleCopy}
+                        onViewMemberships={handleViewMemberships}
+                      />
+                    </TabsContent>
+
+                    <TabsContent value="channels" className="flex-1 flex flex-col m-0">
+                      <ChannelsTab
+                        channels={filteredAndSortedData as ChannelMetadata[]}
+                        selectedItems={selectedItems}
+                        pageSettings={pageSettings}
+                        loading={loading}
+                        loadingProgress={loadingProgress}
+                        onUpdateField={updateField}
+                        onItemSelection={toggleItemSelection}
+                        onSelectAll={selectAllVisible}
+                        onClearSelection={clearSelection}
+                        onSort={handleSort}
+                        onCreateNew={handleCreateNew}
+                        onBulkDelete={handleBulkDelete}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onCopy={handleCopy}
+                        onViewMembers={handleViewChannelMembers}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
 
         {/* Create/Edit Dialog */}
@@ -595,6 +827,36 @@ export default function AppContextPage() {
                 setDeletingItem(null);
               }}>
                 Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Large Result Set Dialog */}
+        <Dialog open={showLargeResultDialog} onOpenChange={setShowLargeResultDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Large Result Set</DialogTitle>
+              <DialogDescription>
+                Search returned a large number of results.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <div className="space-y-2">
+                <p className="text-sm">
+                  <strong>{searchResults.length.toLocaleString()}</strong> objects loaded locally
+                </p>
+                <p className="text-sm">
+                  Search returned <strong>{searchResultCount.toLocaleString()}</strong> total objects
+                </p>
+                <p className="text-sm text-gray-600">
+                  To load the complete set of results, narrow down your search with more specific parameters.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowLargeResultDialog(false)}>
+                OK
               </Button>
             </DialogFooter>
           </DialogContent>
