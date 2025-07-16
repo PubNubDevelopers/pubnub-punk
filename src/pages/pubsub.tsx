@@ -617,6 +617,85 @@ export default function PubSubPage() {
     return expressions.join(` ${filterLogic} `);
   };
 
+  // Enhanced error message parsing function
+  const parsePublishError = (error: any): { title: string; description: string } => {
+    console.log('PubNub Error Details:', error);
+    
+    // Default fallback values
+    let title = 'Publish Failed';
+    let description = 'Failed to publish message';
+    
+    try {
+      // Extract error information from different possible error structures
+      const errorMessage = error?.message || error?.error?.message || error?.statusText || '';
+      const errorStatus = error?.status || error?.statusCode || error?.error?.status || 0;
+      const errorCategory = error?.category || error?.error?.category || '';
+      const errorOperation = error?.operation || error?.error?.operation || '';
+      
+      // Handle specific PubNub error cases
+      if (errorMessage.includes('Invalid key') || errorMessage.includes('invalid key')) {
+        title = 'Invalid Publish Key';
+        description = 'The publish key is invalid or doesn\'t exist. Please check your PubNub credentials in Settings.';
+      } else if (errorMessage.includes('Forbidden') || errorStatus === 403) {
+        title = 'Access Forbidden';
+        description = 'Publishing to this channel is not allowed. Check your Access Manager (PAM) settings or verify your publish key has the correct permissions.';
+      } else if (errorMessage.includes('Bad Request') || errorStatus === 400) {
+        title = 'Bad Request';
+        description = 'The request was malformed. Check your message format, channel name, and other parameters.';
+      } else if (errorMessage.includes('Unauthorized') || errorStatus === 401) {
+        title = 'Unauthorized';
+        description = 'Authentication failed. Your publish key may be invalid or expired.';
+      } else if (errorMessage.includes('Not Found') || errorStatus === 404) {
+        title = 'Service Not Found';
+        description = 'PubNub service endpoint not found. This may be a temporary issue with PubNub servers.';
+      } else if (errorMessage.includes('Timeout') || errorMessage.includes('timeout')) {
+        title = 'Request Timeout';
+        description = 'The publish request timed out. Check your internet connection and try again.';
+      } else if (errorMessage.includes('Network Error') || errorMessage.includes('network')) {
+        title = 'Network Error';
+        description = 'Network connectivity issue. Check your internet connection and try again.';
+      } else if (errorMessage.includes('Rate limit') || errorMessage.includes('rate limit')) {
+        title = 'Rate Limit Exceeded';
+        description = 'Too many requests sent. Please wait a moment before trying again.';
+      } else if (errorMessage.includes('REST API request processing error')) {
+        title = 'PubNub API Error';
+        description = 'PubNub server encountered an error processing your request. This often indicates an invalid publish key or insufficient permissions.';
+      } else if (errorMessage.includes('Key/token mismatch') || errorMessage.includes('key mismatch')) {
+        title = 'Key Mismatch';
+        description = 'Your publish key and subscribe key don\'t belong to the same PubNub application. Please verify your credentials in Settings.';
+      } else if (errorMessage.includes('Message too large') || errorMessage.includes('too large')) {
+        title = 'Message Too Large';
+        description = 'Your message exceeds the maximum size limit. Try reducing the message size or enable "Send by POST" for larger messages.';
+      } else if (errorMessage.includes('Invalid JSON') || errorMessage.includes('invalid json')) {
+        title = 'Invalid JSON';
+        description = 'The message or metadata contains invalid JSON. Please check your message format.';
+      } else if (errorMessage.includes('Channel name too long') || errorMessage.includes('channel name')) {
+        title = 'Invalid Channel Name';
+        description = 'The channel name is invalid or too long. Channel names must be valid UTF-8 strings with certain character restrictions.';
+      } else if (errorStatus >= 500) {
+        title = 'Server Error';
+        description = `PubNub server error (${errorStatus}). This is a temporary issue with PubNub\'s servers. Please try again later.`;
+      } else if (errorMessage) {
+        // Use the original error message but with enhanced context
+        title = 'Publish Failed';
+        description = `${errorMessage}${errorStatus ? ` (Status: ${errorStatus})` : ''}${errorCategory ? ` Category: ${errorCategory}` : ''}`;
+      }
+      
+      // Add helpful suggestions based on error type
+      if (errorStatus === 403 || errorMessage.includes('Invalid key')) {
+        description += '\n\nSuggestions:\n• Verify your publish key in Settings\n• Check if your keyset has publish permissions\n• Ensure Access Manager (PAM) is configured correctly';
+      } else if (errorStatus >= 500) {
+        description += '\n\nThis appears to be a temporary server issue. Please try again in a few moments.';
+      }
+      
+    } catch (parseError) {
+      console.error('Error parsing PubNub error:', parseError);
+      description = `Failed to publish message: ${error instanceof Error ? error.message : JSON.stringify(error)}`;
+    }
+    
+    return { title, description };
+  };
+
   const handlePublish = async () => {
     if (!pubnub || !pubnubReady) {
       toast({
@@ -719,10 +798,11 @@ export default function PubSubPage() {
         setPublishStatus(prev => ({ ...prev, isFlashing: false }));
       }, 500);
       
-      // Show error details in toast
+      // Show error details in toast using enhanced error parsing
+      const { title, description } = parsePublishError(error);
       toast({
-        title: "Publish Failed", 
-        description: `Failed to publish message: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        title, 
+        description,
         variant: "destructive",
       });
     }
