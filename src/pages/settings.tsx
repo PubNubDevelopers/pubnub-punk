@@ -338,6 +338,56 @@ export default function SettingsPage() {
     console.log('🔧 Settings Page Settings Updated:', currentPageSettings);
   }, [currentPageSettings, setConfigPageSettings]);
 
+  // Auto-save functionality - save settings whenever form values change
+  useEffect(() => {
+    const newSettings: AppSettings = {
+      credentials: {
+        publishKey: watchedValues.publishKey || '',
+        subscribeKey: watchedValues.subscribeKey || '',
+        secretKey: watchedValues.secretKey || '',
+        userId: watchedValues.userId || '',
+        pamToken: watchedValues.pamToken || '',
+      },
+      environment: {
+        origin: watchedValues.origin === 'custom' ? watchedValues.customOrigin : watchedValues.origin,
+        customOrigin: watchedValues.customOrigin || '',
+        ssl: watchedValues.ssl ?? true,
+        logVerbosity: watchedValues.logVerbosity || 'info',
+        heartbeatInterval: watchedValues.heartbeatInterval || 300,
+      },
+      storage: {
+        storeMessageHistory: watchedValues.storeMessageHistory || false,
+        autoSaveToPubNub: watchedValues.autoSaveToPubNub ?? true,
+        saveVersionHistory: watchedValues.saveVersionHistory ?? true,
+        maxVersionsToKeep: watchedValues.maxVersionsToKeep || 50,
+      },
+    };
+
+    // Only save if the form is valid and values have actually changed
+    if (form.formState.isValid && JSON.stringify(newSettings) !== JSON.stringify(settings)) {
+      storage.saveSettings(newSettings);
+      setSettings(newSettings);
+      console.log('🔄 Auto-saved settings:', newSettings);
+    }
+  }, [
+    watchedValues.publishKey,
+    watchedValues.subscribeKey,
+    watchedValues.secretKey,
+    watchedValues.userId,
+    watchedValues.pamToken,
+    watchedValues.origin,
+    watchedValues.customOrigin,
+    watchedValues.ssl,
+    watchedValues.logVerbosity,
+    watchedValues.heartbeatInterval,
+    watchedValues.storeMessageHistory,
+    watchedValues.autoSaveToPubNub,
+    watchedValues.saveVersionHistory,
+    watchedValues.maxVersionsToKeep,
+    form.formState.isValid,
+    settings,
+  ]);
+
   // Set config type on mount
   useEffect(() => {
     setConfigType('SETTINGS');
@@ -395,70 +445,7 @@ export default function SettingsPage() {
     }
   };
 
-  const onSubmit = async (data: SettingsFormData) => {
-    const newSettings: AppSettings = {
-      credentials: {
-        publishKey: data.publishKey,
-        subscribeKey: data.subscribeKey,
-        secretKey: data.secretKey,
-        userId: data.userId,
-        pamToken: data.pamToken,
-      },
-      environment: {
-        origin: data.origin === 'custom' ? data.customOrigin : data.origin,
-        customOrigin: data.customOrigin,
-        ssl: data.ssl,
-        logVerbosity: data.logVerbosity,
-        heartbeatInterval: data.heartbeatInterval,
-      },
-      storage: {
-        storeMessageHistory: data.storeMessageHistory,
-        autoSaveToPubNub: data.autoSaveToPubNub,
-        saveVersionHistory: data.saveVersionHistory,
-        maxVersionsToKeep: data.maxVersionsToKeep,
-      },
-    };
-
-    storage.saveSettings(newSettings);
-    setSettings(newSettings);
-    
-    // PubNub save functionality disabled - only save locally
-    // if (data.autoSaveToPubNub && data.saveVersionHistory) {
-    //   const description = `Settings updated by ${newSettings.credentials.userId}`;
-    //   const result = await configService.saveVersionedConfig('SETTINGS', newSettings, description);
-    //   
-    //   if (result.success) {
-    //     toast({
-    //       title: "Settings saved with versioning",
-    //       description: `Configuration saved locally and as version ${result.version?.version} in PubNub.`,
-    //     });
-    //   } else {
-    //     // Fall back to old method if versioning fails
-    //     await publishConfigToPubNub(newSettings);
-    //     toast({
-    //       title: "Settings saved",
-    //       description: "Configuration saved locally and to PubNub (versioning unavailable).",
-    //     });
-    //   }
-    // } else if (data.autoSaveToPubNub) {
-    //   // Use old method if versioning is disabled
-    //   await publishConfigToPubNub(newSettings);
-    //   toast({
-    //     title: "Settings saved",
-    //     description: "Your PubNub configuration has been saved successfully.",
-    //   });
-    // } else {
-    //   toast({
-    //     title: "Settings saved",
-    //     description: "Your configuration has been saved locally.",
-    //   });
-    // }
-    
-    toast({
-      title: "Settings saved",
-      description: "Your configuration has been saved locally.",
-    });
-  };
+  // onSubmit function removed - using auto-save functionality instead
 
   const handleConfigRestore = (restoredConfig: AppSettings) => {
     const restoredOriginValues = getOriginFormValues(restoredConfig);
@@ -534,7 +521,7 @@ export default function SettingsPage() {
     <div className="p-6">
       <div className="max-w-4xl mx-auto space-y-8">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          <div className="space-y-8">
             {/* PubNub Configuration */}
             <Card>
               <CardHeader>
@@ -741,8 +728,8 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            {/* Storage Preferences */}
-            <Card>
+            {/* Storage Preferences - DISABLED */}
+            {/* <Card>
               <CardHeader>
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
@@ -831,7 +818,7 @@ export default function SettingsPage() {
                   />
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
 
             {/* Version History Panel - DISABLED */}
             {/* <VersionHistoryPanel
@@ -840,8 +827,8 @@ export default function SettingsPage() {
               onConfigRestore={handleConfigRestore}
             /> */}
 
-            {/* Save Configuration Button */}
-            <div className="flex justify-center pt-8 border-t border-gray-200">
+            {/* Save Configuration Button - DISABLED (Auto-save is now enabled) */}
+            {/* <div className="flex justify-center pt-8 border-t border-gray-200">
               <Button 
                 type="submit" 
                 className="bg-pubnub-red hover:bg-red-700 text-white px-8 py-3 text-lg font-semibold"
@@ -850,7 +837,7 @@ export default function SettingsPage() {
                 <Save className="mr-2 h-5 w-5" />
                 Save Configuration
               </Button>
-            </div>
+            </div> */}
 
             {/* Danger Zone - DISABLED */}
             {/* <Card className="mt-8 border-red-200 bg-red-50">
@@ -889,7 +876,7 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card> */}
-          </form>
+          </div>
         </Form>
 
         {/* Delete All Configuration Dialog - DISABLED */}
