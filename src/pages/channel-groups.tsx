@@ -45,7 +45,6 @@ interface ChannelGroup {
   name: string;
   channels: string[];
   description?: string;
-  lastModified: string;
 }
 
 // Field definitions for config management
@@ -159,8 +158,7 @@ export default function ChannelGroupsPage() {
           // Update the group with current channel list
           verifiedGroups.push({
             ...group,
-            channels: result.channels || [],
-            lastModified: new Date().toISOString()
+            channels: result.channels || []
           });
         } catch (error) {
           // Group doesn't exist anymore, skip it
@@ -221,8 +219,7 @@ export default function ChannelGroupsPage() {
       const newGroup: ChannelGroup = {
         name: newGroupName.trim(),
         channels: channels,
-        description: newGroupDescription.trim() || undefined,
-        lastModified: new Date().toISOString()
+        description: newGroupDescription.trim() || undefined
       };
 
       const updatedGroups = [...channelGroups, newGroup];
@@ -266,8 +263,7 @@ export default function ChannelGroupsPage() {
           const updatedChannels = [...group.channels, channelToAdd.trim()];
           return {
             ...group,
-            channels: updatedChannels,
-            lastModified: new Date().toISOString()
+            channels: updatedChannels
           };
         }
         return group;
@@ -310,8 +306,7 @@ export default function ChannelGroupsPage() {
           const updatedChannels = group.channels.filter(c => c !== channelName);
           return {
             ...group,
-            channels: updatedChannels,
-            lastModified: new Date().toISOString()
+            channels: updatedChannels
           };
         }
         return group;
@@ -376,8 +371,7 @@ export default function ChannelGroupsPage() {
       if (group.name === editingGroup.name) {
         return {
           ...group,
-          description: editingGroup.description,
-          lastModified: new Date().toISOString()
+          description: editingGroup.description
         };
       }
       return group;
@@ -400,8 +394,7 @@ export default function ChannelGroupsPage() {
     const config = {
       name: group.name,
       channels: group.channels,
-      description: group.description,
-      lastModified: group.lastModified
+      description: group.description
     };
 
     try {
@@ -639,9 +632,6 @@ export default function ChannelGroupsPage() {
                                   {group.channels.length} channels
                                 </div>
                               </div>
-                              <div className={`text-xs ${selectedGroup === group.name ? 'text-blue-200' : 'text-gray-400'}`}>
-                                {new Date(group.lastModified).toLocaleDateString()}
-                              </div>
                             </div>
                             {group.description && (
                               <div className={`text-xs mt-1 truncate ${selectedGroup === group.name ? 'text-blue-100' : 'text-gray-600'}`}>
@@ -657,7 +647,7 @@ export default function ChannelGroupsPage() {
                               <div className="text-sm">{group.description}</div>
                             )}
                             <div className="text-xs text-gray-300 mt-1">
-                              {group.channels.length} channels • Modified {new Date(group.lastModified).toLocaleDateString()}
+                              {group.channels.length} channels
                             </div>
                           </div>
                         </TooltipContent>
@@ -731,9 +721,6 @@ export default function ChannelGroupsPage() {
                       <div className="flex items-center gap-1">
                         <Hash className="w-4 h-4" />
                         <span>{selectedGroupDetails.channels.length} channels</span>
-                      </div>
-                      <div>
-                        Last modified: {new Date(selectedGroupDetails.lastModified).toLocaleString()}
                       </div>
                     </div>
                     
