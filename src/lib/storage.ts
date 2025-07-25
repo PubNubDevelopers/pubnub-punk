@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     subscribeKey: '',
     secretKey: '',
     userId: '',
+    pamEnabled: false,
   },
   environment: {
     origin: 'ps.pndsn.com',
@@ -95,5 +96,16 @@ export const storage = {
     } catch (error) {
       console.error('Error clearing localStorage:', error);
     }
+  },
+
+  // PAM utility functions
+  isPamEnabled(): boolean {
+    const settings = this.getSettings();
+    return settings.credentials.pamEnabled ?? false;
+  },
+
+  getPamToken(): string | undefined {
+    const settings = this.getSettings();
+    return settings.credentials.pamToken;
   },
 };

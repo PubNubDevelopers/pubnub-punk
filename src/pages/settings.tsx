@@ -24,6 +24,7 @@ const settingsSchema = z.object({
   secretKey: z.string().optional(),
   userId: z.string().min(1, 'User ID is required'),
   pamToken: z.string().optional(),
+  pamEnabled: z.boolean(),
   origin: z.string().min(1, 'Origin is required'),
   customOrigin: z.string().optional(),
   ssl: z.boolean(),
@@ -33,6 +34,15 @@ const settingsSchema = z.object({
   autoSaveToPubNub: z.boolean(),
   saveVersionHistory: z.boolean(),
   maxVersionsToKeep: z.number().min(1).max(1000),
+}).refine((data) => {
+  // If PAM is enabled, PAM token is required
+  if (data.pamEnabled && (!data.pamToken || data.pamToken.trim() === '')) {
+    return false;
+  }
+  return true;
+}, {
+  message: "PAM token is required when PubNub Access Manager is enabled",
+  path: ["pamToken"],
 });
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
@@ -44,6 +54,7 @@ const FIELD_DEFINITIONS = {
   secretKey: { section: 'credentials', type: 'string', default: '' },
   userId: { section: 'credentials', type: 'string', default: '' },
   pamToken: { section: 'credentials', type: 'string', default: '' },
+  pamEnabled: { section: 'credentials', type: 'boolean', default: false },
   origin: { section: 'environment', type: 'string', default: 'ps.pndsn.com' },
   customOrigin: { section: 'environment', type: 'string', default: '' },
   ssl: { section: 'environment', type: 'boolean', default: true },
@@ -207,6 +218,7 @@ export default function SettingsPage() {
       secretKey: settings.credentials.secretKey || '',
       userId: settings.credentials.userId,
       pamToken: settings.credentials.pamToken || '',
+      pamEnabled: settings.credentials.pamEnabled ?? false,
       origin: originValues.origin,
       customOrigin: originValues.customOrigin,
       ssl: settings.environment.ssl,
@@ -257,6 +269,7 @@ export default function SettingsPage() {
       secretKey: settings.credentials.secretKey || '',
       userId: settings.credentials.userId,
       pamToken: settings.credentials.pamToken || '',
+      pamEnabled: settings.credentials.pamEnabled ?? false,
       origin: originValues.origin,
       customOrigin: originValues.customOrigin,
       ssl: settings.environment.ssl,
@@ -321,6 +334,7 @@ export default function SettingsPage() {
     watchedValues.secretKey,
     watchedValues.userId,
     watchedValues.pamToken,
+    watchedValues.pamEnabled,
     watchedValues.origin,
     watchedValues.customOrigin,
     watchedValues.ssl,
@@ -347,6 +361,7 @@ export default function SettingsPage() {
         secretKey: watchedValues.secretKey || '',
         userId: watchedValues.userId || '',
         pamToken: watchedValues.pamToken || '',
+        pamEnabled: watchedValues.pamEnabled ?? false,
       },
       environment: {
         origin: watchedValues.origin === 'custom' ? watchedValues.customOrigin : watchedValues.origin,
@@ -375,6 +390,7 @@ export default function SettingsPage() {
     watchedValues.secretKey,
     watchedValues.userId,
     watchedValues.pamToken,
+    watchedValues.pamEnabled,
     watchedValues.origin,
     watchedValues.customOrigin,
     watchedValues.ssl,
@@ -457,6 +473,7 @@ export default function SettingsPage() {
       secretKey: restoredConfig.credentials.secretKey || '',
       userId: restoredConfig.credentials.userId,
       pamToken: restoredConfig.credentials.pamToken || '',
+      pamEnabled: restoredConfig.credentials.pamEnabled ?? false,
       origin: restoredOriginValues.origin,
       customOrigin: restoredOriginValues.customOrigin,
       ssl: restoredConfig.environment.ssl,
@@ -592,16 +609,50 @@ export default function SettingsPage() {
                   <FormField
                     control={form.control}
                     name="pamToken"
+                    render={({ field }) => {
+                      const isPamEnabled = form.watch('pamEnabled');
+                      return (
+                        <FormItem>
+                          <FormLabel>
+                            PAM Token{!isPamEnabled && ' (Optional)'}
+                            {isPamEnabled && <span className="text-red-500 ml-1">*</span>}
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="password" 
+                              placeholder="Access Manager Token" 
+                              className={isPamEnabled && !field.value ? 'border-red-500 focus:border-red-500' : ''}
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormDescription className="text-xs text-gray-500">
+                            {isPamEnabled 
+                              ? 'Access Manager token is required when PAM is enabled'
+                              : 'Access Manager token for authenticated API calls'
+                            }
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
+                </div>
+
+                <div className="pt-4 border-t border-gray-200">
+                  <FormField
+                    control={form.control}
+                    name="pamEnabled"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>PAM Token (Optional)</FormLabel>
+                      <FormItem className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <FormLabel>PubNub Access Manager (PAM) Enabled</FormLabel>
+                          <FormDescription className="text-xs text-gray-500">
+                            Toggle this on if your PubNub application has Access Manager enabled. This affects how Channel Groups and other features handle security.
+                          </FormDescription>
+                        </div>
                         <FormControl>
-                          <Input type="password" placeholder="Access Manager Token" {...field} />
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
                         </FormControl>
-                        <FormDescription className="text-xs text-gray-500">
-                          Access Manager token for authenticated API calls
-                        </FormDescription>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />

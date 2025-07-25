@@ -4,6 +4,7 @@ export interface PubNubCredentials {
   secretKey?: string;
   userId: string;
   pamToken?: string;
+  pamEnabled: boolean;
 }
 
 export interface EnvironmentSettings {

@@ -216,7 +216,8 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
       currentSettings.credentials.subscribeKey !== previousSettings.credentials.subscribeKey ||
       currentSettings.credentials.secretKey !== previousSettings.credentials.secretKey ||
       currentSettings.credentials.userId !== previousSettings.credentials.userId ||
-      currentSettings.credentials.pamToken !== previousSettings.credentials.pamToken;
+      currentSettings.credentials.pamToken !== previousSettings.credentials.pamToken ||
+      currentSettings.credentials.pamEnabled !== previousSettings.credentials.pamEnabled;
     
     const environmentChanged = 
       currentSettings.environment.origin !== previousSettings.environment.origin ||
