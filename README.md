@@ -25,6 +25,7 @@ The PubNub Ultimate Ninja Kit is a complete developer toolset built specifically
 - **Token revocation** capabilities
 - **TTL management** and expiration tracking
 - **Permission testing** with real API calls
+- **Enhanced authentication** with proper token handling across all API calls
 
 ### 👥 **Presence (Real-time User Monitoring)**
 - **Real-time presence event monitoring** (join, leave, timeout, state-change)
@@ -50,6 +51,7 @@ The PubNub Ultimate Ninja Kit is a complete developer toolset built specifically
 - **Channel association management** for devices
 - **Debug monitoring** with real-time delivery status
 - **Custom payload support** with JSON editor
+- **Working implementation** with proper authentication handling
 
 ### 📚 **PubNub Persistence (Message History)**
 - **Message history retrieval** with advanced filtering
@@ -60,6 +62,7 @@ The PubNub Ultimate Ninja Kit is a complete developer toolset built specifically
 - **Bulk message operations**
 
 ### 📂 **Channel Groups**
+- **Query-based API approach** for improved performance
 - **Complete channel group management** (create, edit, delete)
 - **Channel association management** (add/remove channels)
 - **Real-time synchronization** with PubNub APIs
@@ -73,10 +76,15 @@ The PubNub Ultimate Ninja Kit is a complete developer toolset built specifically
 - **Environment-specific settings** management
 - **Configuration migration** tools
 
-## 🚧 Coming Soon
+### 🎯 **App Context (Objects)**
+- **Complete user, channel, and membership management** interface
+- **Bulk operations** for creating, editing, and deleting objects
+- **Server-side search support** with filtering capabilities
+- **Membership management** with advanced relationship handling
+- **Real-time synchronization** with PubNub Object APIs
+- **Configuration versioning** and persistence integration
 
-### **App Context (Objects)**
-User, Channel, and Membership management interface
+## 🚧 Coming Soon
 
 ### **Functions**
 Serverless function testing and debugging tools
@@ -266,12 +274,15 @@ python utils/upload_test_files.py
 
 ## Recent Updates
 
-### Latest Features (2025)
+### Latest Features (July 2025)
+- **App Context Implementation**: Full user, channel, and membership management with bulk operations
+- **Enhanced Access Manager**: Improved PAM with better authentication handling across all APIs
+- **Mobile Push Enhancement**: Working implementation with proper cross-platform support
+- **Channel Groups Restructure**: Query-based API approach for better performance
+- **Gallery Mode**: Enhanced file sharing with thumbnail viewing capabilities
+- **Connection Management**: Centralized connection handling for stateless PubNub API calls
 - **Enhanced Presence Tools**: Simplified UI with always-visible advanced options
-- **Bulk File Operations**: Complete implementation with ZIP downloads
 - **Configuration Versioning**: Full PubNub App Context integration
-- **Access Manager**: Complete PAM token management system
-- **Mobile Push**: Cross-platform notification testing tools
 
 ### Performance Improvements
 - **Optimized File Loading**: Efficient pagination for large file sets
