@@ -5,7 +5,8 @@ import { AppShell } from "@/components/app-shell";
 import { ConfigProvider } from "@/contexts/config-context";
 import { PubNubProvider } from "@/contexts/pubnub-context";
 import SettingsPage from "@/pages/settings";
-import PubSubPage from "@/pages/pubsub";
+import { PubSubPage } from "@/components/pubsub";
+import PubSubWireframePage from "@/pages/pubsub-wireframe";
 import PubNubPersistencePage from "@/pages/pubnub-persistence";
 import ChannelGroupsPage from "@/pages/channel-groups";
 import MobilePushPage from "@/pages/mobile-push";
@@ -27,6 +28,10 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
   '/pubsub': {
     title: 'Pub/Sub Tool',
     subtitle: 'Test real-time messaging functionality'
+  },
+  '/pubsub-wireframe': {
+    title: 'Pub/Sub Wireframe',
+    subtitle: 'Improved UX design wireframe'
   },
   '/pubnub-persistence': {
     title: 'PubNub Persistence Tool',
@@ -83,6 +88,7 @@ function Router() {
       <Switch>
         <Route path="/" component={SettingsPage} />
         <Route path="/pubsub" component={PubSubPage} />
+        <Route path="/pubsub-wireframe" component={PubSubWireframePage} />
         <Route path="/pubnub-persistence" component={PubNubPersistencePage} />
         <Route path="/channel-groups" component={ChannelGroupsPage} />
         <Route path="/mobile-push" component={MobilePushPage} />
