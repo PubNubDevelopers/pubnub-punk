@@ -1,19 +1,16 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { MessageCircle, Send, Play, Square, Copy, Settings, HelpCircle, Filter, Zap, RefreshCw, MapPin, Plus, X, ArrowDown, Eye, EyeOff } from 'lucide-react';
+import { MessageCircle, Play, Square, Copy, Settings, HelpCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { storage } from '@/lib/storage';
 import { useConfig } from '@/contexts/config-context';
 import { usePubNub } from '@/hooks/usePubNub';
-import { LiveMessagesPanel } from './LiveMessagesPanel';
+import LiveMessagesPanel from './LiveMessagesPanel';
+import StatusIndicator from './shared/StatusIndicator';
 import { QuickPublishPanel } from './QuickPublishPanel';
+import SubscriptionConfigPanel from './SubscriptionConfigPanel';
 
 import {
   PubSubConfig,
@@ -21,29 +18,45 @@ import {
   SubscribeFormData,
   UIState,
   FilterState,
-  FilterConfig,
+  FilterCondition,
   MessageData,
   PresenceEvent,
-  PublishStatus,
-  PubSubPageProps
+  PublishStatus
 } from './types';
-
+import { 
+  FIELD_DEFINITIONS, 
+  CURRENT_CONFIG_VERSION,
+  DEFAULT_MESSAGE_HEIGHT,
+  MAX_MESSAGES,
+  PUBSUB_INSTANCE_ID
+} from './constants';
 import {
-  createDefaultPageSettings,
   migrateConfig,
-  deepMerge,
+  pageSettingsToState,
   stateToPageSettings,
-  parseChannels,
+  createDefaultPageSettings,
+  deepMerge,
   generateFilterExpression,
-  createDefaultFilter,
-  generateUniqueId
+  validateChannel,
+  validateJSON,
+  validateCustomMessageType,
+  formatTimestamp,
+  parseChannels,
+  copyToClipboard
 } from './utils';
+import { parsePublishError } from './shared/ErrorParser';
+import { copyAllMessages, copyAllPresenceEvents } from './shared/CopyHandlers';
+import { 
+  scrollToBottom, 
+  handleScroll, 
+  useAutoScroll, 
+  useDelayedAutoScroll 
+} from './shared/ScrollHandlers';
 
-export default function PubSubPage({ className }: PubSubPageProps) {
+export default function PubSubPage() {
   const { toast } = useToast();
   const { setPageSettings: setConfigPageSettings, setConfigType } = useConfig();
-
-  // Core form data state
+  
   const [publishData, setPublishData] = useState<PublishFormData>({
     channel: 'hello_world',
     message: '{"text": "Hello, World!", "sender": "PubNub Developer Tools"}',
@@ -67,49 +80,18 @@ export default function PubSubPage({ className }: PubSubPageProps) {
     restoreOnReconnect: true
   });
 
-  // UI state
-  const [uiState, setUIState] = useState<UIState>({
-    showAdvanced: false,
-    showFilters: false,
-    showMessages: true,
-    messagesHeight: 200,
-    showRawMessageData: false
-  });
-
-  // Filter state
-  const [filterState, setFilterState] = useState<FilterState>({
-    logic: '&&',
-    conditions: [createDefaultFilter(1)]
-  });
-
-  // Message and subscription state
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [presenceEvents, setPresenceEvents] = useState<PresenceEvent[]>([]);
   const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
 
-  // Publish status
-  const [publishStatus, setPublishStatus] = useState<PublishStatus>({
-    isVisible: false,
-    isSuccess: false,
-    isFlashing: false
-  });
-
-  // Refs for scrolling
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const presenceContainerRef = useRef<HTMLDivElement>(null);
-
-  // Schema-driven page settings - auto-synced with state changes
-  const [pageSettings, setPageSettings] = useState<PubSubConfig>(() => createDefaultPageSettings());
-
-  // Use centralized PubNub hook for stateless operations (publish, etc.)
-  const {
-    pubnub,
-    isReady: pubnubReady,
-    connectionError,
+  const { 
+    pubnub, 
+    isReady: pubnubReady, 
+    connectionError, 
     isConnected,
   } = usePubNub({
-    instanceId: 'pubsub-page',
+    instanceId: PUBSUB_INSTANCE_ID,
     userId: 'pubsub-page-user',
     onConnectionError: (error) => {
       toast({
@@ -120,28 +102,44 @@ export default function PubSubPage({ className }: PubSubPageProps) {
     }
   });
 
-  // Local subscription management (separate instance for subscriptions)
   const [localPubnubInstance, setLocalPubnubInstance] = useState<any>(null);
   const [localSubscription, setLocalSubscription] = useState<any>(null);
-
-  // Additional UI state for LiveMessagesPanel
-  const [showRawMessageData, setShowRawMessageData] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [showMessages, setShowMessages] = useState(true);
-  const [messagesHeight, setMessagesHeight] = useState(300);
+  const [messagesHeight, setMessagesHeight] = useState(DEFAULT_MESSAGE_HEIGHT);
+  const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [presenceAutoScroll, setPresenceAutoScroll] = useState(true);
   const [showPresenceScrollButton, setShowPresenceScrollButton] = useState(false);
+  const [showRawMessageData, setShowRawMessageData] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<PublishStatus>({
+    isVisible: false,
+    isSuccess: false,
+    isFlashing: false
+  });
+  
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const presenceContainerRef = useRef<HTMLDivElement>(null);
+  
+  const [subscribeFilters, setSubscribeFilters] = useState<FilterCondition[]>([{
+    id: 1,
+    target: 'message',
+    field: '',
+    operator: '==',
+    value: '',
+    type: 'string'
+  }]);
+  const [filterLogic, setFilterLogic] = useState<'&&' | '||'>('&&');
 
-  // Config restoration function
-  const restoreFromConfig = (config: any): boolean => {
+
+  const [pageSettings, setPageSettings] = useState(() => createDefaultPageSettings());
+
+  const restoreFromConfig = (config: any) => {
     try {
-      // Migrate config to current version
       const migratedConfig = migrateConfig(config);
-
-      // Merge with defaults for graceful degradation
       const defaultSettings = createDefaultPageSettings();
       const safeConfig = deepMerge(defaultSettings, migratedConfig);
-
-      // Update individual state objects from config
+      
       if (safeConfig.publish) {
         setPublishData(safeConfig.publish);
       }
@@ -149,15 +147,20 @@ export default function PubSubPage({ className }: PubSubPageProps) {
         setSubscribeData(safeConfig.subscribe);
       }
       if (safeConfig.ui) {
-        setUIState(safeConfig.ui);
+        setShowFilters(safeConfig.ui.showFilters || false);
+        setShowMessages(safeConfig.ui.showMessages !== false);
+        setMessagesHeight(safeConfig.ui.messagesHeight || DEFAULT_MESSAGE_HEIGHT);
+        setShowRawMessageData(safeConfig.ui.showRawMessageData || false);
       }
       if (safeConfig.filters) {
-        setFilterState(safeConfig.filters);
+        setFilterLogic(safeConfig.filters.logic || '&&');
+        if (safeConfig.filters.conditions) {
+          setSubscribeFilters(safeConfig.filters.conditions);
+        }
       }
-
-      // Update page settings
+      
       setPageSettings(safeConfig);
-
+      
       console.log('🔧 PubSub Page Settings Restored:', safeConfig);
       return true;
     } catch (error) {
@@ -166,53 +169,84 @@ export default function PubSubPage({ className }: PubSubPageProps) {
     }
   };
 
-  // Auto-sync: Create pageSettings from current state
   const currentPageSettings = useMemo(() => {
+    const uiState: UIState = {
+      showFilters,
+      showMessages,
+      messagesHeight,
+      showRawMessageData
+    };
+    const filterState: FilterState = {
+      logic: filterLogic,
+      conditions: subscribeFilters
+    };
+    
     return stateToPageSettings(publishData, subscribeData, uiState, filterState);
-  }, [publishData, subscribeData, uiState, filterState]);
+  }, [
+    publishData.channel,
+    publishData.message,
+    publishData.storeInHistory,
+    publishData.sendByPost,
+    publishData.ttl,
+    publishData.customMessageType,
+    publishData.meta,
+    subscribeData.channels,
+    subscribeData.channelGroups,
+    subscribeData.receivePresenceEvents,
+    subscribeData.cursor.timetoken,
+    subscribeData.cursor.region,
+    subscribeData.withPresence,
+    subscribeData.heartbeat,
+    subscribeData.restoreOnReconnect,
+    showFilters,
+    showMessages,
+    messagesHeight,
+    showRawMessageData,
+    filterLogic,
+    subscribeFilters
+  ]);
 
   useEffect(() => {
-    setPageSettings(currentPageSettings);
     setConfigPageSettings(currentPageSettings);
-    console.log('🔧 PubSub Page Settings Updated:', currentPageSettings);
   }, [currentPageSettings, setConfigPageSettings]);
 
-  // Set config type on mount
-  useEffect(() => {
-    setConfigType('pubsub-page');
-  }, [setConfigType]);
 
-  // Event handlers for form data changes
-  const handlePublishDataChange = (field: keyof PublishFormData, value: any) => {
-    setPublishData(prev => ({ ...prev, [field]: value }));
+  const handleMessagesScroll = () => {
+    handleScroll(messagesContainerRef, { setAutoScroll, setShowScrollButton });
   };
 
-  const handleSubscribeDataChange = (field: string, value: any) => {
-    setSubscribeData(prev => {
-      const newData = { ...prev };
-      if (field.includes('.')) {
-        const [parent, child] = field.split('.');
-        (newData as any)[parent] = { ...(newData as any)[parent], [child]: value };
-      } else {
-        (newData as any)[field] = value;
-      }
-      return newData;
+  const handlePresenceScroll = () => {
+    handleScroll(presenceContainerRef, { 
+      setAutoScroll: setPresenceAutoScroll, 
+      setShowScrollButton: setShowPresenceScrollButton 
     });
   };
 
-  const handleUIStateChange = (field: keyof UIState, value: any) => {
-    setUIState(prev => ({ ...prev, [field]: value }));
+  const scrollMessagesToBottom = () => {
+    scrollToBottom(messagesContainerRef, { setAutoScroll, setShowScrollButton });
   };
 
-  const handleFilterStateChange = (filters: FilterConfig[]) => {
-    setFilterState(prev => ({ ...prev, conditions: filters }));
+  const scrollPresenceToBottom = () => {
+    scrollToBottom(presenceContainerRef, { 
+      setAutoScroll: setPresenceAutoScroll, 
+      setShowScrollButton: setShowPresenceScrollButton 
+    });
   };
 
-  const handleFilterLogicChange = (logic: string) => {
-    setFilterState(prev => ({ ...prev, logic }));
+  useAutoScroll(messagesContainerRef, autoScroll, [messages]);
+  useDelayedAutoScroll(messagesContainerRef, autoScroll, true, [subscribeData.receivePresenceEvents]);
+  useAutoScroll(presenceContainerRef, presenceAutoScroll, [presenceEvents]);
+  useDelayedAutoScroll(presenceContainerRef, presenceAutoScroll, subscribeData.receivePresenceEvents, [subscribeData.receivePresenceEvents]);
+
+  const handleCopyAllMessages = async () => {
+    await copyAllMessages(messages, toast);
   };
 
-  // Publish functionality - Phase 3 implementation
+  const handleCopyAllPresenceEvents = async () => {
+    await copyAllPresenceEvents(presenceEvents, toast);
+  };
+
+
   const handlePublish = async () => {
     if (!pubnub || !pubnubReady) {
       toast({
@@ -223,48 +257,41 @@ export default function PubSubPage({ className }: PubSubPageProps) {
       return;
     }
 
-    setPublishStatus({
-      isVisible: true,
-      isSuccess: false,
-      isFlashing: false
-    });
+    if (!publishData.channel.trim()) {
+      toast({
+        title: "Channel Required",
+        description: "Please enter a channel name.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!publishData.message.trim()) {
+      toast({
+        title: "Message Required",
+        description: "Please enter a message to publish.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
-      // Parse message as JSON if possible, otherwise use as string
       let messagePayload;
       try {
-        const trimmedMessage = publishData.message.trim();
-        if ((trimmedMessage.startsWith('{') && trimmedMessage.endsWith('}')) || 
-            (trimmedMessage.startsWith('[') && trimmedMessage.endsWith(']'))) {
-          messagePayload = JSON.parse(trimmedMessage);
-        } else {
-          messagePayload = publishData.message;
-        }
+        messagePayload = JSON.parse(publishData.message);
       } catch {
         messagePayload = publishData.message;
       }
 
-      // Parse meta as JSON if provided
       let metaPayload = undefined;
       if (publishData.meta.trim()) {
         try {
           metaPayload = JSON.parse(publishData.meta);
         } catch {
-          toast({
-            title: "Invalid Meta JSON",
-            description: "Meta field contains invalid JSON. Please fix the format.",
-            variant: "destructive",
-          });
-          setPublishStatus({
-            isVisible: true,
-            isSuccess: false,
-            isFlashing: false
-          });
-          return;
+          metaPayload = publishData.meta;
         }
       }
 
-      // Prepare publish parameters
       const publishParams: any = {
         message: messagePayload,
         channel: publishData.channel,
@@ -272,23 +299,8 @@ export default function PubSubPage({ className }: PubSubPageProps) {
         sendByPost: publishData.sendByPost
       };
 
-      // Add optional parameters if provided
       if (publishData.ttl && publishData.ttl.trim()) {
-        const ttlValue = parseInt(publishData.ttl);
-        if (isNaN(ttlValue) || ttlValue < 0) {
-          toast({
-            title: "Invalid TTL",
-            description: "TTL must be a positive number.",
-            variant: "destructive",
-          });
-          setPublishStatus({
-            isVisible: true,
-            isSuccess: false,
-            isFlashing: false
-          });
-          return;
-        }
-        publishParams.ttl = ttlValue;
+        publishParams.ttl = parseInt(publishData.ttl);
       }
 
       if (publishData.customMessageType && publishData.customMessageType.trim()) {
@@ -301,173 +313,269 @@ export default function PubSubPage({ className }: PubSubPageProps) {
 
       console.log('Publishing with params:', publishParams);
 
-      // Make the actual PubNub publish API call
       const publishResult = await pubnub.publish(publishParams);
+
       console.log('Publish successful:', publishResult);
 
       setPublishStatus({
         isVisible: true,
         isSuccess: true,
         timetoken: publishResult.timetoken,
-        isFlashing: false
+        isFlashing: true
       });
       
-      toast({
-        title: "Message Published",
-        description: `Message successfully published to channel "${publishData.channel}"`,
-      });
-
-      // Status persists until next publish attempt (no auto-reset)
+      setTimeout(() => {
+        setPublishStatus(prev => ({ ...prev, isFlashing: false }));
+      }, 500);
 
     } catch (error) {
       console.error('Publish failed:', error);
       setPublishStatus({
         isVisible: true,
         isSuccess: false,
-        isFlashing: false
+        isFlashing: true
       });
       
+      setTimeout(() => {
+        setPublishStatus(prev => ({ ...prev, isFlashing: false }));
+      }, 500);
+      
+      const { title, description } = parsePublishError(error);
       toast({
-        title: "Publish Failed",
-        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        title, 
+        description,
         variant: "destructive",
       });
-
-      // Error status persists until next publish attempt (no auto-reset)
     }
   };
 
-  const handleToggleSubscription = () => {
-    console.log('Subscription toggle functionality will be implemented in Phase 4');
-    // TODO: Implement in Phase 4
+  const handlePublishInputChange = (field: string, value: any) => {
+    setPublishData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
-  const handleFormatMessage = () => {
+  const handleSubscribeInputChange = (field: string, value: any) => {
+    if (field.includes('.')) {
+      const [parent, child] = field.split('.');
+      setSubscribeData(prev => ({
+        ...prev,
+        [parent]: {
+          ...prev[parent as keyof typeof prev] as any,
+          [child]: value
+        }
+      }));
+    } else {
+      setSubscribeData(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+  };
+
+  const handleSubscribe = async () => {
+    const settings = storage.getSettings();
+    
+    if (!settings.credentials.subscribeKey) {
+      toast({
+        title: "Configuration Required",
+        description: "Please configure your PubNub Subscribe Key in Settings first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const channelList = parseChannels(subscribeData.channels);
+    const channelGroupList = parseChannels(subscribeData.channelGroups);
+
+    if (channelList.length === 0 && channelGroupList.length === 0) {
+      toast({
+        title: "Channels Required",
+        description: "Please enter at least one channel or channel group.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      const parsed = JSON.parse(publishData.message);
-      handlePublishDataChange('message', JSON.stringify(parsed, null, 2));
-    } catch (error) {
+      const localPubnub = new (window as any).PubNub({
+        publishKey: settings.credentials.publishKey,
+        subscribeKey: settings.credentials.subscribeKey,
+        userId: settings.credentials.userId || 'pubsub-page-user',
+        heartbeatInterval: subscribeData.heartbeat,
+        restoreMessages: subscribeData.restoreOnReconnect
+      });
+
+      setLocalPubnubInstance(localPubnub);
+
+      const filterExpression = generateFilterExpression(subscribeFilters, filterLogic);
+      
+      if (filterExpression && filterExpression.trim()) {
+        console.log('Applying server-side filter:', filterExpression);
+        
+        try {
+          localPubnub.setFilterExpression(filterExpression);
+          console.log('Filter expression set successfully:', filterExpression);
+        } catch (filterError) {
+          console.warn('Failed to set filter expression:', filterError);
+          toast({
+            title: "Filter Warning",
+            description: "Server-side filtering may not be applied. Check filter syntax.",
+            variant: "destructive"
+          });
+        }
+      }
+
+      const subscriptionOptions: any = {
+        receivePresenceEvents: subscribeData.receivePresenceEvents
+      };
+
+      if (subscribeData.cursor.timetoken && subscribeData.cursor.timetoken.trim()) {
+        subscriptionOptions.cursor = {
+          timetoken: subscribeData.cursor.timetoken
+        };
+        
+        if (subscribeData.cursor.region && subscribeData.cursor.region.trim()) {
+          subscriptionOptions.cursor.region = parseInt(subscribeData.cursor.region);
+        }
+      }
+
+      console.log('Subscription options:', subscriptionOptions);
+
+      let subscriptionSet;
+      if (channelList.length > 0 && channelGroupList.length > 0) {
+        subscriptionSet = localPubnub.subscriptionSet({
+          channels: channelList,
+          channelGroups: channelGroupList,
+          subscriptionOptions: subscriptionOptions
+        });
+      } else if (channelList.length > 0) {
+        subscriptionSet = localPubnub.subscriptionSet({
+          channels: channelList,
+          subscriptionOptions: subscriptionOptions
+        });
+      } else {
+        subscriptionSet = localPubnub.subscriptionSet({
+          channelGroups: channelGroupList,
+          subscriptionOptions: subscriptionOptions
+        });
+      }
+
+      subscriptionSet.addListener({
+        message: (messageEvent: any) => {
+          console.log('Received message:', messageEvent);
+          
+          const newMessage: MessageData = {
+            channel: messageEvent.channel,
+            message: messageEvent.message,
+            timetoken: messageEvent.timetoken,
+            publisher: messageEvent.publisher,
+            subscription: messageEvent.subscription,
+            messageType: messageEvent.customMessageType || undefined,
+            userMetadata: messageEvent.userMetadata || undefined,
+            timestamp: formatTimestamp(messageEvent.timetoken)
+          };
+
+          setMessages(prev => {
+            const updated = [...prev, newMessage];
+            if (updated.length > MAX_MESSAGES) {
+              return updated.slice(-MAX_MESSAGES);
+            }
+            return updated;
+          });
+        },
+        presence: (presenceEvent: any) => {
+          console.log('Received presence event:', presenceEvent);
+          
+          const newPresenceEvent: PresenceEvent = {
+            action: presenceEvent.action,
+            uuid: presenceEvent.uuid,
+            channel: presenceEvent.channel,
+            subscription: presenceEvent.subscription,
+            timetoken: presenceEvent.timetoken,
+            timestamp: formatTimestamp(presenceEvent.timetoken),
+            occupancy: presenceEvent.occupancy,
+            state: presenceEvent.state,
+            join: presenceEvent.join,
+            leave: presenceEvent.leave,
+            timeout: presenceEvent.timeout
+          };
+
+          setPresenceEvents(prev => {
+            const updated = [...prev, newPresenceEvent];
+            if (updated.length > MAX_MESSAGES) {
+              return updated.slice(-MAX_MESSAGES);
+            }
+            return updated;
+          });
+        },
+        status: (statusEvent: any) => {
+          console.log('Status event:', statusEvent);
+          
+          if (statusEvent.category === 'PNConnectedCategory') {
+            toast({
+              title: "Connected",
+              description: "Successfully subscribed to channels",
+            });
+          } else if (statusEvent.category === 'PNNetworkDownCategory') {
+            toast({
+              title: "Network Down",
+              description: "Lost connection to PubNub",
+              variant: "destructive",
+            });
+          } else if (statusEvent.category === 'PNReconnectedCategory') {
+            toast({
+              title: "Reconnected",
+              description: "Reconnected to PubNub",
+            });
+          }
+        }
+      });
+
+      subscriptionSet.subscribe();
+      setLocalSubscription(subscriptionSet);
+      setIsSubscribed(true);
+
       toast({
-        title: "Invalid JSON",
-        description: "Unable to format message - not valid JSON",
+        title: "Subscribed",
+        description: `Subscribed to ${channelList.length} channel(s) and ${channelGroupList.length} group(s)`,
+      });
+
+    } catch (error) {
+      console.error('Subscribe failed:', error);
+      toast({
+        title: "Subscribe Failed",
+        description: error instanceof Error ? error.message : "Failed to subscribe to channels",
         variant: "destructive",
       });
     }
   };
 
-  const handleCopyAll = () => {
-    if (messages.length === 0) return;
+  const handleUnsubscribe = () => {
+    if (localSubscription) {
+      localSubscription.unsubscribe();
+      setLocalSubscription(null);
+    }
     
-    const messagesText = messages.map(msg => 
-      JSON.stringify({
-        channel: msg.channel,
-        timetoken: msg.timetoken,
-        message: msg.message,
-        publisher: (msg as any).publisher || null
-      }, null, 2)
-    ).join('\n\n');
+    if (localPubnubInstance) {
+      localPubnubInstance.removeAllListeners();
+      setLocalPubnubInstance(null);
+    }
     
-    navigator.clipboard.writeText(messagesText).then(() => {
-      toast({
-        title: "Copied",
-        description: `${messages.length} message${messages.length === 1 ? '' : 's'} copied to clipboard`,
-      });
-    }).catch(() => {
-      toast({
-        title: "Copy Failed",
-        description: "Failed to copy messages to clipboard",
-        variant: "destructive",
-      });
-    });
-  };
-
-  const handleCopyAllPresenceEvents = () => {
-    if (presenceEvents.length === 0) return;
-    
-    const eventsText = presenceEvents.map(event => 
-      JSON.stringify({
-        channel: event.channel,
-        action: event.action,
-        occupancy: event.occupancy,
-        uuid: event.uuid,
-        timestamp: event.timestamp,
-        timetoken: event.timetoken
-      }, null, 2)
-    ).join('\n\n');
-    
-    navigator.clipboard.writeText(eventsText).then(() => {
-      toast({
-        title: "Copied",
-        description: `${presenceEvents.length} presence event${presenceEvents.length === 1 ? '' : 's'} copied to clipboard`,
-      });
-    }).catch(() => {
-      toast({
-        title: "Copy Failed",
-        description: "Failed to copy presence events to clipboard",
-        variant: "destructive",
-      });
-    });
-  };
-
-  const handleClear = () => {
+    setIsSubscribed(false);
     setMessages([]);
     setPresenceEvents([]);
+    
+    toast({
+      title: "Unsubscribed",
+      description: "Disconnected from all channels",
+    });
   };
 
-  // LiveMessagesPanel specific handlers
-  const handleShowRawMessageDataToggle = (value: boolean) => {
-    setShowRawMessageData(value);
-  };
-
-  const handleShowMessagesToggle = () => {
-    setShowMessages(prev => !prev);
-  };
-
-  const handleScrollToBottom = () => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-    }
-  };
-
-  const handleScrollToBottomPresence = () => {
-    if (presenceContainerRef.current) {
-      presenceContainerRef.current.scrollTop = presenceContainerRef.current.scrollHeight;
-    }
-  };
-
-  const handleMessagesScroll = (container: HTMLDivElement) => {
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    setShowScrollButton(!isNearBottom && container.scrollHeight > container.clientHeight);
-  };
-
-  const handlePresenceScroll = (container: HTMLDivElement) => {
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    setShowPresenceScrollButton(!isNearBottom && container.scrollHeight > container.clientHeight);
-  };
-
-  const handleMessagesHeightChange = (height: number) => {
-    setMessagesHeight(height);
-  };
-
-  const addFilter = () => {
-    const newFilter = createDefaultFilter(generateUniqueId());
-    handleFilterStateChange([...filterState.conditions, newFilter]);
-  };
-
-  const removeFilter = (id: number) => {
-    handleFilterStateChange(filterState.conditions.filter(f => f.id !== id));
-  };
-
-  const updateFilter = (id: number, field: keyof FilterConfig, value: any) => {
-    handleFilterStateChange(
-      filterState.conditions.map(f => 
-        f.id === id ? { ...f, [field]: value } : f
-      )
-    );
-  };
 
   return (
-    <div className={`p-6 max-w-7xl mx-auto ${className || ''}`}>
+    <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-3">
@@ -491,212 +599,94 @@ export default function PubSubPage({ className }: PubSubPageProps) {
         </div>
       </div>
 
+      {/* Subscription Status */}
+      <Card className="mb-6">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <StatusIndicator
+                isConnected={isSubscribed}
+                channels={subscribeData.channels ? subscribeData.channels.split(',').map(c => c.trim()).filter(c => c) : []}
+                channelGroups={subscribeData.channelGroups ? subscribeData.channelGroups.split(',').map(c => c.trim()).filter(c => c) : []}
+                hasFilters={subscribeFilters.length > 0}
+                filterExpression={generateFilterExpression(subscribeFilters, filterLogic)}
+              />
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-3">
+                <div className="text-right text-sm">
+                  <div className="font-medium">{isSubscribed ? 'ON' : 'OFF'}</div>
+                  {isSubscribed ? (
+                    <div className="text-gray-500 text-xs">
+                      <span className="font-mono bg-blue-50 px-1 py-0.5 rounded mr-1">
+                        {subscribeData.channels.length > 45 ? 
+                          `${subscribeData.channels.substring(0, 42)}...` : 
+                          subscribeData.channels || 'No channels'
+                        }
+                      </span>
+                      <button 
+                        onClick={() => {
+                          const element = document.querySelector('[data-testid="subscription-config"]');
+                          element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                        className="text-blue-600 hover:text-blue-800 underline text-xs"
+                      >
+                        change
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-gray-500">Subscribe</div>
+                  )}
+                </div>
+                <Switch 
+                  checked={isSubscribed}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      handleSubscribe();
+                    } else {
+                      handleUnsubscribe();
+                    }
+                  }}
+                  className="scale-125"
+                />
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+
       {/* Live Messages Panel */}
       <LiveMessagesPanel
         messages={messages}
         presenceEvents={presenceEvents}
-        isSubscribed={isSubscribed}
-        showRawMessageData={showRawMessageData}
         receivePresenceEvents={subscribeData.receivePresenceEvents}
-        messagesHeight={messagesHeight}
-        showMessages={showMessages}
-        showScrollButton={showScrollButton}
-        showPresenceScrollButton={showPresenceScrollButton}
-        onShowRawMessageDataToggle={handleShowRawMessageDataToggle}
-        onReceivePresenceEventsToggle={(value) => handleSubscribeDataChange('receivePresenceEvents', value)}
-        onShowMessagesToggle={handleShowMessagesToggle}
-        onCopyAllMessages={handleCopyAll}
-        onCopyAllPresenceEvents={handleCopyAllPresenceEvents}
-        onScrollToBottom={handleScrollToBottom}
-        onScrollToBottomPresence={handleScrollToBottomPresence}
-        onMessagesScroll={handleMessagesScroll}
-        onPresenceScroll={handlePresenceScroll}
-        onMessagesHeightChange={handleMessagesHeightChange}
+        showRawMessageData={showRawMessageData}
+        onCopyAll={handleCopyAllMessages}
+        onClear={() => {
+          setMessages([]);
+          setPresenceEvents([]);
+        }}
+        onReceivePresenceEventsChange={(checked) => handleSubscribeInputChange('receivePresenceEvents', checked)}
+        onShowRawMessageDataChange={setShowRawMessageData}
       />
 
-      {/* Quick Publish Panel - Phase 3 Implementation - Full Width */}
+      {/* Quick Publish Bar */}
       <QuickPublishPanel
         publishData={publishData}
         publishStatus={publishStatus}
-        onPublishDataChange={setPublishData}
-        onFormatMessage={handleFormatMessage}
+        onPublishDataChange={handlePublishInputChange}
         onPublish={handlePublish}
       />
 
-      <div className="grid gap-6">
-        {/* Subscription Configuration Panel - Placeholder for Phase 4 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center space-x-2">
-              <Filter className="h-5 w-5 text-blue-600" />
-              <CardTitle className="text-lg">SUBSCRIPTION CONFIGURATION</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="channels" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="channels">CHANNELS</TabsTrigger>
-                <TabsTrigger value="groups">GROUPS</TabsTrigger>
-                <TabsTrigger value="filters">
-                  FILTERS {filterState.conditions.length > 0 && (
-                    <Badge variant="secondary" className="ml-1">
-                      {filterState.conditions.length}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="advanced">ADVANCED</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="channels" className="space-y-4">
-                <div>
-                  <Label>Channel Names (comma-separated)</Label>
-                  <Input
-                    value={subscribeData.channels}
-                    onChange={(e) => handleSubscribeDataChange('channels', e.target.value)}
-                    placeholder="hello_world, sensors-*, alerts"
-                  />
-                  <p className="text-xs text-gray-500 mt-2">
-                    Subscribe to individual channels. Use wildcards (*) for pattern matching.
-                  </p>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="groups" className="space-y-4">
-                <div>
-                  <Label>Channel Group Names (comma-separated)</Label>
-                  <Input
-                    value={subscribeData.channelGroups}
-                    onChange={(e) => handleSubscribeDataChange('channelGroups', e.target.value)}
-                    placeholder="group1, group2, sensors-group"
-                  />
-                  <p className="text-xs text-gray-500 mt-2">
-                    Subscribe to channel groups containing multiple channels.
-                  </p>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="filters" className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <Label>Message Filters (Server-side)</Label>
-                    <Button onClick={addFilter} size="sm" variant="outline">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Filter
-                    </Button>
-                  </div>
-                  {filterState.conditions.map((filter, index) => (
-                    <div key={filter.id} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Filter {index + 1}</span>
-                        {filterState.conditions.length > 1 && (
-                          <Button
-                            onClick={() => removeFilter(filter.id)}
-                            size="sm"
-                            variant="ghost"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-4 gap-2">
-                        <Input
-                          placeholder="Target"
-                          value={filter.target}
-                          onChange={(e) => updateFilter(filter.id, 'target', e.target.value)}
-                        />
-                        <Input
-                          placeholder="Field"
-                          value={filter.field}
-                          onChange={(e) => updateFilter(filter.id, 'field', e.target.value)}
-                        />
-                        <Input
-                          placeholder="Operator"
-                          value={filter.operator}
-                          onChange={(e) => updateFilter(filter.id, 'operator', e.target.value)}
-                        />
-                        <Input
-                          placeholder="Value"
-                          value={filter.value}
-                          onChange={(e) => updateFilter(filter.id, 'value', e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="advanced" className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Cursor Timetoken</Label>
-                    <Input
-                      value={subscribeData.cursor.timetoken}
-                      onChange={(e) => handleSubscribeDataChange('cursor.timetoken', e.target.value)}
-                      placeholder="15123456789012345"
-                    />
-                  </div>
-                  <div>
-                    <Label>Cursor Region</Label>
-                    <Input
-                      type="number"
-                      value={subscribeData.cursor.region}
-                      onChange={(e) => handleSubscribeDataChange('cursor.region', e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <MapPin className="h-4 w-4" />
-                        <span className="text-sm font-medium">Enable Heartbeat</span>
-                      </div>
-                      <p className="text-xs text-gray-500">Send periodic heartbeat messages</p>
-                    </div>
-                    <Switch
-                      checked={subscribeData.withPresence}
-                      onCheckedChange={(value) => handleSubscribeDataChange('withPresence', value)}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <RefreshCw className="h-4 w-4" />
-                        <span className="text-sm font-medium">Restore on Reconnect</span>
-                      </div>
-                      <p className="text-xs text-gray-500">Auto-restore subscription after disconnect</p>
-                    </div>
-                    <Switch
-                      checked={subscribeData.restoreOnReconnect}
-                      onCheckedChange={(value) => handleSubscribeDataChange('restoreOnReconnect', value)}
-                    />
-                  </div>
-                  <div>
-                    <Label>Heartbeat Interval (seconds)</Label>
-                    <Input
-                      type="number"
-                      value={subscribeData.heartbeat}
-                      onChange={(e) => handleSubscribeDataChange('heartbeat', parseInt(e.target.value) || 300)}
-                      placeholder="300"
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Active Filters Display */}
-      <div className="mt-6 flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
-        <Filter className="h-4 w-4 text-blue-600" />
-        <div>
-          <span className="text-sm font-medium text-blue-800">Active Filters:</span>
-          <span className="text-sm text-blue-600 ml-2">
-            {generateFilterExpression(filterState.conditions, filterState.logic)}
-          </span>
-        </div>
-      </div>
+      {/* Subscription Configuration Panel */}
+      <SubscriptionConfigPanel
+        subscribeData={subscribeData}
+        filters={subscribeFilters}
+        filterLogic={filterLogic}
+        onSubscribeDataChange={handleSubscribeInputChange}
+        onFiltersChange={setSubscribeFilters}
+        onFilterLogicChange={setFilterLogic}
+      />
     </div>
   );
 }

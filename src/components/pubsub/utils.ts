@@ -1,98 +1,29 @@
-// PubSub Utility Functions
-// Extracted from original monolithic pubsub.tsx for modular architecture
-
-import {
-  PubSubConfig,
-  PublishFormData,
-  SubscribeFormData,
-  UIState,
-  FilterState,
-  FilterConfig,
-  FIELD_DEFINITIONS,
+import { 
+  FIELD_DEFINITIONS, 
   CURRENT_CONFIG_VERSION,
-  CONFIG_MIGRATIONS,
-  ConfigMigration,
-  DeepPartial
+  DEFAULT_FILTER_CONDITION 
+} from './constants';
+import type { 
+  PubSubConfig, 
+  PublishFormData, 
+  SubscribeFormData, 
+  UIState, 
+  FilterState,
+  FilterCondition 
 } from './types';
 
-/**
- * Utility to get nested value safely from an object using dot notation
- * @param obj - The object to get the value from
- * @param path - Dot-separated path (e.g., 'cursor.timetoken')
- * @returns The value at the path or undefined
- */
-export const getNestedValue = (obj: any, path: string): any => {
-  return path.split('.').reduce((current, key) => current?.[key], obj);
+// Migration functions for version compatibility
+const CONFIG_MIGRATIONS: Record<number, (config: any) => any> = {
+  1: (config: any) => config, // Initial version, no migration needed
+  // Future migrations will be added here as:
+  // 2: (config: any) => ({ ...config, newField: defaultValue }),
 };
 
-/**
- * Utility to set nested value in an object using dot notation
- * @param obj - The object to set the value in
- * @param path - Dot-separated path (e.g., 'cursor.timetoken')
- * @param value - The value to set
- */
-export const setNestedValue = (obj: any, path: string, value: any): void => {
-  const keys = path.split('.');
-  const lastKey = keys.pop()!;
-  const target = keys.reduce((current, key) => {
-    if (!current[key]) current[key] = {};
-    return current[key];
-  }, obj);
-  target[lastKey] = value;
-};
-
-/**
- * Deep merge utility for config restoration
- * @param target - The target object to merge into
- * @param source - The source object to merge from
- * @returns Merged object
- */
-export const deepMerge = (target: any, source: any): any => {
-  const result = { ...target };
-  for (const key in source) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      result[key] = deepMerge(target[key] || {}, source[key]);
-    } else {
-      result[key] = source[key];
-    }
-  }
-  return result;
-};
-
-/**
- * Convert individual state objects to pageSettings structure
- * @param publishData - Publish form data
- * @param subscribeData - Subscribe form data
- * @param uiState - UI state data
- * @param filterState - Filter state data
- * @returns Complete PubSub configuration object
- */
-export const stateToPageSettings = (
-  publishData: PublishFormData,
-  subscribeData: SubscribeFormData,
-  uiState: UIState,
-  filterState: FilterState
-): PubSubConfig => {
-  const pageSettings: PubSubConfig = {
-    publish: { ...publishData },
-    subscribe: { ...subscribeData },
-    ui: { ...uiState },
-    filters: { ...filterState },
-    _version: CURRENT_CONFIG_VERSION
-  };
-
-  return pageSettings;
-};
-
-/**
- * Migrate config to current version
- * @param config - Configuration object to migrate
- * @returns Migrated configuration
- */
-export const migrateConfig = (config: any): PubSubConfig => {
+// Migrate config to current version
+export const migrateConfig = (config: any): any => {
   const configVersion = config._version || 1;
   let migratedConfig = { ...config };
-
+  
   // Apply migrations sequentially
   for (let v = configVersion; v < CURRENT_CONFIG_VERSION; v++) {
     const migration = CONFIG_MIGRATIONS[v + 1];
@@ -100,34 +31,60 @@ export const migrateConfig = (config: any): PubSubConfig => {
       migratedConfig = migration(migratedConfig);
     }
   }
-
+  
   // Add current version
   migratedConfig._version = CURRENT_CONFIG_VERSION;
   return migratedConfig;
 };
 
-/**
- * Create default config structure based on FIELD_DEFINITIONS
- * @returns Default configuration object
- */
+// Convert page settings from storage format to state objects
+export const pageSettingsToState = (settings: any) => {
+  const publishData: PublishFormData = settings.publish || {};
+  const subscribeData: SubscribeFormData = settings.subscribe || {};
+  const uiState: UIState = settings.ui || {};
+  const filterState: FilterState = {
+    logic: settings.filters?.logic || '&&',
+    conditions: settings.filters?.conditions || [{ ...DEFAULT_FILTER_CONDITION }]
+  };
+  
+  return {
+    publishData,
+    subscribeData,
+    uiState,
+    filterState
+  };
+};
+
+// Convert individual state objects to pageSettings structure
+export const stateToPageSettings = (
+  publishData: PublishFormData, 
+  subscribeData: SubscribeFormData, 
+  uiState: UIState, 
+  filterState: FilterState
+): PubSubConfig => {
+  const pageSettings: PubSubConfig = { 
+    publish: publishData,
+    subscribe: subscribeData,
+    ui: uiState,
+    filters: filterState,
+    _version: CURRENT_CONFIG_VERSION
+  };
+  
+  return pageSettings;
+};
+
+// Create default config structure
 export const createDefaultPageSettings = (): PubSubConfig => {
-  const defaultSettings: any = {
-    publish: {},
-    subscribe: { cursor: {} },
-    ui: {},
+  const defaultSettings: any = { 
+    publish: {}, 
+    subscribe: { cursor: {} }, 
+    ui: {}, 
     filters: { 
-      conditions: [{ 
-        id: 1, 
-        target: 'message', 
-        field: '', 
-        operator: '==', 
-        value: '', 
-        type: 'string' 
-      }],
-      logic: '&&'
+      logic: '&&',
+      conditions: [{ ...DEFAULT_FILTER_CONDITION }]
     }
   };
-
+  
   // Set defaults from field definitions
   Object.entries(FIELD_DEFINITIONS).forEach(([fullPath, definition]) => {
     const pathParts = fullPath.split('.');
@@ -142,158 +99,183 @@ export const createDefaultPageSettings = (): PubSubConfig => {
       defaultSettings[section][subsection][field] = definition.default;
     }
   });
-
+  
   defaultSettings._version = CURRENT_CONFIG_VERSION;
-  return defaultSettings as PubSubConfig;
+  return defaultSettings;
 };
 
-/**
- * Validate channel name format
- * @param channel - Channel name to validate
- * @returns True if valid, false otherwise
- */
-export const isValidChannelName = (channel: string): boolean => {
-  if (!channel || channel.trim().length === 0) return false;
-  // Basic validation - no spaces, commas handled elsewhere
-  return !/\s/.test(channel.trim());
+// Deep merge utility for config restoration
+export const deepMerge = (target: any, source: any): any => {
+  const result = { ...target };
+  for (const key in source) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      result[key] = deepMerge(target[key] || {}, source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
 };
 
-/**
- * Parse comma-separated channel list and validate each channel
- * @param channelString - Comma-separated channel string
- * @returns Array of valid channel names
- */
-export const parseChannels = (channelString: string): string[] => {
-  if (!channelString) return [];
-  return channelString
+// Utility to get nested value safely
+export const getNestedValue = (obj: any, path: string): any => {
+  return path.split('.').reduce((current, key) => current?.[key], obj);
+};
+
+// Utility to set nested value
+export const setNestedValue = (obj: any, path: string, value: any): void => {
+  const keys = path.split('.');
+  const lastKey = keys.pop()!;
+  const target = keys.reduce((current, key) => {
+    if (!current[key]) current[key] = {};
+    return current[key];
+  }, obj);
+  target[lastKey] = value;
+};
+
+// Generate filter expression from filter conditions
+export const generateFilterExpression = (conditions: FilterCondition[], logic: '&&' | '||'): string => {
+  if (!conditions || conditions.length === 0) return '';
+  
+  const validConditions = conditions.filter(c => c.field && c.value);
+  if (validConditions.length === 0) return '';
+  
+  const expressions = validConditions.map(condition => {
+    const { target, field, operator, value, type } = condition;
+    const fieldPath = field.includes('.') ? field : `${target}.${field}`;
+    
+    // Format value based on type
+    let formattedValue = value;
+    if (type === 'string') {
+      // Escape single quotes in string values
+      formattedValue = `'${value.replace(/'/g, "\\'")}'`;
+    } else if (type === 'boolean') {
+      formattedValue = value.toLowerCase() === 'true' ? 'true' : 'false';
+    }
+    
+    // Handle different operators
+    switch (operator) {
+      case 'contains':
+        return `${fieldPath}.indexOf(${formattedValue}) >= 0`;
+      case '!contains':
+        return `${fieldPath}.indexOf(${formattedValue}) < 0`;
+      case 'startsWith':
+        return `${fieldPath}.indexOf(${formattedValue}) == 0`;
+      case 'endsWith':
+        const lengthExpr = type === 'string' 
+          ? `${fieldPath}.length - ${value.length}`
+          : `${fieldPath}.length - ${formattedValue}.length`;
+        return `${fieldPath}.lastIndexOf(${formattedValue}) == ${lengthExpr}`;
+      default:
+        return `${fieldPath} ${operator} ${formattedValue}`;
+    }
+  });
+  
+  // Join with the specified logic operator
+  return expressions.length === 1 
+    ? expressions[0] 
+    : expressions.map(exp => `(${exp})`).join(` ${logic} `);
+};
+
+// Validate channel name
+export const validateChannel = (channel: string): { isValid: boolean; error?: string } => {
+  if (!channel || channel.trim() === '') {
+    return { isValid: false, error: 'Channel name is required' };
+  }
+  
+  // PubNub channel name restrictions
+  const invalidChars = /[^\w\-\.,:]/;
+  if (invalidChars.test(channel)) {
+    return { 
+      isValid: false, 
+      error: 'Channel names can only contain letters, numbers, hyphens, underscores, periods, colons, and commas' 
+    };
+  }
+  
+  if (channel.length > 92) {
+    return { isValid: false, error: 'Channel name must be 92 characters or less' };
+  }
+  
+  return { isValid: true };
+};
+
+// Validate JSON string
+export const validateJSON = (jsonString: string): { isValid: boolean; error?: string; parsed?: any } => {
+  if (!jsonString || jsonString.trim() === '') {
+    return { isValid: false, error: 'JSON is required' };
+  }
+  
+  try {
+    const parsed = JSON.parse(jsonString);
+    return { isValid: true, parsed };
+  } catch (error) {
+    return { 
+      isValid: false, 
+      error: error instanceof Error ? error.message : 'Invalid JSON format' 
+    };
+  }
+};
+
+// Validate custom message type
+export const validateCustomMessageType = (messageType: string): { isValid: boolean; error?: string } => {
+  if (!messageType) {
+    return { isValid: true }; // Optional field
+  }
+  
+  if (messageType.length < 3 || messageType.length > 50) {
+    return { 
+      isValid: false, 
+      error: 'Custom message type must be between 3 and 50 characters' 
+    };
+  }
+  
+  const validPattern = /^[a-zA-Z0-9\-_]+$/;
+  if (!validPattern.test(messageType)) {
+    return { 
+      isValid: false, 
+      error: 'Custom message type can only contain letters, numbers, hyphens, and underscores' 
+    };
+  }
+  
+  return { isValid: true };
+};
+
+// Format timestamp for display
+export const formatTimestamp = (timetoken: string): string => {
+  try {
+    // PubNub timetokens are in 10ths of microseconds
+    const timestamp = parseInt(timetoken) / 10000;
+    const date = new Date(timestamp);
+    const timeString = date.toLocaleTimeString('en-US', { 
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    // Add milliseconds manually
+    const ms = date.getMilliseconds().toString().padStart(3, '0');
+    return `${timeString}.${ms}`;
+  } catch {
+    return timetoken;
+  }
+};
+
+// Parse comma-separated channels
+export const parseChannels = (channelsString: string): string[] => {
+  if (!channelsString) return [];
+  return channelsString
     .split(',')
     .map(ch => ch.trim())
     .filter(ch => ch.length > 0);
 };
 
-/**
- * Generate filter expression from filter configurations
- * @param filters - Array of filter configurations
- * @param logic - Logic operator ('&&' or '||')
- * @returns Filter expression string
- */
-export const generateFilterExpression = (filters: FilterConfig[], logic: string): string => {
-  if (!filters || filters.length === 0) return 'No filters configured';
-  
-  const validFilters = filters.filter(f => f.field && f.value);
-  if (validFilters.length === 0) return 'No valid filters configured';
-
-  const expressions = validFilters.map(filter => {
-    const { target, field, operator, value, type } = filter;
-    
-    // Handle string values with quotes
-    let formattedValue = value;
-    if (type === 'string' || ['contains', 'like'].includes(operator.toLowerCase())) {
-      formattedValue = `"${value}"`;
-    }
-
-    return `${target}.${field} ${operator} ${formattedValue}`;
-  });
-
-  return expressions.join(` ${logic} `);
-};
-
-/**
- * Validate filter configuration
- * @param filter - Filter configuration to validate
- * @returns True if valid, false otherwise
- */
-export const isValidFilter = (filter: FilterConfig): boolean => {
-  return !!(filter.target && filter.field && filter.operator && filter.value);
-};
-
-/**
- * Create a new filter with default values
- * @param id - Unique ID for the filter
- * @returns New filter configuration
- */
-export const createDefaultFilter = (id: number): FilterConfig => ({
-  id,
-  target: 'message',
-  field: '',
-  operator: '==',
-  value: '',
-  type: 'string'
-});
-
-/**
- * Format message payload for display
- * @param message - Raw message payload
- * @returns Formatted string
- */
-export const formatMessagePayload = (message: any): string => {
-  if (typeof message === 'string') {
-    try {
-      // Try to parse and re-stringify for pretty formatting
-      const parsed = JSON.parse(message);
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return message;
-    }
-  }
-  return JSON.stringify(message, null, 2);
-};
-
-/**
- * Validate JSON string
- * @param jsonString - String to validate
- * @returns True if valid JSON, false otherwise
- */
-export const isValidJSON = (jsonString: string): boolean => {
+// Copy to clipboard utility
+export const copyToClipboard = async (text: string): Promise<boolean> => {
   try {
-    JSON.parse(jsonString);
+    await navigator.clipboard.writeText(text);
     return true;
-  } catch {
+  } catch (error) {
+    console.error('Failed to copy to clipboard:', error);
     return false;
   }
-};
-
-/**
- * Validate TTL (Time To Live) value
- * @param ttl - TTL string to validate
- * @returns True if valid, false otherwise
- */
-export const isValidTTL = (ttl: string): boolean => {
-  if (!ttl) return true; // Empty is valid (no TTL)
-  const num = parseInt(ttl, 10);
-  return !isNaN(num) && num > 0;
-};
-
-/**
- * Validate heartbeat interval
- * @param heartbeat - Heartbeat value to validate
- * @returns True if valid, false otherwise
- */
-export const isValidHeartbeat = (heartbeat: number): boolean => {
-  return !isNaN(heartbeat) && heartbeat >= 10 && heartbeat <= 3600; // 10 seconds to 1 hour
-};
-
-/**
- * Generate a unique ID for filters or other items
- * @returns Unique timestamp-based ID
- */
-export const generateUniqueId = (): number => {
-  return Date.now() + Math.floor(Math.random() * 1000);
-};
-
-/**
- * Debounce function for input handling
- * @param func - Function to debounce
- * @param wait - Wait time in milliseconds
- * @returns Debounced function
- */
-export const debounce = <T extends (...args: any[]) => void>(
-  func: T,
-  wait: number
-): ((...args: Parameters<T>) => void) => {
-  let timeout: NodeJS.Timeout;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
 };

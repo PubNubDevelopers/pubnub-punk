@@ -1,64 +1,67 @@
 import React from 'react';
-import { StatusIndicatorProps } from '../types';
+import { Wifi, WifiOff, Filter } from 'lucide-react';
 
-export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
-  isSubscribed,
-  messageCount,
-  presenceEventCount,
-  receivePresenceEvents,
-  activeFiltersCount = 0,
-  connectionStatus = 'disconnected'
+interface StatusIndicatorProps {
+  isConnected: boolean;
+  channels: string[];
+  channelGroups: string[];
+  hasFilters: boolean;
+  filterExpression?: string;
+}
+
+const StatusIndicator: React.FC<StatusIndicatorProps> = ({
+  isConnected,
+  channels,
+  channelGroups,
+  hasFilters,
+  filterExpression
 }) => {
-  // Generate status text based on subscription state and message counts  
-  const getStatusText = () => {
-    if (!isSubscribed) {
-      return "Subscribe to channels to see messages here";
-    }
-
-    const messagePart = messageCount === 1 ? "1 message" : `${messageCount} messages`;
-    const presencePart = receivePresenceEvents 
-      ? ` • ${presenceEventCount === 1 ? "1 presence event" : `${presenceEventCount} presence events`}`
-      : "";
-    
-    let statusText = `Listening for messages • ${messagePart}${presencePart}`;
-    
-    if (activeFiltersCount > 0) {
-      statusText += ` • ${activeFiltersCount} active filter${activeFiltersCount === 1 ? '' : 's'}`;
-    }
-
-    return statusText;
-  };
-
-  // Get connection status indicator
-  const getConnectionIndicator = () => {
-    if (!isSubscribed) {
-      return <div className="w-2 h-2 bg-gray-400 rounded-full" title="Not connected" />;
-    }
-
-    switch (connectionStatus) {
-      case 'connected':
-        return <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="Connected" />;
-      case 'connecting':
-        return <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" title="Connecting..." />;
-      case 'reconnecting':
-        return <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Reconnecting..." />;
-      case 'disconnected':
-      default:
-        return <div className="w-2 h-2 bg-red-500 rounded-full" title="Disconnected" />;
-    }
-  };
+  const totalSubscriptions = channels.length + channelGroups.length;
 
   return (
-    <div className="flex items-center space-x-2">
-      {getConnectionIndicator()}
-      <p className="text-sm text-gray-600">
-        {getStatusText()}
-      </p>
-      {activeFiltersCount > 0 && (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-          {activeFiltersCount} filter{activeFiltersCount === 1 ? '' : 's'}
-        </span>
+    <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-2">
+        {isConnected ? (
+          <>
+            <Wifi className="h-4 w-4 text-green-600" />
+            <span className="text-sm font-medium text-green-600">Connected</span>
+          </>
+        ) : (
+          <>
+            <WifiOff className="h-4 w-4 text-gray-400" />
+            <span className="text-sm font-medium text-gray-400">Disconnected</span>
+          </>
+        )}
+      </div>
+      
+      {isConnected && totalSubscriptions > 0 && (
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-600">
+            Subscribed to {totalSubscriptions} {totalSubscriptions === 1 ? 'target' : 'targets'}
+          </span>
+          {channels.length > 0 && (
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+              {channels.length} channel{channels.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          {channelGroups.length > 0 && (
+            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+              {channelGroups.length} group{channelGroups.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      )}
+      
+      {hasFilters && filterExpression && (
+        <div className="flex items-center space-x-2">
+          <Filter className="h-4 w-4 text-orange-600" />
+          <span className="text-xs text-orange-600" title={filterExpression}>
+            Filters Active
+          </span>
+        </div>
       )}
     </div>
   );
 };
+
+export default StatusIndicator;

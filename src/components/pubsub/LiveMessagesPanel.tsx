@@ -1,339 +1,300 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { MessageCircle, Copy, ChevronUp, ChevronDown, ArrowDown } from 'lucide-react';
-import { MessageItem } from './shared/MessageItem';
-import { StatusIndicator } from './shared/StatusIndicator';
-import { LiveMessagesPanelProps } from './types';
+import { MessageCircle, Copy, X, ArrowDown } from 'lucide-react';
+import { MessageData, PresenceEvent } from './types';
+import { formatTimestamp } from './utils';
+import MessageItem from './shared/MessageItem';
 
-export const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
+interface LiveMessagesPanelProps {
+  messages: MessageData[];
+  presenceEvents: PresenceEvent[];
+  receivePresenceEvents: boolean;
+  showRawMessageData: boolean;
+  onCopyAll: () => void;
+  onClear: () => void;
+  onReceivePresenceEventsChange: (value: boolean) => void;
+  onShowRawMessageDataChange: (value: boolean) => void;
+}
+
+const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
   messages,
   presenceEvents,
-  isSubscribed,
-  showRawMessageData,
   receivePresenceEvents,
-  messagesHeight,
-  showMessages,
-  showScrollButton,
-  showPresenceScrollButton,
-  onShowRawMessageDataToggle,
-  onReceivePresenceEventsToggle,
-  onShowMessagesToggle,
-  onCopyAllMessages,
-  onCopyAllPresenceEvents,
-  onScrollToBottom,
-  onScrollToBottomPresence,
-  onMessagesScroll,
-  onPresenceScroll,
-  onMessagesHeightChange
+  showRawMessageData,
+  onCopyAll,
+  onClear,
+  onReceivePresenceEventsChange,
+  onShowRawMessageDataChange,
 }) => {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const presenceContainerRef = useRef<HTMLDivElement>(null);
-  const [isResizing, setIsResizing] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [autoScrollPresence, setAutoScrollPresence] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [showPresenceScrollButton, setShowPresenceScrollButton] = useState(false);
 
-  // Handle container resizing for messages
-  useEffect(() => {
-    const messagesContainer = messagesContainerRef.current;
-    if (!messagesContainer) return;
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const newHeight = entry.contentRect.height;
-        if (newHeight !== messagesHeight && newHeight > 0) {
-          onMessagesHeightChange?.(newHeight);
-        }
-      }
-    });
-
-    resizeObserver.observe(messagesContainer);
-    return () => resizeObserver.disconnect();
-  }, [messagesHeight, onMessagesHeightChange]);
-
-  // Handle scroll events for messages
-  const handleMessagesScroll = () => {
-    if (messagesContainerRef.current && onMessagesScroll) {
-      onMessagesScroll(messagesContainerRef.current);
-    }
-  };
-
-  // Handle scroll events for presence
-  const handlePresenceScroll = () => {
-    if (presenceContainerRef.current && onPresenceScroll) {
-      onPresenceScroll(presenceContainerRef.current);
-    }
-  };
-
-  // Auto-scroll to bottom when new messages arrive (if user is near bottom)
-  useEffect(() => {
+  const handleScroll = useCallback(() => {
+    if (!messagesContainerRef.current) return;
     const container = messagesContainerRef.current;
-    if (!container || messages.length === 0) return;
+    const isNearBottom = 
+      container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+    setAutoScroll(isNearBottom);
+    setShowScrollButton(!isNearBottom && messages.length > 0);
+  }, [messages.length]);
 
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
-    if (isNearBottom) {
-      container.scrollTop = container.scrollHeight;
-    }
-  }, [messages]);
-
-  // Auto-scroll to bottom when new presence events arrive (if user is near bottom)
-  useEffect(() => {
+  const handlePresenceScroll = useCallback(() => {
+    if (!presenceContainerRef.current) return;
     const container = presenceContainerRef.current;
-    if (!container || presenceEvents.length === 0) return;
+    const isNearBottom = 
+      container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+    setAutoScrollPresence(isNearBottom);
+    setShowPresenceScrollButton(!isNearBottom && presenceEvents.length > 0);
+  }, [presenceEvents.length]);
 
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
-    if (isNearBottom) {
-      container.scrollTop = container.scrollHeight;
+  const scrollToBottom = useCallback(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      setAutoScroll(true);
+      setShowScrollButton(false);
     }
-  }, [presenceEvents]);
+  }, []);
 
-  const renderMessagesSection = () => (
-    <div className="space-y-2 relative">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-gray-700">Messages</h4>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onCopyAllMessages}
-          disabled={messages.length === 0}
-          className="h-6 px-2"
-          title="Copy all messages to clipboard"
-        >
-          <Copy className="h-3 w-3" />
-        </Button>
-      </div>
-      <div 
-        ref={messagesContainerRef}
-        onScroll={handleMessagesScroll}
-        className="bg-gray-50 rounded-lg p-4 overflow-y-auto resize-y border-b-2 border-gray-300"
-        style={{ height: `${messagesHeight}px`, minHeight: '120px', maxHeight: '600px' }}
-      >
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-center">
-            <div>
-              <MessageCircle className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-xs text-gray-500">
-                {isSubscribed 
-                  ? "No messages received yet..." 
-                  : "Subscribe to channels to start receiving messages"}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {messages.map((msg, index) => (
-              <MessageItem 
-                key={`message-${index}-${msg.timetoken}`}
-                message={msg}
-                showRawData={showRawMessageData}
-                type="message"
-              />
-            ))}
-          </div>
-        )}
-      </div>
-      
-      {/* Scroll to bottom button for messages window */}
-      {showScrollButton && (
-        <Button
-          onClick={onScrollToBottom}
-          size="sm"
-          className="absolute bottom-4 right-4 rounded-full w-8 h-8 p-0 shadow-lg bg-blue-500 hover:bg-blue-600 text-white"
-          title="Scroll to bottom"
-        >
-          <ArrowDown className="h-3 w-3" />
-        </Button>
-      )}
-    </div>
-  );
+  const scrollPresenceToBottom = useCallback(() => {
+    if (presenceContainerRef.current) {
+      presenceContainerRef.current.scrollTop = presenceContainerRef.current.scrollHeight;
+      setAutoScrollPresence(true);
+      setShowPresenceScrollButton(false);
+    }
+  }, []);
 
-  const renderPresenceSection = () => (
-    <div className="space-y-2 relative">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-gray-700">Presence Events</h4>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onCopyAllPresenceEvents}
-          disabled={presenceEvents.length === 0}
-          className="h-6 px-2"
-          title="Copy all presence events to clipboard"
-        >
-          <Copy className="h-3 w-3" />
-        </Button>
-      </div>
-      <div 
-        ref={presenceContainerRef}
-        onScroll={handlePresenceScroll}
-        className="bg-green-50 rounded-lg p-4 overflow-y-auto resize-y border-b-2 border-green-300"
-        style={{ height: `${messagesHeight}px`, minHeight: '120px', maxHeight: '600px' }}
-      >
-        {presenceEvents.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-center">
-            <div>
-              <MessageCircle className="h-8 w-8 text-green-300 mx-auto mb-2" />
-              <p className="text-xs text-green-600">
-                {isSubscribed 
-                  ? "No presence events received yet..." 
-                  : "Subscribe to channels to see presence events"}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {presenceEvents.map((event, index) => (
-              <MessageItem 
-                key={`presence-${index}-${event.timetoken}`}
-                message={event}
-                showRawData={showRawMessageData}
-                type="presence"
-              />
-            ))}
-          </div>
-        )}
-      </div>
+  useEffect(() => {
+    if (autoScroll && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages, autoScroll]);
 
-      {/* Scroll to bottom button for presence window */}
-      {showPresenceScrollButton && (
-        <Button
-          onClick={onScrollToBottomPresence}
-          size="sm"
-          className="absolute bottom-4 right-4 rounded-full w-8 h-8 p-0 shadow-lg bg-green-500 hover:bg-green-600 text-white"
-          title="Scroll to bottom"
-        >
-          <ArrowDown className="h-3 w-3" />
-        </Button>
-      )}
-    </div>
-  );
+  useEffect(() => {
+    if (autoScrollPresence && presenceContainerRef.current) {
+      presenceContainerRef.current.scrollTop = presenceContainerRef.current.scrollHeight;
+    }
+  }, [presenceEvents, autoScrollPresence]);
 
   return (
-    <Card className="mb-8">
-      <CardHeader>
+    <Card className="mb-6">
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
-              <MessageCircle className="text-white h-5 w-5" />
-            </div>
-            <div>
-              <CardTitle>Real-Time Messages</CardTitle>
-              <StatusIndicator 
-                isSubscribed={isSubscribed}
-                messageCount={messages.length}
-                presenceEventCount={presenceEvents.length}
-                receivePresenceEvents={receivePresenceEvents}
-              />
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2 text-sm">
-                <Label htmlFor="receive-presence" className="text-xs font-medium">
-                  Receive Presence Events
-                </Label>
-                <Switch
-                  id="receive-presence"
-                  checked={receivePresenceEvents}
-                  onCheckedChange={onReceivePresenceEventsToggle}
-                />
-              </div>
-              <div className="flex items-center space-x-2 text-sm">
-                <Label htmlFor="show-raw-data" className="text-xs font-medium">
-                  Show Raw Message Data
-                </Label>
-                <Switch
-                  id="show-raw-data"
-                  checked={showRawMessageData}
-                  onCheckedChange={onShowRawMessageDataToggle}
-                />
-              </div>
-            </div>
+          <CardTitle className="text-lg flex items-center">
+            <MessageCircle className="h-5 w-5 mr-2 text-blue-600" />
+            LIVE MESSAGES
+          </CardTitle>
+          <div className="flex items-center space-x-2">
             <div className="flex items-center space-x-2">
-              {/* Show copy button only when presence events are disabled */}
-              {!receivePresenceEvents && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onCopyAllMessages}
-                  disabled={messages.length === 0}
-                  className="flex items-center space-x-1"
-                  title="Copy all messages to clipboard"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onShowMessagesToggle}
-                className="flex items-center space-x-2"
-              >
-                {showMessages ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                <span>{showMessages ? 'Hide' : 'Show'}</span>
-              </Button>
+              <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-sm text-gray-600">Live</span>
             </div>
           </div>
         </div>
+        
+        <div className="flex items-center justify-between mt-4 pt-4 border-t">
+          <div className="flex items-center space-x-6">
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={receivePresenceEvents}
+                onCheckedChange={onReceivePresenceEventsChange}
+              />
+              <Label className="text-sm">Receive Presence Events</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={showRawMessageData}
+                onCheckedChange={onShowRawMessageDataChange}
+              />
+              <Label className="text-sm">Show Raw Message Data</Label>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              disabled={messages.length === 0}
+              onClick={onCopyAll}
+            >
+              <Copy className="h-4 w-4 mr-1" />
+              Copy All
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              disabled={messages.length === 0}
+              onClick={onClear}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Clear
+            </Button>
+          </div>
+        </div>
       </CardHeader>
-      {showMessages && (
-        <CardContent>
-          <div className="relative">
-            {receivePresenceEvents ? (
-              /* Split View - Messages and Presence Events */
-              <div className="grid grid-cols-2 gap-4">
-                {renderMessagesSection()}
-                {renderPresenceSection()}
-              </div>
-            ) : (
-              /* Single View - Messages Only */
-              <div className="relative">
+      <CardContent>
+        <div className="relative">
+          {receivePresenceEvents ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-gray-700">Messages</h4>
+                  <span className="text-xs text-gray-500">{messages.length} received</span>
+                </div>
                 <div 
                   ref={messagesContainerRef}
-                  onScroll={handleMessagesScroll}
-                  className="bg-gray-50 rounded-lg p-4 overflow-y-auto resize-y border-b-2 border-gray-300"
-                  style={{ height: `${messagesHeight}px`, minHeight: '120px', maxHeight: '600px' }}
+                  onScroll={handleScroll}
+                  className="bg-gray-50 rounded-lg p-4 h-64 overflow-y-auto border-2 border-dashed border-gray-200 relative"
                 >
                   {messages.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-center">
                       <div>
                         <MessageCircle className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-xs text-gray-500">
-                          {isSubscribed 
-                            ? "No messages received yet..." 
-                            : "Subscribe to channels to start receiving messages"}
-                        </p>
+                        <p className="text-xs text-gray-500">No messages yet</p>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-2">
                       {messages.map((msg, index) => (
-                        <MessageItem 
-                          key={`message-${index}-${msg.timetoken}`}
+                        <MessageItem
+                          key={index}
                           message={msg}
                           showRawData={showRawMessageData}
-                          type="message"
+                          isCompact={true}
                         />
                       ))}
                     </div>
                   )}
+                  {showScrollButton && (
+                    <Button
+                      size="sm"
+                      onClick={scrollToBottom}
+                      className="absolute bottom-2 right-2 rounded-full w-8 h-8 p-0 shadow-lg bg-blue-500 hover:bg-blue-600 text-white"
+                      title="Scroll to bottom"
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
-                
-                {/* Scroll to bottom button for single view */}
-                {showScrollButton && (
-                  <Button
-                    onClick={onScrollToBottom}
-                    size="sm"
-                    className="absolute bottom-4 right-4 rounded-full w-8 h-8 p-0 shadow-lg bg-blue-500 hover:bg-blue-600 text-white"
-                    title="Scroll to bottom"
-                  >
-                    <ArrowDown className="h-3 w-3" />
-                  </Button>
-                )}
               </div>
-            )}
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-gray-700">Presence Events</h4>
+                  <span className="text-xs text-gray-500">{presenceEvents.length} events</span>
+                </div>
+                <div 
+                  ref={presenceContainerRef}
+                  onScroll={handlePresenceScroll}
+                  className="bg-green-50 rounded-lg p-4 h-64 overflow-y-auto border-2 border-dashed border-green-200 relative"
+                >
+                  {presenceEvents.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-center">
+                      <div>
+                        <MessageCircle className="h-8 w-8 text-green-300 mx-auto mb-2" />
+                        <p className="text-xs text-green-600">No presence events yet</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {presenceEvents.map((event, index) => (
+                        <div key={index} className="bg-white p-2 rounded border border-green-200 shadow-sm">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-mono text-green-600 bg-green-100 px-1 py-0.5 rounded">
+                              #{event.channel}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {event.timestamp || formatTimestamp(event.timetoken)}
+                            </span>
+                          </div>
+                          <div className="text-xs space-y-1">
+                            <div><span className="font-semibold">Action:</span> {event.action}</div>
+                            <div><span className="font-semibold">UUID:</span> {event.uuid}</div>
+                            <div><span className="font-semibold">Occupancy:</span> {event.occupancy}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {showPresenceScrollButton && (
+                    <Button
+                      size="sm"
+                      onClick={scrollPresenceToBottom}
+                      className="absolute bottom-2 right-2 rounded-full w-8 h-8 p-0 shadow-lg bg-green-500 hover:bg-green-600 text-white"
+                      title="Scroll to bottom"
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div 
+              ref={messagesContainerRef}
+              onScroll={handleScroll}
+              className="bg-gray-50 rounded-lg p-4 h-64 overflow-y-auto border-2 border-dashed border-gray-200 relative"
+            >
+              {messages.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-center">
+                  <div>
+                    <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 text-lg">No messages yet</p>
+                    <p className="text-gray-400 text-sm">Start subscribing to see real-time messages here</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {messages.map((msg, index) => (
+                    <MessageItem
+                      key={index}
+                      message={msg}
+                      showRawData={showRawMessageData}
+                      isCompact={false}
+                    />
+                  ))}
+                </div>
+              )}
+              {showScrollButton && (
+                <Button
+                  size="sm"
+                  onClick={scrollToBottom}
+                  className="absolute bottom-4 right-4 rounded-full w-10 h-10 p-0 shadow-lg bg-blue-500 hover:bg-blue-600 text-white"
+                  title="Scroll to bottom"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {(messages.length > 0 || presenceEvents.length > 0) && (
+          <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+            <span>
+              {messages.length} message{messages.length !== 1 ? 's' : ''} received
+              {receivePresenceEvents && presenceEvents.length > 0 && 
+                `, ${presenceEvents.length} presence event${presenceEvents.length !== 1 ? 's' : ''}`
+              }
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onClear}
+              className="text-red-600 hover:text-red-700"
+            >
+              Clear All Messages
+            </Button>
           </div>
-        </CardContent>
-      )}
+        )}
+      </CardContent>
     </Card>
   );
 };
+
+export default LiveMessagesPanel;
