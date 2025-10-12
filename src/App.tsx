@@ -5,8 +5,9 @@ import { AppShell } from "@/components/app-shell";
 import { ConfigProvider } from "@/contexts/config-context";
 import { PubNubProvider } from "@/contexts/pubnub-context";
 import SettingsPage from "@/pages/settings";
-import { PubSubPage } from "@/components/pubsub";
-import PubSubWireframePage from "@/pages/pubsub-wireframe";
+// import PubSubPage from "@/pages/pubsub"; // Original implementation - archived
+// import PubSubWireframePage from "@/pages/pubsub-wireframe"; // Wireframe - no longer needed
+import { PubSubPageEnhanced } from "@/components/pubsub";
 import PubNubPersistencePage from "@/pages/pubnub-persistence";
 import ChannelGroupsPage from "@/pages/channel-groups";
 import MobilePushPage from "@/pages/mobile-push";
@@ -27,11 +28,7 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
   },
   '/pubsub': {
     title: 'Pub/Sub Tool',
-    subtitle: 'Test real-time messaging functionality'
-  },
-  '/pubsub-wireframe': {
-    title: 'Pub/Sub Wireframe',
-    subtitle: 'Improved UX design wireframe'
+    subtitle: 'Real-time messaging with advanced filtering and controls'
   },
   '/pubnub-persistence': {
     title: 'PubNub Persistence Tool',
@@ -87,8 +84,12 @@ function Router() {
     <AppShell pageTitle={config.title} pageSubtitle={config.subtitle}>
       <Switch>
         <Route path="/" component={SettingsPage} />
-        <Route path="/pubsub" component={PubSubPage} />
+        <Route path="/pubsub" component={PubSubPageEnhanced} />
+        {/* Test routes - deprecated after successful migration
         <Route path="/pubsub-wireframe" component={PubSubWireframePage} />
+        <Route path="/pubsub-new" component={NewPubSubPage} />
+        <Route path="/pubsub-enhanced" component={PubSubPageEnhanced} />
+        */}
         <Route path="/pubnub-persistence" component={PubNubPersistencePage} />
         <Route path="/channel-groups" component={ChannelGroupsPage} />
         <Route path="/mobile-push" component={MobilePushPage} />
