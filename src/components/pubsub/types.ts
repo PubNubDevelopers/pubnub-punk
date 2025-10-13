@@ -43,11 +43,11 @@ export interface UIState {
 
 export interface FilterCondition {
   id: number;
-  target: 'message' | 'uuid' | 'channel';
+  target: 'data' | 'meta';
   field: string;
-  operator: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'contains' | '!contains' | 'startsWith' | 'endsWith';
+  operator: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'CONTAINS' | 'NOT_CONTAINS';
   value: string;
-  type: 'string' | 'number' | 'boolean';
+  type: 'string' | 'number' | 'boolean' | 'expression';
 }
 
 export interface FilterState {

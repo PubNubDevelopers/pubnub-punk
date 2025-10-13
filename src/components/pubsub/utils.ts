@@ -1,8 +1,4 @@
-import { 
-  FIELD_DEFINITIONS, 
-  CURRENT_CONFIG_VERSION,
-  DEFAULT_FILTER_CONDITION 
-} from './constants';
+import { FIELD_DEFINITIONS, CURRENT_CONFIG_VERSION } from './constants';
 import type { 
   PubSubConfig, 
   PublishFormData, 
@@ -44,7 +40,7 @@ export const pageSettingsToState = (settings: any) => {
   const uiState: UIState = settings.ui || {};
   const filterState: FilterState = {
     logic: settings.filters?.logic || '&&',
-    conditions: settings.filters?.conditions || [{ ...DEFAULT_FILTER_CONDITION }]
+    conditions: settings.filters?.conditions || []
   };
   
   return {
@@ -79,9 +75,9 @@ export const createDefaultPageSettings = (): PubSubConfig => {
     publish: {}, 
     subscribe: { cursor: {} }, 
     ui: {}, 
-    filters: { 
+    filters: {
       logic: '&&',
-      conditions: [{ ...DEFAULT_FILTER_CONDITION }]
+      conditions: []
     }
   };
   
@@ -134,47 +130,83 @@ export const setNestedValue = (obj: any, path: string, value: any): void => {
 };
 
 // Generate filter expression from filter conditions
-export const generateFilterExpression = (conditions: FilterCondition[], logic: '&&' | '||'): string => {
+export const generateFilterExpression = (
+  conditions: FilterCondition[],
+  logic: '&&' | '||',
+): string => {
   if (!conditions || conditions.length === 0) return '';
-  
-  const validConditions = conditions.filter(c => c.field && c.value);
-  if (validConditions.length === 0) return '';
-  
-  const expressions = validConditions.map(condition => {
-    const { target, field, operator, value, type } = condition;
-    const fieldPath = field.includes('.') ? field : `${target}.${field}`;
-    
-    // Format value based on type
-    let formattedValue = value;
-    if (type === 'string') {
-      // Escape single quotes in string values
-      formattedValue = `'${value.replace(/'/g, "\\'")}'`;
-    } else if (type === 'boolean') {
-      formattedValue = value.toLowerCase() === 'true' ? 'true' : 'false';
+
+  const validConditions = conditions.filter((condition) => {
+    if (!condition.field.trim()) {
+      return false;
     }
-    
-    // Handle different operators
-    switch (operator) {
-      case 'contains':
-        return `${fieldPath}.indexOf(${formattedValue}) >= 0`;
-      case '!contains':
-        return `${fieldPath}.indexOf(${formattedValue}) < 0`;
-      case 'startsWith':
-        return `${fieldPath}.indexOf(${formattedValue}) == 0`;
-      case 'endsWith':
-        const lengthExpr = type === 'string' 
-          ? `${fieldPath}.length - ${value.length}`
-          : `${fieldPath}.length - ${formattedValue}.length`;
-        return `${fieldPath}.lastIndexOf(${formattedValue}) == ${lengthExpr}`;
+
+    if (condition.type === 'boolean') {
+      return true;
+    }
+
+    return condition.value.trim().length > 0;
+  });
+
+  if (validConditions.length === 0) return '';
+
+  const expressions = validConditions.map((condition) => {
+    const fieldPath = buildFilterFieldPath(condition);
+    const valueExpression = formatFilterValue(condition);
+
+    switch (condition.operator) {
+      case 'CONTAINS':
+        return `${fieldPath} CONTAINS ${valueExpression}`;
+      case 'NOT_CONTAINS':
+        return `!(${fieldPath} CONTAINS ${valueExpression})`;
+      case 'LIKE':
+        return `${fieldPath} LIKE ${valueExpression}`;
       default:
-        return `${fieldPath} ${operator} ${formattedValue}`;
+        return `${fieldPath} ${condition.operator} ${valueExpression}`;
     }
   });
-  
-  // Join with the specified logic operator
-  return expressions.length === 1 
-    ? expressions[0] 
-    : expressions.map(exp => `(${exp})`).join(` ${logic} `);
+
+  return expressions.length === 1
+    ? expressions[0]
+    : expressions.map((exp) => `(${exp})`).join(` ${logic} `);
+};
+
+const buildFilterFieldPath = (condition: FilterCondition): string => {
+  const field = condition.field.trim();
+  if (!field) {
+    return condition.target;
+  }
+
+  if (
+    field.startsWith('data.') ||
+    field.startsWith('meta.') ||
+    field.startsWith(`${condition.target}.`)
+  ) {
+    return field;
+  }
+
+  if (field.startsWith('[')) {
+    return `${condition.target}${field}`;
+  }
+
+  return `${condition.target}.${field}`;
+};
+
+const formatFilterValue = (condition: FilterCondition): string => {
+  if (condition.type === 'boolean') {
+    return condition.value === 'false' ? "'false'" : "'true'";
+  }
+
+  if (condition.type === 'number') {
+    return condition.value || '0';
+  }
+
+  if (condition.type === 'expression') {
+    return condition.value || '';
+  }
+
+  const escaped = condition.value.replace(/'/g, "\\'");
+  return `'${escaped}'`;
 };
 
 // Validate channel name

@@ -4,8 +4,21 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Filter, Plus, X, ChevronDown, Copy } from 'lucide-react';
 import type { FilterCondition } from '../types';
 import { generateFilterExpression, copyToClipboard } from '../utils';
@@ -17,84 +30,202 @@ interface FiltersTabProps {
   onFilterLogicChange: (logic: '&&' | '||') => void;
 }
 
-const filterTemplates = [
-  { name: 'Alert Messages', filter: { target: 'message' as const, field: 'type', operator: '==' as const, value: 'alert' } },
-  { name: 'High Priority', filter: { target: 'uuid' as const, field: 'priority', operator: '==' as const, value: 'high' } },
-  { name: 'Sensor Data', filter: { target: 'message' as const, field: 'sensorId', operator: 'contains' as const, value: 'sensor-' } },
-  { name: 'Recent Messages', filter: { target: 'channel' as const, field: '', operator: '>' as const, value: '{{current_timetoken-3600000}}' } },
-  { name: 'Exclude System', filter: { target: 'uuid' as const, field: '', operator: '!=' as const, value: 'system' } },
+const TARGET_OPTIONS: Array<{ label: string; value: FilterCondition['target'] }> = [
+  { label: 'data (message payload)', value: 'data' },
+  { label: 'meta (publish metadata)', value: 'meta' },
 ];
+
+const OPERATOR_OPTIONS: Array<{ label: string; value: FilterCondition['operator'] }> = [
+  { label: 'Equals (==)', value: '==' },
+  { label: 'Not Equals (!=)', value: '!=' },
+  { label: 'Greater Than (>)', value: '>' },
+  { label: 'Less Than (<)', value: '<' },
+  { label: 'Greater or Equal (>=)', value: '>=' },
+  { label: 'Less or Equal (<=)', value: '<=' },
+  { label: 'Pattern Match (LIKE)', value: 'LIKE' },
+  { label: 'Contains', value: 'CONTAINS' },
+  { label: 'Not Contains', value: 'NOT_CONTAINS' },
+];
+
+const TYPE_OPTIONS: Array<{ label: string; value: FilterCondition['type'] }> = [
+  { label: 'String', value: 'string' },
+  { label: 'Number', value: 'number' },
+  { label: 'Boolean', value: 'boolean' },
+  { label: 'Expression', value: 'expression' },
+];
+
+const filterTemplates: Array<{ name: string; filter: Omit<FilterCondition, 'id'> }> = [
+  {
+    name: 'High Priority Messages',
+    filter: {
+      target: 'meta',
+      field: 'priority',
+      operator: '==',
+      value: 'high',
+      type: 'string',
+    },
+  },
+  {
+    name: 'Announcements',
+    filter: {
+      target: 'data',
+      field: 'type',
+      operator: '==',
+      value: 'announcement',
+      type: 'string',
+    },
+  },
+  {
+    name: 'Sensor Alerts',
+    filter: {
+      target: 'meta',
+      field: 'device["type"]',
+      operator: 'LIKE',
+      value: 'sensor*',
+      type: 'string',
+    },
+  },
+  {
+    name: 'Exclude Test Region',
+    filter: {
+      target: 'meta',
+      field: 'region',
+      operator: '!=',
+      value: 'test',
+      type: 'string',
+    },
+  },
+  {
+    name: 'Critical Battery',
+    filter: {
+      target: 'data',
+      field: 'battery',
+      operator: '<',
+      value: '20',
+      type: 'number',
+    },
+  },
+];
+
+const createEmptyFilter = (): FilterCondition => ({
+  id: Date.now(),
+  target: 'data',
+  field: '',
+  operator: '==',
+  value: '',
+  type: 'string',
+});
+
+const buildFieldPath = (filter: FilterCondition): string => {
+  const trimmed = filter.field.trim();
+  if (!trimmed) {
+    return filter.target;
+  }
+
+  if (
+    trimmed.startsWith('data.') ||
+    trimmed.startsWith('meta.') ||
+    trimmed.startsWith(`${filter.target}.`)
+  ) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('[')) {
+    return `${filter.target}${trimmed}`;
+  }
+
+  return `${filter.target}.${trimmed}`;
+};
+
+const operatorLabel = (operator: FilterCondition['operator']): string => {
+  return operator === 'NOT_CONTAINS' ? 'NOT CONTAINS' : operator;
+};
+
+const formatValueForDisplay = (filter: FilterCondition): string => {
+  if (filter.type === 'boolean') {
+    return filter.value === 'false' ? 'false' : 'true';
+  }
+  if (filter.type === 'number') {
+    return filter.value || '0';
+  }
+  if (filter.type === 'expression') {
+    return filter.value || '';
+  }
+  return filter.value ? `'${filter.value}'` : '?';
+};
 
 export default function FiltersTab({
   filters,
   filterLogic,
   onFiltersChange,
-  onFilterLogicChange
+  onFilterLogicChange,
 }: FiltersTabProps) {
-  const updateFilter = (id: number, field: string, value: any) => {
-    const updatedFilters = filters.map(f => 
-      f.id === id ? { ...f, [field]: value } : f
-    );
-    onFiltersChange(updatedFilters);
+  const updateFilter = (id: number, field: keyof FilterCondition, value: string) => {
+    const updated = filters.map((filter) => {
+      if (filter.id !== id) return filter;
+
+      if (field === 'type') {
+        let nextValue = filter.value;
+        if (value === 'boolean') {
+          nextValue = filter.value === 'false' ? 'false' : 'true';
+        } else if (value === 'number') {
+          nextValue = filter.value && !Number.isNaN(Number(filter.value)) ? filter.value : '';
+        } else if (value === 'expression') {
+          nextValue = '';
+        } else {
+          nextValue = '';
+        }
+        return { ...filter, type: value as FilterCondition['type'], value: nextValue };
+      }
+
+      return { ...filter, [field]: value } as FilterCondition;
+    });
+
+    onFiltersChange(updated);
   };
 
   const addFilter = () => {
-    const newFilter: FilterCondition = {
-      id: Date.now(),
-      target: 'message',
-      field: '',
-      operator: '==',
-      value: '',
-      type: 'string'
-    };
-    onFiltersChange([...filters, newFilter]);
+    onFiltersChange([...filters, createEmptyFilter()]);
   };
 
   const removeFilter = (id: number) => {
-    onFiltersChange(filters.filter(f => f.id !== id));
+    onFiltersChange(filters.filter((filter) => filter.id !== id));
   };
 
-  const applyFilterTemplate = (template: any) => {
-    const newFilter: FilterCondition = {
-      id: Date.now(),
-      ...template.filter,
-      type: 'string'
-    };
-    onFiltersChange([...filters, newFilter]);
+  const applyFilterTemplate = (template: { name: string; filter: Omit<FilterCondition, 'id'> }) => {
+    onFiltersChange([...filters, { id: Date.now(), ...template.filter }]);
   };
 
-  const generateFilterSummary = () => {
-    const expression = generateFilterExpression(filters, filterLogic);
-    return expression || 'No filters active';
-  };
+  const filterExpression = generateFilterExpression(filters, filterLogic);
+  const expressionBadges = filters.length > 0;
+  const filtersIncomplete = filters.some((filter) => {
+    if (!filter.field.trim()) {
+      return true;
+    }
+    if (filter.type === 'boolean') {
+      return false;
+    }
+    return !filter.value.trim();
+  });
 
-  const generateHighlightedExpression = () => {
+  const highlightedExpression = () => {
     if (filters.length === 0) return null;
-    
-    return filters.map((f, index) => {
-      const hasField = f.field && f.field.trim() !== '';
-      const hasValue = f.value && f.value.trim() !== '';
-      
+
+    return filters.map((filter, index) => {
+      const fieldPath = buildFieldPath(filter);
+      const valueDisplay = formatValueForDisplay(filter);
+      const hasValue = !(filter.type !== 'boolean' && valueDisplay === '?');
       return (
-        <span key={f.id}>
+        <span key={filter.id}>
           {index > 0 && (
             <>
-              <span className="text-blue-600 font-bold mx-1">
-                {filterLogic === '&&' ? '&&' : '||'}
-              </span>
-              {' '}
+              <span className="mx-1 font-bold text-blue-600">{filterLogic === '&&' ? '&&' : '||'}</span>{' '}
             </>
           )}
           {index > 0 && '('}
-          <span className={hasField ? 'text-purple-600' : 'text-gray-400'}>
-            {f.target}{hasField ? `.${f.field}` : '.?'}
-          </span>
-          {' '}
-          <span className="text-green-600">{f.operator}</span>
-          {' '}
-          <span className={hasValue ? 'text-orange-600' : 'text-gray-400'}>
-            {hasValue ? (f.type === 'string' ? `'${f.value}'` : f.value) : '?'}
-          </span>
+          <span className="text-purple-600">{fieldPath}</span>{' '}
+          <span className="text-green-600">{operatorLabel(filter.operator)}</span>{' '}
+          <span className={hasValue ? 'text-orange-600' : 'text-gray-400'}>{hasValue ? valueDisplay : '?'}</span>
           {index > 0 && ')'}
         </span>
       );
@@ -104,43 +235,42 @@ export default function FiltersTab({
   return (
     <TabsContent value="filters" className="mt-4 space-y-4">
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label>Message Filters (Server-side)</Label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label>Subscribe filters (server-side)</Label>
+            <p className="mt-1 text-xs text-gray-500">
+              Use <code className="font-mono text-xs">data.&lt;field&gt;</code> for message payload and <code className="font-mono text-xs">meta.&lt;field&gt;</code> for metadata. Nested objects use bracket notation (e.g. <code className="font-mono text-xs">user['role']</code>) and arrays use indexes (e.g. <code className="font-mono text-xs">tags[0]</code>).
+            </p>
+          </div>
           <div className="flex items-center space-x-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline">
-                  <Filter className="h-4 w-4 mr-1" />
+                  <Filter className="mr-1 h-4 w-4" />
                   Templates
-                  <ChevronDown className="h-3 w-3 ml-1" />
+                  <ChevronDown className="ml-1 h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Common Filters</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>Quick start examples</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {filterTemplates.map((template) => (
-                  <DropdownMenuItem
-                    key={template.name}
-                    onClick={() => applyFilterTemplate(template)}
-                  >
+                  <DropdownMenuItem key={template.name} onClick={() => applyFilterTemplate(template)}>
                     {template.name}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
             <Button size="sm" onClick={addFilter}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add Filter
+              <Plus className="mr-1 h-4 w-4" />
+              Add filter
             </Button>
           </div>
         </div>
-        
-        <div className="flex items-center space-x-2 mb-2">
-          <Label className="text-sm">Filter Logic:</Label>
-          <Select
-            value={filterLogic}
-            onValueChange={(value: '&&' | '||') => onFilterLogicChange(value)}
-          >
+
+        <div className="flex items-center space-x-2">
+          <Label className="text-sm">Filter logic:</Label>
+          <Select value={filterLogic} onValueChange={(value: '&&' | '||') => onFilterLogicChange(value)}>
             <SelectTrigger className="w-32">
               <SelectValue />
             </SelectTrigger>
@@ -150,22 +280,22 @@ export default function FiltersTab({
             </SelectContent>
           </Select>
         </div>
-        
+
+        {filters.length === 0 && (
+          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
+            No filters configured. Add the first filter to start building your subscribe filter expression.
+          </div>
+        )}
+
         {filters.map((filter, index) => (
-          <div key={filter.id} className="p-3 border rounded-lg bg-gray-50">
-            <div className="flex items-center justify-between mb-2">
+          <div key={filter.id} className="rounded-lg border bg-gray-50 p-3">
+            <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-medium">Filter {index + 1}</span>
-              {filters.length > 1 && (
-                <Button 
-                  size="sm" 
-                  variant="ghost"
-                  onClick={() => removeFilter(filter.id)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
+              <Button size="sm" variant="ghost" onClick={() => removeFilter(filter.id)}>
+                <X className="h-4 w-4" />
+              </Button>
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid gap-2 md:grid-cols-[180px,1fr,160px,1fr,150px]">
               <Select
                 value={filter.target}
                 onValueChange={(value) => updateFilter(filter.id, 'target', value)}
@@ -174,18 +304,20 @@ export default function FiltersTab({
                   <SelectValue placeholder="Target" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="message">Message</SelectItem>
-                  <SelectItem value="uuid">UUID/Publisher</SelectItem>
-                  <SelectItem value="channel">Channel</SelectItem>
+                  {TARGET_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              
-              <Input 
-                placeholder="Field (e.g., type, priority)" 
+
+              <Input
+                placeholder="Field (e.g. user['role'] or tags[0])"
                 value={filter.field}
-                onChange={(e) => updateFilter(filter.id, 'field', e.target.value)}
+                onChange={(event) => updateFilter(filter.id, 'field', event.target.value)}
               />
-              
+
               <Select
                 value={filter.operator}
                 onValueChange={(value) => updateFilter(filter.id, 'operator', value)}
@@ -194,82 +326,99 @@ export default function FiltersTab({
                   <SelectValue placeholder="Operator" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="==">Equals (==)</SelectItem>
-                  <SelectItem value="!=">Not Equals (!=)</SelectItem>
-                  <SelectItem value=">">Greater Than (&gt;)</SelectItem>
-                  <SelectItem value="<">Less Than (&lt;)</SelectItem>
-                  <SelectItem value=">=">Greater or Equal (&gt;=)</SelectItem>
-                  <SelectItem value="<=">Less or Equal (&lt;=)</SelectItem>
-                  <SelectItem value="contains">Contains</SelectItem>
-                  <SelectItem value="!contains">Not Contains</SelectItem>
-                  <SelectItem value="startsWith">Starts With</SelectItem>
-                  <SelectItem value="endsWith">Ends With</SelectItem>
+                  {OPERATOR_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              
-              <Input 
-                placeholder="Value" 
-                value={filter.value}
-                onChange={(e) => updateFilter(filter.id, 'value', e.target.value)}
-              />
+
+              {filter.type === 'boolean' ? (
+                <Select
+                  value={filter.value || 'true'}
+                  onValueChange={(value) => updateFilter(filter.id, 'value', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">true</SelectItem>
+                    <SelectItem value="false">false</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : filter.type === 'number' ? (
+                <Input
+                  type="number"
+                  placeholder="Value"
+                  value={filter.value}
+                  onChange={(event) => updateFilter(filter.id, 'value', event.target.value)}
+                />
+              ) : (
+                <Input
+                  placeholder={filter.type === 'expression' ? 'Expression' : 'Value'}
+                  value={filter.value}
+                  onChange={(event) => updateFilter(filter.id, 'value', event.target.value)}
+                />
+              )}
+
+              <Select value={filter.type} onValueChange={(value) => updateFilter(filter.id, 'type', value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         ))}
-        
-        <div className={`mt-4 p-4 rounded-lg border-2 transition-all duration-300 ${
-          filters.length > 0 
-            ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 shadow-md' 
-            : 'bg-gray-50 border-gray-200 border-dashed'
-        }`}>
-          <div className="flex items-start justify-between mb-2">
+
+        <div
+          className={`rounded-lg border-2 p-4 transition-all duration-300 ${
+            expressionBadges
+              ? 'border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50 shadow'
+              : 'border-gray-200 border-dashed bg-gray-50'
+          }`}
+        >
+          <div className="mb-2 flex items-start justify-between">
             <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${
-                filters.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-              }`} />
-              <div className="text-sm font-semibold text-gray-700">
-                Live Filter Expression
-              </div>
+              <div className={`h-2 w-2 rounded-full ${expressionBadges ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+              <div className="text-sm font-semibold text-gray-700">Live filter expression</div>
             </div>
-            {filters.length > 0 && (
+            {expressionBadges && (
               <div className="flex items-center space-x-2">
                 <Badge variant="outline" className="text-xs">
-                  {filters.some(f => !f.field || !f.value) ? 'Incomplete' : 'Valid'}
+                  {filtersIncomplete ? 'Incomplete' : 'Valid'}
                 </Badge>
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
+                <Button
+                  size="sm"
+                  variant="ghost"
                   className="h-6 px-2"
-                  onClick={() => {
-                    copyToClipboard(generateFilterSummary());
-                  }}
+                  onClick={() => copyToClipboard(filterExpression || '')}
                 >
                   <Copy className="h-3 w-3" />
                 </Button>
               </div>
             )}
           </div>
-          
-          <div className={`font-mono text-sm p-3 rounded bg-white border ${
-            filters.length > 0 ? 'border-blue-200' : 'border-gray-200'
-          } overflow-x-auto`}>
+
+          <div className="overflow-x-auto rounded border bg-white p-3 font-mono text-sm">
             {filters.length === 0 ? (
-              <span className="text-gray-400 italic">No filters configured yet. Add filters above to see the expression.</span>
+              <span className="italic text-gray-400">No filters configured yet.</span>
             ) : (
-              <code className="break-all">
-                {generateHighlightedExpression()}
-              </code>
+              <code className="break-all">{highlightedExpression()}</code>
             )}
           </div>
-          
-          {filters.length > 0 && (
-            <div className="mt-3 text-xs text-gray-600">
-              <div className="flex items-center space-x-1">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>This expression will be evaluated server-side to filter messages before delivery</span>
-              </div>
-            </div>
+
+          {expressionBadges && (
+            <p className="mt-3 text-xs text-gray-600">
+              Subscribe filters execute on PubNub servers before delivery. Use them to reduce bandwidth and only receive relevant events.
+            </p>
           )}
         </div>
       </div>

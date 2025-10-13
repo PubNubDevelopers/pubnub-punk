@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { MessageCircle, Settings, HelpCircle, RotateCcw, Filter as FilterIcon, ActivitySquare, Users, PanelRightOpen, History } from 'lucide-react';
+import { MessageCircle, Settings, HelpCircle, RotateCcw, Filter as FilterIcon, ActivitySquare, Users, PanelRightOpen, History, ListTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -149,26 +149,26 @@ export default function PubSubPageEnhanced() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const presenceContainerRef = useRef<HTMLDivElement>(null);
   
-  const [subscribeFilters, setSubscribeFilters] = useState<FilterCondition[]>([{
-    id: 1,
-    target: 'message',
-    field: '',
-    operator: '==',
-    value: '',
-    type: 'string'
-  }]);
+  const [subscribeFilters, setSubscribeFilters] = useState<FilterCondition[]>([]);
   const [filterLogic, setFilterLogic] = useState<'&&' | '||'>('&&');
-  const activeFilters = useMemo(
-    () =>
-      (subscribeFilters || []).filter(
-        (f) => (f.field?.trim() || '') && (f.value?.trim() || '')
-      ),
-    [subscribeFilters]
-  );
+  const activeFilters = useMemo(() => (
+    subscribeFilters || []
+  ).filter((filter) => {
+    if (!filter.field || !filter.field.trim()) {
+      return false;
+    }
+
+    if (filter.type === 'boolean') {
+      return true;
+    }
+
+    return !!(filter.value && filter.value.trim());
+  }), [subscribeFilters]);
+
   const validFilterCount = activeFilters.length;
   const filterExpression = useMemo(
-    () => generateFilterExpression(activeFilters, filterLogic),
-    [activeFilters, filterLogic]
+    () => generateFilterExpression(subscribeFilters, filterLogic),
+    [subscribeFilters, filterLogic]
   );
   const connectionSettings = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -318,14 +318,7 @@ export default function PubSubPageEnhanced() {
         setPresenceAutoScroll(safeConfig.ui.presenceAutoScroll !== false);
       }
       if (safeConfig.filters) {
-        setSubscribeFilters(safeConfig.filters.conditions || [{
-          id: 1,
-          target: 'message',
-          field: '',
-          operator: '==',
-          value: '',
-          type: 'string'
-        }]);
+        setSubscribeFilters(safeConfig.filters.conditions || []);
         setFilterLogic(safeConfig.filters.logic || '&&');
       }
       
@@ -1103,11 +1096,45 @@ function SubscriptionSummaryCard({
   const channelItems = buildDisplayItems(channels, 4, (count) => `+${count} more`);
   const groupItems = buildDisplayItems(channelGroups, 4, (count) => `+${count} more`);
 
+  const summariseFilterField = (filter: FilterCondition) => {
+    const field = filter.field.trim();
+    if (!field) {
+      return filter.target;
+    }
+
+    if (
+      field.startsWith('data.') ||
+      field.startsWith('meta.') ||
+      field.startsWith(`${filter.target}.`)
+    ) {
+      return field;
+    }
+
+    if (field.startsWith('[')) {
+      return `${filter.target}${field}`;
+    }
+
+    return `${filter.target}.${field}`;
+  };
+
+  const summariseFilterValue = (filter: FilterCondition) => {
+    if (filter.type === 'boolean') {
+      return filter.value === 'false' ? 'false' : 'true';
+    }
+    if (filter.type === 'number') {
+      return filter.value || '0';
+    }
+    if (filter.type === 'expression') {
+      return filter.value || '';
+    }
+    return filter.value ? `'${filter.value}'` : '';
+  };
+
   const formatFilterBadge = (filter: FilterCondition) => {
-    const fieldPath = filter.field ? `${filter.target}.${filter.field}` : filter.target;
-    const operator = filter.operator || '==';
-    const value = filter.value ?? '';
-    return `${fieldPath} ${operator} ${value}`;
+    const fieldPath = summariseFilterField(filter);
+    const operator = filter.operator === 'NOT_CONTAINS' ? 'NOT CONTAINS' : filter.operator;
+    const value = summariseFilterValue(filter);
+    return value ? `${fieldPath} ${operator} ${value}` : `${fieldPath} ${operator}`;
   };
 
   const filterBadgeItems = buildDisplayItems(
@@ -1169,14 +1196,20 @@ function SubscriptionSummaryCard({
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <CardTitle className="text-lg">Subscription Overview</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ListTree className="h-5 w-5 text-purple-600" />
+              Subscription Overview
+            </CardTitle>
             <p className="text-sm text-gray-500">
               Snapshot of channels, groups, filters, and presence configuration.
             </p>
           </div>
           <div className="flex flex-col items-start gap-2 sm:items-end">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={isSubscribed ? 'secondary' : 'outline'} className="font-normal">
+              <Badge
+                variant="outline"
+                className={`font-normal border ${isSubscribed ? 'border-green-200 bg-green-100 text-green-700' : 'border-red-200 bg-red-100 text-red-700'}`}
+              >
                 {connectionLabel}
               </Badge>
               {needsReconnect && (

@@ -53,7 +53,7 @@ export const STORAGE_KEYS = {
 // Default filter condition
 export const DEFAULT_FILTER_CONDITION = {
   id: 1,
-  target: 'message' as const,
+  target: 'data' as const,
   field: '',
   operator: '==' as const,
   value: '',
