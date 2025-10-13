@@ -1,4 +1,6 @@
 node_modules
+secrets.sh
+local_files/
 dist
 .DS_Store
 server/public
@@ -11,3 +13,6 @@ new_pubnub_objects.md
 pubnub_objects.md
 short_how_to_implement_access_control.md
 .github
+playwright-report/
+test-results/
+*.archived
