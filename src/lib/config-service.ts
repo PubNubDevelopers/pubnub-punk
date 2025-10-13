@@ -24,6 +24,11 @@ export interface ConfigVersion {
   description?: string;
   data: any;
   publisher: string;
+  metadata?: {
+    name?: string;
+    description?: string;
+    tags?: string[];
+  };
 }
 
 export interface ConfigHistoryResponse {
@@ -356,8 +361,11 @@ export class ConfigurationService {
         console.log('PubNub operation failed, using local storage fallback:', pubnubError);
         
         // Check for common App Context errors
-        if (pubnubError && pubnubError.status && pubnubError.status.statusCode === 400) {
-          console.warn('App Context may not be enabled for your PubNub keys. Please enable it in the Admin Portal.');
+        if (pubnubError && typeof pubnubError === 'object') {
+          const statusInfo = (pubnubError as { status?: { statusCode?: number } }).status;
+          if (statusInfo?.statusCode === 400) {
+            console.warn('App Context may not be enabled for your PubNub keys. Please enable it in the Admin Portal.');
+          }
         }
         
         // Fall back to local storage

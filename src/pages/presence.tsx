@@ -414,6 +414,10 @@ export default function PresencePage() {
         pubnubConfig.authKey = settings.credentials.pamToken;
       }
       
+      if (!window.PubNub) {
+        throw new Error('PubNub SDK not available');
+      }
+
       const pubnub = new window.PubNub(pubnubConfig);
 
       const newInstance: UserInstance = {

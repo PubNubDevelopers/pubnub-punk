@@ -85,7 +85,12 @@ export function DataTable({
         onClick={() => onSort(column.key)}
       >
         <span className="truncate">{column.label}</span>
-        {column.key === 'id' && <Edit className="w-3 h-3 opacity-50 flex-shrink-0" title="Click ID to edit" />}
+        {column.key === 'id' && (
+          <>
+            <Edit className="w-3 h-3 opacity-50 flex-shrink-0" aria-hidden="true" />
+            <span className="sr-only">ID column is sortable</span>
+          </>
+        )}
         {sortBy === column.key && (
           sortOrder === 'asc' ? <ChevronUp className="w-4 h-4 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 flex-shrink-0" />
         )}

@@ -41,11 +41,11 @@ export function UserEditForm({ user, onSave, onCancel }: UserEditFormProps) {
 
   const [loading, setLoading] = useState(false);
   const [customFields, setCustomFields] = useState<Array<CustomField & { error?: string }>>(() => {
-    return parseCustomFieldsFromObject(formData.custom);
+    return parseCustomFieldsFromObject(formData.custom).map(field => ({ ...field }));
   });
 
   const addCustomField = () => {
-    setCustomFields(prev => [...prev, { key: '', value: '', type: 'string' }]);
+    setCustomFields(prev => [...prev, { key: '', value: '', type: 'string' as const }]);
   };
 
   const removeCustomField = (index: number) => {

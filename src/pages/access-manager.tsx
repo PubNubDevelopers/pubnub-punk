@@ -49,7 +49,8 @@ import type {
   ChannelPermissions, 
   ChannelGroupPermissions, 
   UuidPermissions,
-  GrantRequest 
+  GrantRequest,
+  GrantForm 
 } from '@/types/access-manager';
 
 // Import API functions
@@ -93,7 +94,7 @@ export default function AccessManagerPage() {
   const [createTokenExpanded, setCreateTokenExpanded] = useState(false);
   
   // Grant token form state
-  const [grantForm, setGrantForm] = useState(DEFAULT_GRANT_FORM);
+  const [grantForm, setGrantForm] = useState<GrantForm>(DEFAULT_GRANT_FORM);
   
   // Parse token state
   const [parseTokenInput, setParseTokenInput] = useState('');

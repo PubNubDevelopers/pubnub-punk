@@ -1,6 +1,6 @@
 // Utility functions for PubNub Access Manager
 
-import type { TokenData, ParsedToken, ChannelPermissions, ChannelGroupPermissions, UuidPermissions } from '@/types/access-manager';
+import type { TokenData, ParsedToken, ChannelPermissions, ChannelGroupPermissions, UuidPermissions, GrantForm } from '@/types/access-manager';
 
 // Permission bit values
 export const PERMISSION_BITS = {
@@ -149,7 +149,7 @@ export const FIELD_DEFINITIONS = {
 };
 
 // Default grant form state
-export const DEFAULT_GRANT_FORM = {
+export const DEFAULT_GRANT_FORM: GrantForm = {
   ttl: 60,
   authorizedUserId: '',
   description: '',

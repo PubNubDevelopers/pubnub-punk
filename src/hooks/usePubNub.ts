@@ -109,6 +109,10 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
         pubnubConfig.authKey = settings.credentials.pamToken;
       }
 
+      if (!window.PubNub) {
+        throw new Error('PubNub SDK not available');
+      }
+
       const instance = new window.PubNub(pubnubConfig);
       
       // Store in new registry

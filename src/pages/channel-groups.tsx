@@ -123,7 +123,7 @@ export default function ChannelGroupsPage() {
   const updateField = (path: string, value: any) => {
     const def = FIELD_DEFINITIONS[path as keyof typeof FIELD_DEFINITIONS];
     if (def) {
-      setPageSettings(prev => ({
+      setPageSettings((prev: any) => ({
         ...prev,
         [def.section]: {
           ...prev?.[def.section],
@@ -170,7 +170,7 @@ export default function ChannelGroupsPage() {
       
       setChannelGroups(verifiedGroups);
       // Update page settings without causing re-render loop
-      setPageSettings(prev => ({
+      setPageSettings((prev: any) => ({
         ...prev,
         channelGroups: {
           ...prev?.channelGroups,
@@ -281,7 +281,7 @@ export default function ChannelGroupsPage() {
       });
       
       setChannelGroups(updatedGroups);
-      setPageSettings(prev => ({
+      setPageSettings((prev: any) => ({
         ...prev,
         channelGroups: {
           ...prev?.channelGroups,
@@ -330,7 +330,7 @@ export default function ChannelGroupsPage() {
       });
       
       setChannelGroups(updatedGroups);
-      setPageSettings(prev => ({
+      setPageSettings((prev: any) => ({
         ...prev,
         channelGroups: {
           ...prev?.channelGroups,
@@ -365,7 +365,7 @@ export default function ChannelGroupsPage() {
       // Update local state
       const updatedGroups = channelGroups.filter(group => group.name !== groupName);
       setChannelGroups(updatedGroups);
-      setPageSettings(prev => ({
+      setPageSettings((prev: any) => ({
         ...prev,
         channelGroups: {
           ...prev?.channelGroups,
@@ -413,7 +413,7 @@ export default function ChannelGroupsPage() {
     });
     
     setChannelGroups(updatedGroups);
-    setPageSettings(prev => ({
+    setPageSettings((prev: any) => ({
       ...prev,
       channelGroups: {
         ...prev?.channelGroups,

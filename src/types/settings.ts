@@ -29,6 +29,11 @@ export interface ConfigVersion {
   description?: string;
   data: any;
   publisher: string;
+  metadata?: {
+    name?: string;
+    description?: string;
+    tags?: string[];
+  };
 }
 
 export interface VersionedConfig {
@@ -48,4 +53,3 @@ export interface AppSettings {
   environment: EnvironmentSettings;
   storage: StoragePreferences;
 }
-

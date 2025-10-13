@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import {
   Plus,
   X,
@@ -19,23 +19,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DialogFooter } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-
-interface GrantForm {
-  ttl: number;
-  authorizedUserId: string;
-  description: string;
-  channels: Array<{ name: string; permissions: Record<string, boolean> }>;
-  channelGroups: Array<{ name: string; permissions: Record<string, boolean> }>;
-  uuids: Array<{ name: string; permissions: Record<string, boolean> }>;
-  channelPatterns: Array<{ pattern: string; permissions: Record<string, boolean> }>;
-  channelGroupPatterns: Array<{ pattern: string; permissions: Record<string, boolean> }>;
-  uuidPatterns: Array<{ pattern: string; permissions: Record<string, boolean> }>;
-  meta: Record<string, string>;
-}
+import type { GrantForm } from '@/types/access-manager';
 
 interface GrantTokenDialogProps {
   grantForm: GrantForm;
-  setGrantForm: (form: GrantForm | ((prev: GrantForm) => GrantForm)) => void;
+  setGrantForm: Dispatch<SetStateAction<GrantForm>>;
   onGrant: () => void;
   isGranting: boolean;
   onCancel: () => void;

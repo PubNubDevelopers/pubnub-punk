@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 interface ConfigContextType {
   pageSettings: any;
   configType: string;
-  setPageSettings: (settings: any) => void;
+  setPageSettings: React.Dispatch<React.SetStateAction<any>>;
   setConfigType: (type: string) => void;
 }
 

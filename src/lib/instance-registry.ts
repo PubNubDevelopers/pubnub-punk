@@ -80,7 +80,7 @@ export class InstanceRegistry {
   }
 
   cleanupAll(): void {
-    for (const key of this.instances.keys()) {
+    for (const key of Array.from(this.instances.keys())) {
       this.cleanup(key);
     }
     console.log(`🧹 Cleaned up all instances`);

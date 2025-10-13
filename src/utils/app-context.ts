@@ -1,5 +1,4 @@
 import { UserMetadata, ChannelMetadata, MembershipData, ChannelMemberData, AppContextTab, SortOrder } from '@/types/app-context';
-
 export const formatDate = (dateString: string) => {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', {
@@ -132,7 +131,9 @@ export const getItemKey = (item: UserMetadata | ChannelMetadata | MembershipData
   return '';
 };
 
-export const validateCustomFields = (customFields: Array<{ key: string; value: string; type: string }>): Record<string, any> => {
+import type { CustomField } from '@/types/app-context';
+
+export const validateCustomFields = (customFields: Array<CustomField | (CustomField & { error?: string })>): Record<string, any> => {
   const result: Record<string, any> = {};
   
   customFields.forEach(field => {
@@ -162,13 +163,17 @@ export const validateCustomFields = (customFields: Array<{ key: string; value: s
   return result;
 };
 
-export const parseCustomFieldsFromObject = (custom: Record<string, any> | undefined): Array<{ key: string; value: string; type: string }> => {
+export const parseCustomFieldsFromObject = (custom: Record<string, any> | undefined): Array<CustomField> => {
   if (!custom) return [];
   
   return Object.entries(custom).map(([key, value]) => ({
     key,
     value: String(value),
-    type: typeof value
+    type: typeof value === 'number'
+      ? 'number'
+      : typeof value === 'boolean'
+      ? 'boolean'
+      : 'string'
   }));
 };
 

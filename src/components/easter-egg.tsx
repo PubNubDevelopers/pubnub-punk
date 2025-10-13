@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Vector3 } from 'three';
 
 interface EasterEggProps {
   isActive: boolean;
@@ -33,7 +34,7 @@ export function EasterEgg({ isActive, onComplete }: EasterEggProps) {
     const loadEasterEgg = async () => {
       // Dynamic imports for Three.js modules
       const [
-        THREE,
+        threeModule,
         { FontLoader },
         { TextGeometry },
         { MeshSurfaceSampler },
@@ -51,6 +52,7 @@ export function EasterEgg({ isActive, onComplete }: EasterEggProps) {
         import('three/examples/jsm/postprocessing/UnrealBloomPass.js'),
         import('gsap')
       ]);
+      const THREE = threeModule as typeof import('three');
 
       if (!canvasRef.current) return;
 
@@ -161,7 +163,7 @@ export function EasterEgg({ isActive, onComplete }: EasterEggProps) {
           const geometry = new TextGeometry(text, {
             font,
             size,
-            height: 4,
+            depth: 4,
             curveSegments: 12,
             bevelEnabled: true,
             bevelThickness: 0.5,
@@ -173,7 +175,7 @@ export function EasterEgg({ isActive, onComplete }: EasterEggProps) {
           const mesh = new THREE.Mesh(geometry);
           const sampler = new MeshSurfaceSampler(mesh).build();
           
-          const points: THREE.Vector3[] = [];
+          const points: Vector3[] = [];
           const tempVector = new THREE.Vector3();
           
           for (let i = 0; i < count; i++) {
@@ -187,7 +189,7 @@ export function EasterEgg({ isActive, onComplete }: EasterEggProps) {
         // Create point sets for particle formations
         // Instead of forming text, we'll create epic geometric patterns
         const createSpiralPoints = (count: number, radius: number) => {
-          const points: THREE.Vector3[] = [];
+          const points: Vector3[] = [];
           for (let i = 0; i < count; i++) {
             const t = i / count;
             const angle = t * Math.PI * 8; // 4 full spirals
@@ -203,7 +205,7 @@ export function EasterEgg({ isActive, onComplete }: EasterEggProps) {
         };
         
         const createRingPoints = (count: number, radius: number, yOffset: number = 0) => {
-          const points: THREE.Vector3[] = [];
+          const points: Vector3[] = [];
           for (let i = 0; i < count; i++) {
             const angle = (i / count) * Math.PI * 2;
             points.push(new THREE.Vector3(
@@ -216,7 +218,7 @@ export function EasterEgg({ isActive, onComplete }: EasterEggProps) {
         };
         
         const spiralPoints = createSpiralPoints(PARTICLE_COUNT, 150);
-        const ringPoints: THREE.Vector3[] = [];
+        const ringPoints: Vector3[] = [];
         // Create multiple expanding rings
         for (let ring = 0; ring < 5; ring++) {
           const ringRadius = 50 + ring * 30;
@@ -542,7 +544,7 @@ export function EasterEgg({ isActive, onComplete }: EasterEggProps) {
       onClick={onComplete}
     >
       {/* Add custom styles */}
-      <style jsx>{`
+      <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap');
         
         @keyframes punkParticleFade {

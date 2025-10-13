@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { 
   Code, 
   Clock, 
@@ -25,6 +26,34 @@ import {
 } from '@/components/ui/dialog';
 import { useConfig } from '@/contexts/config-context';
 import { storage } from '@/lib/storage';
+
+type ModuleKey = 'kvstore' | 'xhr' | 'vault' | 'pubnub' | 'crypto' | 'utils' | 'uuid' | 'jwt' | 'codec/*' | 'advanced_math' | 'jsonpath';
+
+interface ModuleDoc {
+  name: string;
+  description: string;
+  overview: string;
+  methods: { name: string; description: string }[];
+  example: string;
+}
+
+type FunctionTypeKey =
+  | 'before-publish'
+  | 'after-publish'
+  | 'after-presence'
+  | 'on-request'
+  | 'on-interval'
+  | 'before-signal'
+  | 'after-signal';
+
+interface FunctionTypeDoc {
+  name: string;
+  description: string;
+  overview: string;
+  useCases: string[];
+  parameters: { name: string; description: string }[];
+  example: string;
+}
 
 // Field definitions for config management
 const FIELD_DEFINITIONS = {
@@ -270,10 +299,10 @@ const data = {
 const activeUsers = jsonpath.query(data, '$.users[?(@.active)]');
 console.log('Active users:', activeUsers);`
   }
-};
+} satisfies Record<ModuleKey, ModuleDoc>;
 
 // Function Type documentation data
-const FUNCTION_TYPE_DOCS = {
+const FUNCTION_TYPE_DOCS: Record<FunctionTypeKey, FunctionTypeDoc> = {
   'before-publish': {
     name: 'Before Publish',
     description: 'Transform or validate messages before they are published',
@@ -1585,14 +1614,28 @@ export default function FunctionsPage() {
   });
 
   // Module documentation dialog state
-  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [selectedModule, setSelectedModule] = useState<ModuleKey | null>(null);
   const [isModuleDialogOpen, setIsModuleDialogOpen] = useState(false);
 
   // Function type documentation dialog state
-  const [selectedFunctionType, setSelectedFunctionType] = useState<string | null>(null);
+  const [selectedFunctionType, setSelectedFunctionType] = useState<FunctionTypeKey | null>(null);
   const [isFunctionTypeDialogOpen, setIsFunctionTypeDialogOpen] = useState(false);
 
-  const openModuleDoc = (moduleName: string) => {
+  const moduleList: ModuleKey[] = ['kvstore', 'xhr', 'vault', 'pubnub', 'crypto', 'utils', 'uuid', 'jwt', 'codec/*', 'advanced_math', 'jsonpath'];
+  const functionTypeList: Array<{ key: FunctionTypeKey; icon: LucideIcon; name: string; desc: string }> = [
+    { key: 'before-publish', icon: ArrowRight, name: 'Before Publish', desc: 'Transform or validate messages before publishing' },
+    { key: 'after-publish', icon: ArrowRight, name: 'After Publish', desc: 'Process messages after they have been published' },
+    { key: 'after-presence', icon: Monitor, name: 'After Presence', desc: 'React to presence events (join, leave, timeout)' },
+    { key: 'on-request', icon: Globe, name: 'On Request', desc: 'Create RESTful endpoints with custom logic' },
+    { key: 'on-interval', icon: Clock, name: 'On Interval', desc: 'Execute code on a scheduled time interval' },
+    { key: 'before-signal', icon: Zap, name: 'Before Signal', desc: 'Transform or validate signals before they are sent' },
+    { key: 'after-signal', icon: Zap, name: 'After Signal', desc: 'Process signals after they have been delivered' }
+  ];
+
+  const selectedModuleDoc = selectedModule ? MODULE_DOCS[selectedModule] : null;
+  const selectedFunctionDoc = selectedFunctionType ? FUNCTION_TYPE_DOCS[selectedFunctionType] : null;
+
+  const openModuleDoc = (moduleName: ModuleKey) => {
     setSelectedModule(moduleName);
     setIsModuleDialogOpen(true);
   };
@@ -1602,7 +1645,7 @@ export default function FunctionsPage() {
     setSelectedModule(null);
   };
 
-  const openFunctionTypeDoc = (functionType: string) => {
+  const openFunctionTypeDoc = (functionType: FunctionTypeKey) => {
     setSelectedFunctionType(functionType);
     setIsFunctionTypeDialogOpen(true);
   };
@@ -1658,11 +1701,7 @@ export default function FunctionsPage() {
                 <div>
                   <h4 className="font-medium text-sm mb-3">Available Modules</h4>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    {[
-                      'kvstore', 'xhr', 'vault', 'pubnub', 
-                      'crypto', 'utils', 'uuid', 'jwt',
-                      'codec/*', 'advanced_math', 'jsonpath'
-                    ].map(module => (
+                    {moduleList.map(module => (
                       <button
                         key={module}
                         onClick={() => openModuleDoc(module)}
@@ -1682,15 +1721,7 @@ export default function FunctionsPage() {
                 <div>
                   <h4 className="font-medium text-sm mb-3">Function Types</h4>
                   <div className="space-y-2 text-sm">
-                    {[
-                      { key: 'before-publish', icon: ArrowRight, name: 'Before Publish', desc: 'Transform or validate messages before publishing' },
-                      { key: 'after-publish', icon: ArrowRight, name: 'After Publish', desc: 'Process messages after they have been published' },
-                      { key: 'after-presence', icon: Monitor, name: 'After Presence', desc: 'React to presence events (join, leave, timeout)' },
-                      { key: 'on-request', icon: Globe, name: 'On Request', desc: 'Create RESTful endpoints with custom logic' },
-                      { key: 'on-interval', icon: Clock, name: 'On Interval', desc: 'Execute code on a scheduled time interval' },
-                      { key: 'before-signal', icon: Zap, name: 'Before Signal', desc: 'Transform or validate signals before they are sent' },
-                      { key: 'after-signal', icon: Zap, name: 'After Signal', desc: 'Process signals after they have been delivered' }
-                    ].map(({ key, icon: Icon, name, desc }) => (
+                    {functionTypeList.map(({ key, icon: Icon, name, desc }) => (
                       <button
                         key={key}
                         onClick={() => openFunctionTypeDoc(key)}
@@ -1739,7 +1770,7 @@ export default function FunctionsPage() {
         {/* Module Documentation Dialog */}
         <Dialog open={isModuleDialogOpen} onOpenChange={setIsModuleDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-            {selectedModule && MODULE_DOCS[selectedModule] && (
+            {selectedModuleDoc && (
               <>
                 <DialogHeader>
                   <DialogTitle className="flex items-center space-x-3">
@@ -1748,11 +1779,11 @@ export default function FunctionsPage() {
                     </div>
                     <div>
                       <span className="font-mono text-lg">{selectedModule}</span>
-                      <span className="text-lg font-normal ml-2">- {MODULE_DOCS[selectedModule].name}</span>
+                      <span className="text-lg font-normal ml-2">- {selectedModuleDoc.name}</span>
                     </div>
                   </DialogTitle>
                   <DialogDescription>
-                    {MODULE_DOCS[selectedModule].description}
+                    {selectedModuleDoc.description}
                   </DialogDescription>
                 </DialogHeader>
 
@@ -1761,7 +1792,7 @@ export default function FunctionsPage() {
                   <div>
                     <h3 className="text-sm font-semibold mb-2">Overview</h3>
                     <p className="text-sm text-gray-600">
-                      {MODULE_DOCS[selectedModule].overview}
+                      {selectedModuleDoc.overview}
                     </p>
                   </div>
 
@@ -1769,7 +1800,7 @@ export default function FunctionsPage() {
                   <div>
                     <h3 className="text-sm font-semibold mb-3">Available Methods</h3>
                     <div className="space-y-2">
-                      {MODULE_DOCS[selectedModule].methods.map((method, index) => (
+                      {selectedModuleDoc.methods.map((method, index) => (
                         <div key={index} className="p-3 bg-gray-50 rounded-lg">
                           <div className="font-mono text-sm font-medium text-blue-700 mb-1">
                             {method.name}
@@ -1793,7 +1824,7 @@ export default function FunctionsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => copyToClipboard(MODULE_DOCS[selectedModule].example, `${selectedModule} example`)}
+                          onClick={() => copyToClipboard(selectedModuleDoc.example, `${selectedModule} example`)}
                           className="h-6 px-2 text-gray-400 hover:text-white hover:bg-gray-700"
                         >
                           <Copy className="w-3 h-3 mr-1" />
@@ -1802,7 +1833,7 @@ export default function FunctionsPage() {
                       </div>
                       <div className="p-4 overflow-x-auto">
                         <pre className="text-sm text-gray-100 whitespace-pre-wrap">
-                          <code>{MODULE_DOCS[selectedModule].example}</code>
+                          <code>{selectedModuleDoc.example}</code>
                         </pre>
                       </div>
                     </div>
@@ -1826,7 +1857,7 @@ export default function FunctionsPage() {
         {/* Function Type Documentation Dialog */}
         <Dialog open={isFunctionTypeDialogOpen} onOpenChange={setIsFunctionTypeDialogOpen}>
           <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
-            {selectedFunctionType && FUNCTION_TYPE_DOCS[selectedFunctionType] && (
+            {selectedFunctionDoc && selectedFunctionType && (
               <>
                 <DialogHeader>
                   <DialogTitle className="flex items-center space-x-3">
@@ -1834,12 +1865,12 @@ export default function FunctionsPage() {
                       <Code className="text-white h-4 w-4" />
                     </div>
                     <div>
-                      <span className="text-lg">{FUNCTION_TYPE_DOCS[selectedFunctionType].name}</span>
+                      <span className="text-lg">{selectedFunctionDoc.name}</span>
                       <span className="text-lg font-normal ml-2">Function</span>
                     </div>
                   </DialogTitle>
                   <DialogDescription>
-                    {FUNCTION_TYPE_DOCS[selectedFunctionType].description}
+                    {selectedFunctionDoc.description}
                   </DialogDescription>
                 </DialogHeader>
 
@@ -1848,7 +1879,7 @@ export default function FunctionsPage() {
                   <div>
                     <h3 className="text-sm font-semibold mb-2">Overview</h3>
                     <p className="text-sm text-gray-600">
-                      {FUNCTION_TYPE_DOCS[selectedFunctionType].overview}
+                      {selectedFunctionDoc.overview}
                     </p>
                   </div>
 
@@ -1856,7 +1887,7 @@ export default function FunctionsPage() {
                   <div>
                     <h3 className="text-sm font-semibold mb-3">Common Use Cases</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {FUNCTION_TYPE_DOCS[selectedFunctionType].useCases.map((useCase, index) => (
+                      {selectedFunctionDoc.useCases.map((useCase, index) => (
                         <div key={index} className="flex items-start space-x-2 p-2 bg-green-50 rounded-lg">
                           <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
                           <span className="text-sm text-green-800">{useCase}</span>
@@ -1869,7 +1900,7 @@ export default function FunctionsPage() {
                   <div>
                     <h3 className="text-sm font-semibold mb-3">Function Parameters</h3>
                     <div className="space-y-2">
-                      {FUNCTION_TYPE_DOCS[selectedFunctionType].parameters.map((param, index) => (
+                      {selectedFunctionDoc.parameters.map((param, index) => (
                         <div key={index} className="p-3 bg-gray-50 rounded-lg">
                           <div className="font-mono text-sm font-medium text-blue-700 mb-1">
                             {param.name}
@@ -1898,7 +1929,7 @@ export default function FunctionsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => copyToClipboard(FUNCTION_TYPE_DOCS[selectedFunctionType].example, `${selectedFunctionType} function`)}
+                          onClick={() => copyToClipboard(selectedFunctionDoc.example, `${selectedFunctionType} function`)}
                           className="h-6 px-2 text-gray-400 hover:text-white hover:bg-gray-700"
                         >
                           <Copy className="w-3 h-3 mr-1" />
@@ -1907,7 +1938,7 @@ export default function FunctionsPage() {
                       </div>
                       <div className="p-4 overflow-x-auto">
                         <pre className="text-sm text-gray-100 whitespace-pre-wrap">
-                          <code>{FUNCTION_TYPE_DOCS[selectedFunctionType].example}</code>
+                          <code>{selectedFunctionDoc.example}</code>
                         </pre>
                       </div>
                     </div>

@@ -364,7 +364,9 @@ export default function SettingsPage() {
         pamEnabled: watchedValues.pamEnabled ?? false,
       },
       environment: {
-        origin: watchedValues.origin === 'custom' ? watchedValues.customOrigin : watchedValues.origin,
+        origin: watchedValues.origin === 'custom'
+          ? watchedValues.customOrigin || ''
+          : watchedValues.origin || 'ps.pndsn.com',
         customOrigin: watchedValues.customOrigin || '',
         ssl: watchedValues.ssl ?? true,
         logVerbosity: watchedValues.logVerbosity || 'info',

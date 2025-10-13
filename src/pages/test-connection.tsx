@@ -129,12 +129,14 @@ export default function TestConnectionPage() {
       { name: 'Context Default', instance: { isConnected: context.isGloballyConnected, connectionError: context.globalConnectionError } }
     ];
 
-    setMultiInstanceTest(instances.map(({ name, instance }) => ({
-      name,
-      connected: instance.isConnected,
-      error: instance.connectionError,
-      ready: instance.isReady ?? true
-    })));
+    setMultiInstanceTest(
+      instances.map(({ name, instance }) => ({
+        name,
+        connected: instance.isConnected,
+        error: instance.connectionError,
+        ready: 'isReady' in instance ? instance.isReady : true
+      }))
+    );
   };
 
   useEffect(() => {

@@ -159,16 +159,16 @@ export default function AppContextPage() {
   const currentPage = pageSettings?.appContext?.currentPage || 1;
 
   // Update page settings helper
-  const updateField = (path: string, value: any) => {
+  const updateField = (path: string, value: unknown) => {
     const pathParts = path.split('.');
     if (pathParts.length === 2 && pathParts[0] === 'appContext') {
-      setPageSettings(prev => ({
-        ...prev,
+      setPageSettings({
+        ...(pageSettings ?? {}),
         appContext: {
-          ...prev.appContext,
+          ...((pageSettings ?? {}).appContext ?? {}),
           [pathParts[1]]: value
         }
-      }));
+      });
     }
   };
 
@@ -659,7 +659,7 @@ export default function AppContextPage() {
                       </Tabs>
                     </div>
                     <Button
-                      onClick={handleSearchClear}
+                      onClick={() => handleSearchClear()}
                       variant="outline"
                       size="sm"
                       className="flex items-center gap-2"

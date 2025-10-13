@@ -4,6 +4,12 @@ import { UserMetadata, ChannelMetadata, MembershipData, ChannelMemberData, Loadi
 import { filterData, sortData, paginateData } from '@/utils/app-context';
 import { APP_CONTEXT_CONFIG } from '@/config/app-context';
 
+interface ObjectsListResponse<T> {
+  data?: T[];
+  totalCount?: number;
+  next?: string;
+}
+
 interface UseAppContextDataProps {
   pubnub: any;
   isReady: boolean;
@@ -92,7 +98,7 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
           },
           limit: 100,
           ...(nextToken && { page: { next: nextToken } })
-        });
+        }) as ObjectsListResponse<UserMetadata>;
 
         // Get total count from first response
         if (totalCount === undefined && result.totalCount !== undefined) {
@@ -109,9 +115,10 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
           }
         }
 
-        if (result.data && result.data.length > 0) {
+        const pageData = result.data ?? [];
+        if (pageData.length > 0) {
           // Check if we're getting duplicate data
-          const newUsers = result.data.filter((user: UserMetadata) => !seenIds.has(user.id));
+          const newUsers = pageData.filter((user: UserMetadata) => !seenIds.has(user.id));
           if (newUsers.length === 0) {
             console.log('No new users in this page, stopping pagination');
             break;
@@ -142,7 +149,7 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
             console.log(`Reached maximum record limit (${MAX_RECORDS}), stopping pagination`);
             break;
           }
-        } else if (result.data && result.data.length === 0) {
+        } else if (pageData.length === 0 && result.data) {
           // Empty data response, stop pagination
           console.log('Empty data response, stopping pagination');
           break;
@@ -164,11 +171,12 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
       setUsersLastLoaded(new Date());
       
       const loadedCount = allUsers.length;
-      const isLimited = totalCount && totalCount > MAX_RECORDS;
+      const isLimited = totalCount !== undefined && totalCount > MAX_RECORDS;
+      const limitedTotal = isLimited ? totalCount : undefined;
       
       toast({
         title: "Users Loaded",
-        description: `Successfully loaded ${loadedCount} users${isLimited ? ` (limited from ${totalCount} total)` : ''}`,
+        description: `Successfully loaded ${loadedCount} users${limitedTotal ? ` (limited from ${limitedTotal} total)` : ''}`,
       });
     } catch (error) {
       console.error('Error loading users:', error);
@@ -212,7 +220,7 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
           },
           limit: 100,
           ...(nextToken && { page: { next: nextToken } })
-        });
+        }) as ObjectsListResponse<ChannelMetadata>;
 
         // Get total count from first response
         if (totalCount === undefined && result.totalCount !== undefined) {
@@ -229,9 +237,10 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
           }
         }
 
-        if (result.data && result.data.length > 0) {
+        const pageData = result.data ?? [];
+        if (pageData.length > 0) {
           // Check if we're getting duplicate data
-          const newChannels = result.data.filter((channel: ChannelMetadata) => !seenIds.has(channel.id));
+          const newChannels = pageData.filter((channel: ChannelMetadata) => !seenIds.has(channel.id));
           if (newChannels.length === 0) {
             console.log('No new channels in this page, stopping pagination');
             break;
@@ -262,7 +271,7 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
             console.log(`Reached maximum record limit (${MAX_RECORDS}), stopping pagination`);
             break;
           }
-        } else if (result.data && result.data.length === 0) {
+        } else if (pageData.length === 0 && result.data) {
           // Empty data response, stop pagination
           console.log('Empty data response, stopping pagination');
           break;
@@ -284,11 +293,12 @@ export function useAppContextData({ pubnub, isReady }: UseAppContextDataProps) {
       setChannelsLastLoaded(new Date());
       
       const loadedCount = allChannels.length;
-      const isLimited = totalCount && totalCount > MAX_RECORDS;
+      const isLimited = totalCount !== undefined && totalCount > MAX_RECORDS;
+      const limitedTotal = isLimited ? totalCount : undefined;
       
       toast({
         title: "Channels Loaded",
-        description: `Successfully loaded ${loadedCount} channels${isLimited ? ` (limited from ${totalCount} total)` : ''}`,
+        description: `Successfully loaded ${loadedCount} channels${limitedTotal ? ` (limited from ${limitedTotal} total)` : ''}`,
       });
     } catch (error) {
       console.error('Error loading channels:', error);

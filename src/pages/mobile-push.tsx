@@ -98,7 +98,7 @@ const FIELD_DEFINITIONS = {
 
 export default function MobilePushPage() {
   const { toast } = useToast();
-  const { setPageSettings, setConfigType } = useConfig();
+  const { pageSettings, setPageSettings, setConfigType } = useConfig();
   
   // State for component mounting
   const [mounted, setMounted] = useState(false);
@@ -184,16 +184,17 @@ export default function MobilePushPage() {
   const [debugMessages, setDebugMessages] = useState<any[]>([]);
 
   // Update page settings helper
-  const updateField = (path: string, value: any) => {
+  const updateField = (path: string, value: unknown) => {
     const def = FIELD_DEFINITIONS[path as keyof typeof FIELD_DEFINITIONS];
     if (def) {
-      setPageSettings(prev => ({
-        ...prev,
+      const nextSettings = {
+        ...(pageSettings ?? {}),
         [def.section]: {
-          ...prev?.[def.section],
+          ...((pageSettings ?? {})[def.section] ?? {}),
           [def.field]: value
         }
-      }));
+      };
+      setPageSettings(nextSettings);
     }
   };
 

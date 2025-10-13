@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import type PubNub from 'pubnub';
 import { storage } from '@/lib/storage';
 import { AppSettings } from '@/types/settings';
 import { usePubNub, PubNubHookOptions, notifySettingsChange } from '@/hooks/usePubNub';
@@ -27,6 +28,12 @@ const PubNubContext = createContext<PubNubContextValue | undefined>(undefined);
 
 export interface PubNubProviderProps {
   children: React.ReactNode;
+}
+
+declare global {
+  interface Window {
+    PubNub?: typeof PubNub;
+  }
 }
 
 export function PubNubProvider({ children }: PubNubProviderProps): JSX.Element {
@@ -125,9 +132,9 @@ export function PubNubProvider({ children }: PubNubProviderProps): JSX.Element {
       
       // Set up error tracking
       const originalTime = instance.time;
-      instance.time = async (...args: any[]) => {
+      instance.time = async (): Promise<any> => {
         try {
-          const result = await originalTime.apply(instance, args);
+          const result = await originalTime.call(instance);
           setInstanceErrors(prev => {
             const newMap = new Map(prev);
             newMap.delete(instanceId);

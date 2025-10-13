@@ -76,3 +76,26 @@ export interface GrantRequest {
   };
   meta?: Record<string, any>;
 }
+
+export interface GrantFormEntry {
+  name: string;
+  permissions: Record<string, boolean>;
+}
+
+export interface GrantPatternEntry {
+  pattern: string;
+  permissions: Record<string, boolean>;
+}
+
+export interface GrantForm {
+  ttl: number;
+  authorizedUserId: string;
+  description: string;
+  channels: GrantFormEntry[];
+  channelGroups: GrantFormEntry[];
+  uuids: GrantFormEntry[];
+  channelPatterns: GrantPatternEntry[];
+  channelGroupPatterns: GrantPatternEntry[];
+  uuidPatterns: GrantPatternEntry[];
+  meta: Record<string, any>;
+}

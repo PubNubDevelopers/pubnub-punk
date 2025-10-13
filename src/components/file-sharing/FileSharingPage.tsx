@@ -106,13 +106,13 @@ export default function FileSharingPage() {
   const currentPage = pageSettings?.files?.currentPage || FIELD_DEFINITIONS['files.currentPage'].default;
 
   // Update page settings helper
-  const updateField = (path: string, value: any) => {
+  const updateField = (path: string, value: unknown) => {
     const def = FIELD_DEFINITIONS[path as keyof typeof FIELD_DEFINITIONS];
     if (def) {
-      setPageSettings(prev => ({
+      setPageSettings((prev: any) => ({
         ...prev,
         [def.section]: {
-          ...prev?.[def.section],
+          ...(prev?.[def.section] ?? {}),
           [def.field]: value
         }
       }));
@@ -144,11 +144,11 @@ export default function FileSharingPage() {
           channel: channelName,
           limit: 100,
           next: nextToken
-        });
+        }) as { data?: FileItem[]; next?: string };
 
         const files = result.data || [];
         
-        const filesWithUrls = files.map(file => ({
+        const filesWithUrls = files.map((file: FileItem) => ({
           ...file,
           url: pubnub?.getFileUrl({
             channel: channelName,
@@ -169,7 +169,7 @@ export default function FileSharingPage() {
         }
       } while (nextToken);
 
-      setAllFiles(prev => ({
+      setAllFiles((prev: Record<string, FileItem[]>) => ({
         ...prev,
         [channelName]: allChannelFiles
       }));
@@ -184,7 +184,7 @@ export default function FileSharingPage() {
           : 'No files'
       };
       
-      setChannelStats(prev => ({
+      setChannelStats((prev: Record<string, ChannelStats>) => ({
         ...prev,
         [channelName]: stats
       }));
@@ -198,7 +198,7 @@ export default function FileSharingPage() {
         description: error instanceof Error ? error.message : "Failed to load files",
         variant: "destructive",
       });
-      setAllFiles(prev => ({
+      setAllFiles((prev: Record<string, FileItem[]>) => ({
         ...prev,
         [channelName]: []
       }));
@@ -369,7 +369,7 @@ export default function FileSharingPage() {
     updateField('files.channels', updatedChannels);
     updateField('files.selectedChannel', channelName);
     
-    setPageSettings(prev => ({
+    setPageSettings((prev: any) => ({
       ...prev,
       configForSaving: {
         channels: updatedChannels,
@@ -413,7 +413,7 @@ export default function FileSharingPage() {
     // Helper function to update file lists and stats efficiently
     const updateFileListsAndStats = (deletedFileIds: Set<string>, cancelledCount: number = 0) => {
       // Update in-memory structure - remove only successfully deleted files
-      setAllFiles(prev => ({
+      setAllFiles((prev: Record<string, FileItem[]>) => ({
         ...prev,
         [selectedChannel]: (prev[selectedChannel] || []).filter(f => !deletedFileIds.has(f.id))
       }));
@@ -430,7 +430,7 @@ export default function FileSharingPage() {
           : 'No files'
       };
       
-      setChannelStats(prev => ({
+      setChannelStats((prev: Record<string, ChannelStats>) => ({
         ...prev,
         [selectedChannel]: stats
       }));
