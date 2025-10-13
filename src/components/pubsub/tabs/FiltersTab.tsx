@@ -19,7 +19,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Filter, Plus, X, ChevronDown, Copy } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Filter, Plus, X, ChevronDown, Copy, HelpCircle } from 'lucide-react';
 import type { FilterCondition } from '../types';
 import { generateFilterExpression, copyToClipboard } from '../utils';
 
@@ -35,23 +41,98 @@ const TARGET_OPTIONS: Array<{ label: string; value: FilterCondition['target'] }>
   { label: 'meta (publish metadata)', value: 'meta' },
 ];
 
-const OPERATOR_OPTIONS: Array<{ label: string; value: FilterCondition['operator'] }> = [
-  { label: 'Equals (==)', value: '==' },
-  { label: 'Not Equals (!=)', value: '!=' },
-  { label: 'Greater Than (>)', value: '>' },
-  { label: 'Less Than (<)', value: '<' },
-  { label: 'Greater or Equal (>=)', value: '>=' },
-  { label: 'Less or Equal (<=)', value: '<=' },
-  { label: 'Pattern Match (LIKE)', value: 'LIKE' },
-  { label: 'Contains', value: 'CONTAINS' },
-  { label: 'Not Contains', value: 'NOT_CONTAINS' },
+const OPERATOR_OPTIONS: Array<{
+  label: string;
+  value: FilterCondition['operator'];
+  help: string;
+  examples: string[];
+}> = [
+  {
+    label: 'Equals (==)',
+    value: '==',
+    help: 'Exact match - field must exactly equal the value',
+    examples: ['data.status == "active"', 'meta.priority == "high"']
+  },
+  {
+    label: 'Not Equals (!=)',
+    value: '!=',
+    help: 'Exclusion - field must not equal the value',
+    examples: ['data.type != "test"', 'meta.region != "staging"']
+  },
+  {
+    label: 'Greater Than (>)',
+    value: '>',
+    help: 'Numeric comparison - field must be greater than value',
+    examples: ['data.score > 100', 'meta.temperature > 75']
+  },
+  {
+    label: 'Less Than (<)',
+    value: '<',
+    help: 'Numeric comparison - field must be less than value',
+    examples: ['data.battery < 20', 'meta.attempts < 3']
+  },
+  {
+    label: 'Greater or Equal (>=)',
+    value: '>=',
+    help: 'Numeric comparison - field must be greater than or equal to value',
+    examples: ['data.level >= 5', 'meta.age >= 18']
+  },
+  {
+    label: 'Less or Equal (<=)',
+    value: '<=',
+    help: 'Numeric comparison - field must be less than or equal to value',
+    examples: ['data.priority <= 3', 'meta.count <= 10']
+  },
+  {
+    label: 'Pattern Match (LIKE)',
+    value: 'LIKE',
+    help: 'Wildcard pattern matching - use * for wildcard. Examples: "sensor*" (starts with), "*-prod" (ends with), "*urgent*" (contains)',
+    examples: ['data.name LIKE "sensor*"', 'meta.id LIKE "*-prod"', 'data.tag LIKE "*urgent*"']
+  },
+  {
+    label: 'Contains',
+    value: 'CONTAINS',
+    help: 'Substring or array element search - checks if field contains the value',
+    examples: ['data.tags CONTAINS "urgent"', 'meta.recipients CONTAINS "alice"']
+  },
+  {
+    label: 'Not Contains',
+    value: 'NOT_CONTAINS',
+    help: 'Inverse substring or array search - checks if field does not contain the value',
+    examples: ['data.tags NOT_CONTAINS "test"', 'meta.flags NOT_CONTAINS "disabled"']
+  },
 ];
 
-const TYPE_OPTIONS: Array<{ label: string; value: FilterCondition['type'] }> = [
-  { label: 'String', value: 'string' },
-  { label: 'Number', value: 'number' },
-  { label: 'Boolean', value: 'boolean' },
-  { label: 'Expression', value: 'expression' },
+const TYPE_OPTIONS: Array<{
+  label: string;
+  value: FilterCondition['type'];
+  help: string;
+  placeholder: string;
+}> = [
+  {
+    label: 'String',
+    value: 'string',
+    help: 'Text value - will be wrapped in quotes in the expression',
+    placeholder: 'e.g. "high", "announcement", "sensor-A"'
+  },
+  {
+    label: 'Number',
+    value: 'number',
+    help: 'Numeric value - for scores, counts, thresholds',
+    placeholder: 'e.g. 100, 20, 3.14'
+  },
+  {
+    label: 'Boolean',
+    value: 'boolean',
+    help: 'True or false value - for flags and states',
+    placeholder: ''
+  },
+  {
+    label: 'Expression',
+    value: 'expression',
+    help: 'Raw expression - for advanced calculations',
+    placeholder: 'e.g. field * 2, value + 10'
+  },
 ];
 
 const filterTemplates: Array<{ name: string; filter: Omit<FilterCondition, 'id'> }> = [
@@ -160,6 +241,14 @@ export default function FiltersTab({
   onFiltersChange,
   onFilterLogicChange,
 }: FiltersTabProps) {
+  const getOperatorInfo = (operator: FilterCondition['operator']) => {
+    return OPERATOR_OPTIONS.find(op => op.value === operator);
+  };
+
+  const getTypeInfo = (type: FilterCondition['type']) => {
+    return TYPE_OPTIONS.find(t => t.value === type);
+  };
+
   const updateFilter = (id: number, field: keyof FilterCondition, value: string) => {
     const updated = filters.map((filter) => {
       if (filter.id !== id) return filter;
@@ -233,15 +322,16 @@ export default function FiltersTab({
   };
 
   return (
-    <TabsContent value="filters" className="mt-4 space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <Label>Subscribe filters (server-side)</Label>
-            <p className="mt-1 text-xs text-gray-500">
-              Use <code className="font-mono text-xs">data.&lt;field&gt;</code> for message payload and <code className="font-mono text-xs">meta.&lt;field&gt;</code> for metadata. Nested objects use bracket notation (e.g. <code className="font-mono text-xs">user['role']</code>) and arrays use indexes (e.g. <code className="font-mono text-xs">tags[0]</code>).
-            </p>
-          </div>
+    <TooltipProvider>
+      <TabsContent value="filters" className="mt-4 space-y-4">
+        <div className="space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Label>Subscribe filters (server-side)</Label>
+              <p className="mt-1 text-xs text-gray-500">
+                Use <code className="font-mono text-xs">data.&lt;field&gt;</code> for message payload and <code className="font-mono text-xs">meta.&lt;field&gt;</code> for metadata. Nested objects use bracket notation (e.g. <code className="font-mono text-xs">user['role']</code>) and arrays use indexes (e.g. <code className="font-mono text-xs">tags[0]</code>).
+              </p>
+            </div>
           <div className="flex items-center space-x-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -287,96 +377,157 @@ export default function FiltersTab({
           </div>
         )}
 
-        {filters.map((filter, index) => (
-          <div key={filter.id} className="rounded-lg border bg-gray-50 p-3">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-medium">Filter {index + 1}</span>
-              <Button size="sm" variant="ghost" onClick={() => removeFilter(filter.id)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="grid gap-2 md:grid-cols-[180px,1fr,160px,1fr,150px]">
-              <Select
-                value={filter.target}
-                onValueChange={(value) => updateFilter(filter.id, 'target', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Target" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TARGET_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        {filters.map((filter, index) => {
+          const operatorInfo = getOperatorInfo(filter.operator);
+          const typeInfo = getTypeInfo(filter.type);
 
-              <Input
-                placeholder="Field (e.g. user['role'] or tags[0])"
-                value={filter.field}
-                onChange={(event) => updateFilter(filter.id, 'field', event.target.value)}
-              />
-
-              <Select
-                value={filter.operator}
-                onValueChange={(value) => updateFilter(filter.id, 'operator', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Operator" />
-                </SelectTrigger>
-                <SelectContent>
-                  {OPERATOR_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {filter.type === 'boolean' ? (
+          return (
+            <div key={filter.id} className="rounded-lg border bg-gray-50 p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm font-medium">Filter {index + 1}</span>
+                <Button size="sm" variant="ghost" onClick={() => removeFilter(filter.id)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="grid gap-3 md:grid-cols-[180px,1fr,180px]">
+                {/* Target Selection */}
                 <Select
-                  value={filter.value || 'true'}
-                  onValueChange={(value) => updateFilter(filter.id, 'value', value)}
+                  value={filter.target}
+                  onValueChange={(value) => updateFilter(filter.id, 'target', value)}
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Target" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="true">true</SelectItem>
-                    <SelectItem value="false">false</SelectItem>
+                    {TARGET_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-              ) : filter.type === 'number' ? (
-                <Input
-                  type="number"
-                  placeholder="Value"
-                  value={filter.value}
-                  onChange={(event) => updateFilter(filter.id, 'value', event.target.value)}
-                />
-              ) : (
-                <Input
-                  placeholder={filter.type === 'expression' ? 'Expression' : 'Value'}
-                  value={filter.value}
-                  onChange={(event) => updateFilter(filter.id, 'value', event.target.value)}
-                />
-              )}
 
-              <Select value={filter.type} onValueChange={(value) => updateFilter(filter.id, 'type', value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TYPE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {/* Field Input with better placeholder */}
+                <Input
+                  placeholder={`e.g. ${filter.target === 'data' ? 'user.name, tags[0], status' : 'priority, region, device["type"]'}`}
+                  value={filter.field}
+                  onChange={(event) => updateFilter(filter.id, 'field', event.target.value)}
+                  className={!filter.field.trim() ? 'border-orange-300' : ''}
+                />
+
+                {/* Operator Selection with Tooltip */}
+                <div className="flex items-center gap-1">
+                  <Select
+                    value={filter.operator}
+                    onValueChange={(value) => updateFilter(filter.id, 'operator', value)}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Operator" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OPERATOR_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {operatorInfo && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                          <HelpCircle className="h-4 w-4 text-gray-400" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        <p className="font-semibold mb-1">{operatorInfo.label}</p>
+                        <p className="text-xs mb-2">{operatorInfo.help}</p>
+                        <p className="text-xs font-mono text-gray-600">
+                          {operatorInfo.examples.map((ex, i) => (
+                            <span key={i} className="block">{ex}</span>
+                          ))}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
+
+              {/* Type-First Value Input Section */}
+              <div className="mt-3 grid gap-3 md:grid-cols-[150px,1fr]">
+                {/* Type Selection */}
+                <div className="flex items-center gap-1">
+                  <Select value={filter.type} onValueChange={(value) => updateFilter(filter.id, 'type', value)}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {typeInfo && typeInfo.help && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                          <HelpCircle className="h-4 w-4 text-gray-400" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        <p className="text-xs">{typeInfo.help}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+
+                {/* Value Input based on Type */}
+                {filter.type === 'boolean' ? (
+                  <Select
+                    value={filter.value || 'true'}
+                    onValueChange={(value) => updateFilter(filter.id, 'value', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">true</SelectItem>
+                      <SelectItem value="false">false</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : filter.type === 'number' ? (
+                  <Input
+                    type="number"
+                    placeholder={typeInfo?.placeholder || 'Enter numeric value'}
+                    value={filter.value}
+                    onChange={(event) => updateFilter(filter.id, 'value', event.target.value)}
+                    className={!filter.value.trim() ? 'border-orange-300' : ''}
+                  />
+                ) : (
+                  <Input
+                    placeholder={typeInfo?.placeholder || 'Enter value'}
+                    value={filter.value}
+                    onChange={(event) => updateFilter(filter.id, 'value', event.target.value)}
+                    className={!filter.value.trim() ? 'border-orange-300' : ''}
+                  />
+                )}
+              </div>
+
+              {/* Validation Message */}
+              {(!filter.field.trim() || (filter.type !== 'boolean' && !filter.value.trim())) && (
+                <p className="mt-2 text-xs text-orange-600">
+                  {!filter.field.trim() && !filter.value.trim()
+                    ? 'Field and value are required'
+                    : !filter.field.trim()
+                    ? 'Field is required'
+                    : 'Value is required'}
+                </p>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         <div
           className={`rounded-lg border-2 p-4 transition-all duration-300 ${
@@ -423,5 +574,6 @@ export default function FiltersTab({
         </div>
       </div>
     </TabsContent>
+    </TooltipProvider>
   );
 }
