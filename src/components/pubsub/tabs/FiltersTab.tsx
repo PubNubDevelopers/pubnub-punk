@@ -25,7 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Filter, Plus, X, ChevronDown, Copy, HelpCircle, ChevronUp } from 'lucide-react';
+import { Filter, Plus, X, ChevronDown, Copy, HelpCircle, ChevronUp, Zap, AlertTriangle, CheckCircle } from 'lucide-react';
 import type { FilterCondition } from '../types';
 import { generateFilterExpression, copyToClipboard } from '../utils';
 
@@ -407,6 +407,42 @@ export default function FiltersTab({
     return TYPE_OPTIONS.find(t => t.value === type);
   };
 
+  const analyzeFilterPerformance = () => {
+    if (filters.length === 0) return null;
+
+    const activeFilters = filters.filter(f => f.field.trim() && (f.type === 'boolean' || f.value.trim()));
+    if (activeFilters.length === 0) return null;
+
+    const fastOperators = ['==', '!=', '>', '<', '>=', '<='];
+    const moderateOperators = ['LIKE', 'CONTAINS', 'NOT_CONTAINS'];
+
+    const fastFilters = activeFilters.filter(f => fastOperators.includes(f.operator) && f.type !== 'expression');
+    const moderateFilters = activeFilters.filter(f => moderateOperators.includes(f.operator));
+    const complexFilters = activeFilters.filter(f =>
+      f.type === 'expression' && (
+        f.field.includes('+') || f.field.includes('-') || f.field.includes('*') ||
+        f.field.includes('/') || f.field.includes('%') ||
+        f.value.includes('+') || f.value.includes('-') || f.value.includes('*') ||
+        f.value.includes('/') || f.value.includes('%')
+      )
+    );
+
+    const hasOrLogic = filterLogic === '||';
+    const manyFilters = activeFilters.length > 5;
+
+    return {
+      fastFilters,
+      moderateFilters,
+      complexFilters,
+      hasOrLogic,
+      manyFilters,
+      overallRating: complexFilters.length > 2 || manyFilters ? 'caution' :
+                     complexFilters.length > 0 || moderateFilters.length > 3 ? 'moderate' : 'fast'
+    };
+  };
+
+  const performanceAnalysis = analyzeFilterPerformance();
+
   const updateFilter = (id: number, field: keyof FilterCondition, value: string) => {
     const updated = filters.map((filter) => {
       if (filter.id !== id) return filter;
@@ -766,6 +802,86 @@ export default function FiltersTab({
             </p>
           )}
         </div>
+
+        {/* Performance Hints Panel */}
+        {performanceAnalysis && (
+          <div className={`rounded-lg border-2 p-4 ${
+            performanceAnalysis.overallRating === 'fast' ? 'border-green-300 bg-green-50' :
+            performanceAnalysis.overallRating === 'moderate' ? 'border-yellow-300 bg-yellow-50' :
+            'border-orange-300 bg-orange-50'
+          }`}>
+            <div className="flex items-center gap-2 mb-3">
+              {performanceAnalysis.overallRating === 'fast' ? (
+                <Zap className="h-5 w-5 text-green-600" />
+              ) : performanceAnalysis.overallRating === 'moderate' ? (
+                <CheckCircle className="h-5 w-5 text-yellow-600" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-orange-600" />
+              )}
+              <h3 className="text-sm font-semibold text-gray-700">
+                Performance Impact:{' '}
+                {performanceAnalysis.overallRating === 'fast' ? 'Excellent' :
+                 performanceAnalysis.overallRating === 'moderate' ? 'Good' : 'Consider Optimizing'}
+              </h3>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {performanceAnalysis.fastFilters.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">
+                    <strong>{performanceAnalysis.fastFilters.length} fast filter{performanceAnalysis.fastFilters.length > 1 ? 's' : ''}</strong>
+                    {' '}using efficient operators (==, !=, &gt;, &lt;, &gt;=, &lt;=)
+                  </span>
+                </div>
+              )}
+
+              {performanceAnalysis.moderateFilters.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">
+                    <strong>{performanceAnalysis.moderateFilters.length} pattern-matching filter{performanceAnalysis.moderateFilters.length > 1 ? 's' : ''}</strong>
+                    {' '}using LIKE/CONTAINS (moderately efficient)
+                  </span>
+                </div>
+              )}
+
+              {performanceAnalysis.complexFilters.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">
+                    <strong>{performanceAnalysis.complexFilters.length} arithmetic filter{performanceAnalysis.complexFilters.length > 1 ? 's' : ''}</strong>
+                    {' '}with calculations - consider pre-computing values in metadata when publishing
+                  </span>
+                </div>
+              )}
+
+              {performanceAnalysis.hasOrLogic && (
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">
+                    Using <strong>OR (||) logic</strong> - may be less selective than AND. Ensure this matches your use case.
+                  </span>
+                </div>
+              )}
+
+              {performanceAnalysis.manyFilters && (
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700">
+                    <strong>Many filters ({filters.length})</strong> - consider combining related conditions or using metadata flags
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <p className="text-gray-600 italic">
+                  💡 Tip: Put most selective filters first, use numeric comparisons when possible, and pre-compute complex values in publisher metadata.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </TabsContent>
     </TooltipProvider>
