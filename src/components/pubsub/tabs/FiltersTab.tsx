@@ -25,7 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Filter, Plus, X, ChevronDown, Copy, HelpCircle, ChevronUp, Zap, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Filter, Plus, X, ChevronDown, Copy, HelpCircle, ChevronUp, Zap, AlertTriangle, CheckCircle, Wand2, Code2 } from 'lucide-react';
 import type { FilterCondition } from '../types';
 import { generateFilterExpression, copyToClipboard } from '../utils';
 
@@ -133,6 +133,15 @@ const TYPE_OPTIONS: Array<{
     help: 'Arithmetic expressions - supports +, -, *, /, % (modulo). Use for sampling, calculations, and thresholds.',
     placeholder: 'e.g. eventId % 100, total - used, limit * 0.8'
   },
+];
+
+const ARITHMETIC_OPERATORS = [
+  { label: 'None', value: 'none', symbol: '' },
+  { label: '% (modulo)', value: '%', symbol: '%', help: 'Remainder after division - useful for sampling (e.g., eventId % 100)' },
+  { label: '+ (add)', value: '+', symbol: '+', help: 'Addition - useful for thresholds (e.g., base + bonus)' },
+  { label: '- (subtract)', value: '-', symbol: '-', help: 'Subtraction - useful for capacity (e.g., total - used)' },
+  { label: '* (multiply)', value: '*', symbol: '*', help: 'Multiplication - useful for percentages (e.g., limit * 0.8)' },
+  { label: '/ (divide)', value: '/', symbol: '/', help: 'Division - useful for averages (e.g., total / count)' },
 ];
 
 const filterTemplateCategories: Array<{
@@ -386,6 +395,7 @@ export default function FiltersTab({
   onFilterLogicChange,
 }: FiltersTabProps) {
   const [collapsedFilters, setCollapsedFilters] = React.useState<Set<number>>(new Set());
+  const [builderMode, setBuilderMode] = React.useState<Record<number, 'simple' | 'visual'>>({});
 
   const toggleFilterCollapse = (id: number) => {
     setCollapsedFilters(prev => {
@@ -397,6 +407,35 @@ export default function FiltersTab({
       }
       return newSet;
     });
+  };
+
+  const toggleBuilderMode = (id: number) => {
+    setBuilderMode(prev => ({
+      ...prev,
+      [id]: prev[id] === 'visual' ? 'simple' : 'visual'
+    }));
+  };
+
+  const parseArithmeticExpression = (expression: string): { baseField: string; operator: string; operand: string } => {
+    const trimmed = expression.trim();
+
+    // Try to find arithmetic operators
+    const operators = ['%', '+', '-', '*', '/'];
+    for (const op of operators) {
+      const parts = trimmed.split(op).map(p => p.trim());
+      if (parts.length === 2 && parts[0] && parts[1]) {
+        return { baseField: parts[0], operator: op, operand: parts[1] };
+      }
+    }
+
+    return { baseField: trimmed, operator: 'none', operand: '' };
+  };
+
+  const buildArithmeticExpression = (baseField: string, operator: string, operand: string): string => {
+    if (!operator || operator === 'none' || !operand) {
+      return baseField;
+    }
+    return `${baseField} ${operator} ${operand}`;
   };
 
   const getOperatorInfo = (operator: FilterCondition['operator']) => {
@@ -589,6 +628,9 @@ export default function FiltersTab({
           const typeInfo = getTypeInfo(filter.type);
           const isCollapsed = collapsedFilters.has(filter.id);
           const filterSummary = `${buildFieldPath(filter)} ${operatorLabel(filter.operator)} ${formatValueForDisplay(filter)}`;
+          const isVisualMode = builderMode[filter.id] === 'visual';
+          const parsedField = parseArithmeticExpression(filter.field);
+          const parsedValue = parseArithmeticExpression(filter.value);
 
           return (
             <div key={filter.id} className="rounded-lg border bg-gray-50 p-3">
@@ -611,12 +653,235 @@ export default function FiltersTab({
                     <code className="text-xs text-gray-600 font-mono ml-2">{filterSummary}</code>
                   )}
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => removeFilter(filter.id)}>
-                  <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  {!isCollapsed && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant={isVisualMode ? 'default' : 'outline'}
+                          className="h-7 px-2"
+                          onClick={() => toggleBuilderMode(filter.id)}
+                        >
+                          {isVisualMode ? (
+                            <><Wand2 className="h-3 w-3 mr-1" /> Visual</>
+                          ) : (
+                            <><Code2 className="h-3 w-3 mr-1" /> Simple</>
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isVisualMode ? 'Switch to simple text input mode' : 'Switch to visual expression builder'}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => removeFilter(filter.id)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               {!isCollapsed && (
                 <>
+                {isVisualMode ? (
+                  /* Visual Expression Builder Mode */
+                  <div className="space-y-3 bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg border border-purple-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Wand2 className="h-4 w-4 text-purple-600" />
+                      <span className="text-sm font-semibold text-purple-900">Visual Expression Builder</span>
+                    </div>
+
+                    {/* Target Selection */}
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-700">Target</Label>
+                      <Select
+                        value={filter.target}
+                        onValueChange={(value) => updateFilter(filter.id, 'target', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TARGET_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Left Side Expression Builder */}
+                    <div className="space-y-2 bg-white p-3 rounded border">
+                      <Label className="text-xs font-semibold text-gray-700">Left Side (Field Expression)</Label>
+                      <div className="grid gap-2 md:grid-cols-[1fr,140px,100px]">
+                        <div>
+                          <Label className="text-xs text-gray-600">Base Field</Label>
+                          <Input
+                            placeholder="e.g. eventId, usage, score"
+                            value={parsedField.baseField}
+                            onChange={(e) => {
+                              const newExpr = buildArithmeticExpression(e.target.value, parsedField.operator, parsedField.operand);
+                              updateFilter(filter.id, 'field', newExpr);
+                            }}
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">Arithmetic</Label>
+                          <Select
+                            value={parsedField.operator || 'none'}
+                            onValueChange={(value) => {
+                              const newExpr = buildArithmeticExpression(parsedField.baseField, value, parsedField.operand);
+                              updateFilter(filter.id, 'field', newExpr);
+                              if (value !== 'none') {
+                                updateFilter(filter.id, 'type', 'expression');
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ARITHMETIC_OPERATORS.map((op) => (
+                                <SelectItem key={op.value} value={op.value}>
+                                  {op.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {parsedField.operator && parsedField.operator !== 'none' && (
+                          <div>
+                            <Label className="text-xs text-gray-600">Operand</Label>
+                            <Input
+                              placeholder="e.g. 100"
+                              value={parsedField.operand}
+                              onChange={(e) => {
+                                const newExpr = buildArithmeticExpression(parsedField.baseField, parsedField.operator, e.target.value);
+                                updateFilter(filter.id, 'field', newExpr);
+                              }}
+                              className="mt-1"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-2 p-2 bg-purple-50 rounded text-xs font-mono text-purple-900">
+                        {filter.target}.{filter.field || '?'}
+                      </div>
+                    </div>
+
+                    {/* Comparison Operator */}
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-700">Comparison Operator</Label>
+                      <div className="flex items-center gap-1">
+                        <Select
+                          value={filter.operator}
+                          onValueChange={(value) => updateFilter(filter.id, 'operator', value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {OPERATOR_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {operatorInfo && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                                <HelpCircle className="h-4 w-4 text-gray-400" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs">
+                              <p className="font-semibold mb-1">{operatorInfo.label}</p>
+                              <p className="text-xs mb-2">{operatorInfo.help}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right Side Expression Builder */}
+                    <div className="space-y-2 bg-white p-3 rounded border">
+                      <Label className="text-xs font-semibold text-gray-700">Right Side (Value/Expression)</Label>
+                      <div className="grid gap-2 md:grid-cols-[1fr,140px,100px]">
+                        <div>
+                          <Label className="text-xs text-gray-600">Value/Base</Label>
+                          {filter.type === 'boolean' ? (
+                            <Select
+                              value={parsedValue.baseField || 'true'}
+                              onValueChange={(value) => updateFilter(filter.id, 'value', value)}
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="true">true</SelectItem>
+                                <SelectItem value="false">false</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              type={filter.type === 'number' ? 'number' : 'text'}
+                              placeholder={filter.type === 'string' ? 'e.g. high, active' : 'e.g. 0, 100, limit'}
+                              value={parsedValue.baseField}
+                              onChange={(e) => {
+                                const newExpr = buildArithmeticExpression(e.target.value, parsedValue.operator, parsedValue.operand);
+                                updateFilter(filter.id, 'value', newExpr);
+                              }}
+                              className="mt-1"
+                            />
+                          )}
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">Type</Label>
+                          <Select
+                            value={filter.type}
+                            onValueChange={(value) => updateFilter(filter.id, 'type', value)}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TYPE_OPTIONS.filter(t => t.value !== 'expression').map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {filter.type === 'number' && parsedValue.operator !== 'none' && (
+                          <div>
+                            <Label className="text-xs text-gray-600">Operand</Label>
+                            <Input
+                              placeholder="e.g. 0.8"
+                              value={parsedValue.operand}
+                              onChange={(e) => {
+                                const newExpr = buildArithmeticExpression(parsedValue.baseField, parsedValue.operator, e.target.value);
+                                updateFilter(filter.id, 'value', newExpr);
+                              }}
+                              className="mt-1"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                      <div className="text-xs font-semibold text-blue-900 mb-1">Complete Expression:</div>
+                      <div className="font-mono text-sm text-blue-900">
+                        {buildFieldPath(filter)} {operatorLabel(filter.operator)} {formatValueForDisplay(filter)}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Simple Mode - Original Form */
+                  <>
               <div className="grid gap-3 md:grid-cols-[180px,1fr,180px]">
                 {/* Target Selection */}
                 <Select
@@ -753,6 +1018,8 @@ export default function FiltersTab({
                     : 'Value is required'}
                 </p>
               )}
+                  </>
+                )}
                 </>
               )}
             </div>

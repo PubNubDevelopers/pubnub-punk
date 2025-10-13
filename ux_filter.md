@@ -383,7 +383,7 @@ Enhance the bottom summary panel:
 ### Phase 3: Advanced Features (Medium Impact, High Effort) ✅ COMPLETED (Partial)
 1. ⚠️ **Interactive filter tester** - Deferred (requires sample data input and match evaluation engine)
 2. ✅ **Performance hints** - Real-time analysis with color-coded recommendations
-3. ⚠️ **Visual expression builder** - Deferred (requires complex drag-drop state management)
+3. ✅ **Visual expression builder** - IMPLEMENTED with mode toggle and arithmetic operator support
 4. ⚠️ **Filter library** - Deferred (requires persistence layer for saved filters)
 
 **Implementation Notes:**
@@ -402,6 +402,23 @@ Enhance the bottom summary panel:
 - Icons: Zap (fast), CheckCircle (good), AlertTriangle (caution)
 - All changes tested with Playwright - performance panel displays correctly
 - Correctly identifies modulo expressions as arithmetic/complex filters
+
+**Visual Expression Builder:**
+- Added Simple/Visual mode toggle for each filter (Wand2/Code2 icons)
+- Visual mode features purple gradient panel with structured sections
+- Arithmetic operator parsing: splits expressions like "eventId % 100" into components
+- Clear separation of concerns:
+  - Left Side: Base Field + Arithmetic Operator + Operand
+  - Comparison Operator in the middle
+  - Right Side: Value/Base + Type
+- Supports all arithmetic operators: %, +, -, *, /
+- Each arithmetic operator includes label and help text
+- Real-time preview shows constructed left-side expression
+- Complete Expression preview at bottom shows final filter
+- Seamless toggle between modes preserves filter data
+- Visual mode makes modulo and arithmetic filters dramatically clearer
+- Tested with Playwright - parsing and building works correctly
+- Mode toggle state managed per-filter (not persisted, resets to Simple on reload)
 
 ## Design Mockups
 
