@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { PublishFormData, PublishStatus } from '../types';
+import { PublishFormData, PublishStatus, PublishAttemptResult } from '../types';
 import { parsePublishError } from '../shared/ErrorParser';
 
 interface UsePubNubPublishOptions {
@@ -8,6 +8,7 @@ interface UsePubNubPublishOptions {
   onError?: (error: Error) => void;
   maxRetries?: number;
   retryDelay?: number;
+  onAttemptComplete?: (result: PublishAttemptResult) => void;
 }
 
 interface UsePubNubPublishResult {
@@ -23,7 +24,8 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
     onSuccess,
     onError,
     maxRetries = 3,
-    retryDelay = 1000
+    retryDelay = 1000,
+    onAttemptComplete,
   } = options;
 
   const [publishStatus, setPublishStatus] = useState<PublishStatus>({
@@ -36,12 +38,22 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
 
   const attemptPublish = useCallback(async (
     publishData: PublishFormData, 
-    attemptNumber: number = 1
+    attemptNumber: number = 1,
+    startedAt: number = Date.now()
   ): Promise<void> => {
     if (!pubnub) {
       const err = new Error('PubNub instance not available');
       setError(err.message);
       onError?.(err);
+      onAttemptComplete?.({
+        success: false,
+        timetoken: undefined,
+        error: err.message,
+        attempts: attemptNumber,
+        durationMs: Date.now() - startedAt,
+        startedAt,
+        publishData,
+      });
       throw err;
     }
 
@@ -49,6 +61,15 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
       const err = new Error('Channel name is required');
       setError(err.message);
       onError?.(err);
+      onAttemptComplete?.({
+        success: false,
+        timetoken: undefined,
+        error: err.message,
+        attempts: attemptNumber,
+        durationMs: Date.now() - startedAt,
+        startedAt,
+        publishData,
+      });
       throw err;
     }
 
@@ -56,6 +77,15 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
       const err = new Error('Message content is required');
       setError(err.message);
       onError?.(err);
+      onAttemptComplete?.({
+        success: false,
+        timetoken: undefined,
+        error: err.message,
+        attempts: attemptNumber,
+        durationMs: Date.now() - startedAt,
+        startedAt,
+        publishData,
+      });
       throw err;
     }
 
@@ -129,6 +159,15 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
       
       setError(null);
       onSuccess?.(publishResult.timetoken);
+      onAttemptComplete?.({
+        success: true,
+        timetoken: publishResult.timetoken,
+        error: undefined,
+        attempts: attemptNumber,
+        durationMs: Date.now() - startedAt,
+        startedAt,
+        publishData,
+      });
       
     } catch (err) {
       console.error(`Publish attempt ${attemptNumber} failed:`, err);
@@ -140,7 +179,7 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
         
         // Exponential backoff for next retry
         const nextDelay = retryDelay * Math.pow(2, attemptNumber - 1);
-        return attemptPublish(publishData, attemptNumber + 1);
+        return attemptPublish(publishData, attemptNumber + 1, startedAt);
       }
       
       // All retries failed
@@ -157,9 +196,18 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
       const { description } = parsePublishError(err);
       setError(description);
       onError?.(err instanceof Error ? err : new Error(description));
+      onAttemptComplete?.({
+        success: false,
+        timetoken: undefined,
+        error: description,
+        attempts: attemptNumber,
+        durationMs: Date.now() - startedAt,
+        startedAt,
+        publishData,
+      });
       throw err;
     }
-  }, [pubnub, maxRetries, retryDelay, onSuccess, onError]);
+  }, [pubnub, maxRetries, retryDelay, onSuccess, onError, onAttemptComplete]);
 
   const publish = useCallback(async (publishData: PublishFormData): Promise<boolean> => {
     setIsPublishing(true);

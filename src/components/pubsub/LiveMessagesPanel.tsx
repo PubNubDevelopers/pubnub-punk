@@ -7,16 +7,21 @@ import { MessageCircle, Copy, X, ArrowDown } from 'lucide-react';
 import { MessageData, PresenceEvent } from './types';
 import { formatTimestamp } from './utils';
 import MessageItem from './shared/MessageItem';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
 interface LiveMessagesPanelProps {
   messages: MessageData[];
   presenceEvents: PresenceEvent[];
   receivePresenceEvents: boolean;
   showRawMessageData: boolean;
-  onCopyAll: () => void;
+  onCopyRaw: () => void;
+  onCopyFormatted: () => void;
   onClear: () => void;
   onReceivePresenceEventsChange: (value: boolean) => void;
   onShowRawMessageDataChange: (value: boolean) => void;
+  onEmptyConnectCta?: () => void;
+  className?: string;
 }
 
 const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
@@ -24,10 +29,13 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
   presenceEvents,
   receivePresenceEvents,
   showRawMessageData,
-  onCopyAll,
+  onCopyRaw,
+  onCopyFormatted,
   onClear,
   onReceivePresenceEventsChange,
   onShowRawMessageDataChange,
+  onEmptyConnectCta,
+  className,
 }) => {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const presenceContainerRef = useRef<HTMLDivElement>(null);
@@ -83,7 +91,7 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
   }, [presenceEvents, autoScrollPresence]);
 
   return (
-    <Card className="mb-6">
+    <Card className={cn("mb-6", className)}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center">
@@ -98,7 +106,7 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
           </div>
         </div>
         
-        <div className="flex items-center justify-between mt-4 pt-4 border-t">
+          <div className="flex items-center justify-between mt-4 pt-4 border-t">
           <div className="flex items-center space-x-6">
             <div className="flex items-center space-x-2">
               <Switch
@@ -116,15 +124,36 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              disabled={messages.length === 0}
-              onClick={onCopyAll}
-            >
-              <Copy className="h-4 w-4 mr-1" />
-              Copy All
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  disabled={messages.length === 0}
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  Copy
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    onCopyFormatted();
+                  }}
+                >
+                  Copy formatted messages
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    onCopyRaw();
+                  }}
+                >
+                  Copy raw events
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button 
               variant="outline" 
               size="sm" 
@@ -245,7 +274,12 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
                   <div>
                     <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-gray-500 text-lg">No messages yet</p>
-                    <p className="text-gray-400 text-sm">Start subscribing to see real-time messages here</p>
+                    <p className="text-gray-400 text-sm mb-3">Connect to start receiving real-time messages</p>
+                    {onEmptyConnectCta && (
+                      <Button onClick={onEmptyConnectCta} className="bg-blue-600 hover:bg-blue-700">
+                        Connect to Channels
+                      </Button>
+                    )}
                   </div>
                 </div>
               ) : (

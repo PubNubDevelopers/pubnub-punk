@@ -1,7 +1,5 @@
 // Barrel exports for PubSub components
 
-// Main page component
-export { default as PubSubPage } from './PubSubPage';
 export { default as PubSubPageEnhanced } from './PubSubPageEnhanced';
 
 // Panel components

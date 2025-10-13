@@ -33,9 +33,12 @@ export interface SubscribeFormData {
 
 export interface UIState {
   showFilters: boolean;
-  showMessages: boolean;
-  messagesHeight: number;
   showRawMessageData: boolean;
+  autoScroll?: boolean;
+  presenceAutoScroll?: boolean;
+  showMessages?: boolean;
+  messagesHeight?: number;
+  showAdvanced?: boolean;
 }
 
 export interface FilterCondition {
@@ -82,6 +85,32 @@ export interface PublishStatus {
   isSuccess: boolean;
   timetoken?: string;
   isFlashing: boolean;
+}
+
+export interface PublishHistoryEntry {
+  id: string;
+  timestamp: number;
+  channel: string;
+  messagePreview: string;
+  metaPreview?: string;
+  rawMessage: string;
+  rawMeta?: string;
+  success: boolean;
+  timetoken?: string;
+  error?: string;
+  attempts: number;
+  durationMs: number;
+  formData?: PublishFormData;
+}
+
+export interface PublishAttemptResult {
+  success: boolean;
+  timetoken?: string;
+  error?: string;
+  attempts: number;
+  durationMs: number;
+  startedAt: number;
+  publishData: PublishFormData;
 }
 
 export interface FieldDefinition {

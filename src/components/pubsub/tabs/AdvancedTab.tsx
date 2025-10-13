@@ -25,7 +25,7 @@ export default function AdvancedTab({
   onCursorChange,
   onWithPresenceChange,
   onRestoreOnReconnectChange,
-  onHeartbeatChange
+  onHeartbeatChange,
 }: AdvancedTabProps) {
   return (
     <TabsContent value="advanced" className="mt-4 space-y-4">
