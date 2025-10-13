@@ -359,11 +359,26 @@ Enhance the bottom summary panel:
 - Visual validation with orange borders on incomplete required fields
 - All changes tested with Playwright - no bugs found
 
-### Phase 2: Core UX Improvements (High Impact, Medium Effort)
-1. **Vertical progressive layout** - Redesign to vertical card-based form
-2. **Smart field auto-suggestions** - Detect and suggest proper syntax
-3. **Collapsible filter cards** - Better multi-filter management
-4. **Enhanced template categories** - Organize by use case
+### Phase 2: Core UX Improvements (High Impact, Medium Effort) ✅ COMPLETED
+1. ⚠️ **Vertical progressive layout** - Deferred to Phase 3 (current 2-row layout is functional)
+2. ⚠️ **Smart field auto-suggestions** - Deferred (requires autocomplete system, too complex)
+3. ✅ **Collapsible filter cards** - Implemented with chevron toggle and inline summary
+4. ✅ **Enhanced template categories** - 5 categories with icons and 16 total templates
+
+**Implementation Notes:**
+- Added collapsible state management with React.useState<Set<number>>
+- ChevronUp/ChevronDown icons toggle filter visibility
+- Collapsed filters show inline summary: `field operator value`
+- Organized templates into categories: Chat (💬), Notifications (🔔), IoT (🌡️), Analytics (📊), Arithmetic (🔢)
+- **Added Arithmetic category** with modulo and math operator examples:
+  - 1% Sampling (Modulo): `meta.eventId % 100 == 0`
+  - Odd Messages Only: `data.messageId % 2 != 0`
+  - 80% Threshold Warning: `data.usage > limit * 0.8`
+  - Remaining Capacity Low: `data.total - used < 10`
+- Updated Expression type help text to mention arithmetic operators: +, -, *, /, % (modulo)
+- Template dropdown now scrollable with max-height for better UX
+- All changes tested with Playwright - collapse/expand works perfectly
+- Modulo expressions generate correct filter syntax
 
 ### Phase 3: Advanced Features (Medium Impact, High Effort)
 1. **Interactive filter tester** - Test filters with sample data

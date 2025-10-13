@@ -25,7 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Filter, Plus, X, ChevronDown, Copy, HelpCircle } from 'lucide-react';
+import { Filter, Plus, X, ChevronDown, Copy, HelpCircle, ChevronUp } from 'lucide-react';
 import type { FilterCondition } from '../types';
 import { generateFilterExpression, copyToClipboard } from '../utils';
 
@@ -130,61 +130,205 @@ const TYPE_OPTIONS: Array<{
   {
     label: 'Expression',
     value: 'expression',
-    help: 'Raw expression - for advanced calculations',
-    placeholder: 'e.g. field * 2, value + 10'
+    help: 'Arithmetic expressions - supports +, -, *, /, % (modulo). Use for sampling, calculations, and thresholds.',
+    placeholder: 'e.g. eventId % 100, total - used, limit * 0.8'
   },
 ];
 
-const filterTemplates: Array<{ name: string; filter: Omit<FilterCondition, 'id'> }> = [
+const filterTemplateCategories: Array<{
+  category: string;
+  icon: string;
+  templates: Array<{ name: string; filter: Omit<FilterCondition, 'id'> }>;
+}> = [
   {
-    name: 'High Priority Messages',
-    filter: {
-      target: 'meta',
-      field: 'priority',
-      operator: '==',
-      value: 'high',
-      type: 'string',
-    },
+    category: 'Chat & Messaging',
+    icon: '💬',
+    templates: [
+      {
+        name: 'High Priority Messages',
+        filter: {
+          target: 'meta',
+          field: 'priority',
+          operator: '==',
+          value: 'high',
+          type: 'string',
+        },
+      },
+      {
+        name: 'Direct Messages to User',
+        filter: {
+          target: 'meta',
+          field: 'recipient',
+          operator: '==',
+          value: 'user123',
+          type: 'string',
+        },
+      },
+      {
+        name: 'Messages from Moderators',
+        filter: {
+          target: 'meta',
+          field: 'user["role"]',
+          operator: '==',
+          value: 'moderator',
+          type: 'string',
+        },
+      },
+    ],
   },
   {
-    name: 'Announcements',
-    filter: {
-      target: 'data',
-      field: 'type',
-      operator: '==',
-      value: 'announcement',
-      type: 'string',
-    },
+    category: 'Notifications & Alerts',
+    icon: '🔔',
+    templates: [
+      {
+        name: 'Announcements',
+        filter: {
+          target: 'data',
+          field: 'type',
+          operator: '==',
+          value: 'announcement',
+          type: 'string',
+        },
+      },
+      {
+        name: 'Critical Alerts Only',
+        filter: {
+          target: 'meta',
+          field: 'level',
+          operator: '==',
+          value: 'critical',
+          type: 'string',
+        },
+      },
+      {
+        name: 'Exclude Test Notifications',
+        filter: {
+          target: 'meta',
+          field: 'environment',
+          operator: '!=',
+          value: 'test',
+          type: 'string',
+        },
+      },
+    ],
   },
   {
-    name: 'Sensor Alerts',
-    filter: {
-      target: 'meta',
-      field: 'device["type"]',
-      operator: 'LIKE',
-      value: 'sensor*',
-      type: 'string',
-    },
+    category: 'IoT & Sensors',
+    icon: '🌡️',
+    templates: [
+      {
+        name: 'Sensor Alerts',
+        filter: {
+          target: 'meta',
+          field: 'device["type"]',
+          operator: 'LIKE',
+          value: 'sensor*',
+          type: 'string',
+        },
+      },
+      {
+        name: 'Critical Battery Level',
+        filter: {
+          target: 'data',
+          field: 'battery',
+          operator: '<',
+          value: '20',
+          type: 'number',
+        },
+      },
+      {
+        name: 'Temperature Out of Range',
+        filter: {
+          target: 'data',
+          field: 'temperature',
+          operator: '>',
+          value: '75',
+          type: 'number',
+        },
+      },
+    ],
   },
   {
-    name: 'Exclude Test Region',
-    filter: {
-      target: 'meta',
-      field: 'region',
-      operator: '!=',
-      value: 'test',
-      type: 'string',
-    },
+    category: 'Analytics & Events',
+    icon: '📊',
+    templates: [
+      {
+        name: 'Conversion Events',
+        filter: {
+          target: 'data',
+          field: 'eventType',
+          operator: '==',
+          value: 'conversion',
+          type: 'string',
+        },
+      },
+      {
+        name: 'High Value Transactions',
+        filter: {
+          target: 'data',
+          field: 'amount',
+          operator: '>',
+          value: '1000',
+          type: 'number',
+        },
+      },
+      {
+        name: 'Exclude Test/Staging Data',
+        filter: {
+          target: 'meta',
+          field: 'region',
+          operator: '!=',
+          value: 'test',
+          type: 'string',
+        },
+      },
+    ],
   },
   {
-    name: 'Critical Battery',
-    filter: {
-      target: 'data',
-      field: 'battery',
-      operator: '<',
-      value: '20',
-      type: 'number',
-    },
+    category: 'Advanced (Arithmetic)',
+    icon: '🔢',
+    templates: [
+      {
+        name: '1% Sampling (Modulo)',
+        filter: {
+          target: 'meta',
+          field: 'eventId % 100',
+          operator: '==',
+          value: '0',
+          type: 'expression',
+        },
+      },
+      {
+        name: 'Odd Messages Only',
+        filter: {
+          target: 'data',
+          field: 'messageId % 2',
+          operator: '!=',
+          value: '0',
+          type: 'expression',
+        },
+      },
+      {
+        name: '80% Threshold Warning',
+        filter: {
+          target: 'data',
+          field: 'usage',
+          operator: '>',
+          value: 'limit * 0.8',
+          type: 'expression',
+        },
+      },
+      {
+        name: 'Remaining Capacity Low',
+        filter: {
+          target: 'data',
+          field: 'total - used',
+          operator: '<',
+          value: '10',
+          type: 'expression',
+        },
+      },
+    ],
   },
 ];
 
@@ -241,6 +385,20 @@ export default function FiltersTab({
   onFiltersChange,
   onFilterLogicChange,
 }: FiltersTabProps) {
+  const [collapsedFilters, setCollapsedFilters] = React.useState<Set<number>>(new Set());
+
+  const toggleFilterCollapse = (id: number) => {
+    setCollapsedFilters(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
   const getOperatorInfo = (operator: FilterCondition['operator']) => {
     return OPERATOR_OPTIONS.find(op => op.value === operator);
   };
@@ -341,13 +499,26 @@ export default function FiltersTab({
                   <ChevronDown className="ml-1 h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel>Quick start examples</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-72 max-h-96 overflow-y-auto">
+                <DropdownMenuLabel>Filter Templates by Use Case</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {filterTemplates.map((template) => (
-                  <DropdownMenuItem key={template.name} onClick={() => applyFilterTemplate(template)}>
-                    {template.name}
-                  </DropdownMenuItem>
+                {filterTemplateCategories.map((category) => (
+                  <div key={category.category}>
+                    <DropdownMenuLabel className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                      <span>{category.icon}</span>
+                      <span>{category.category}</span>
+                    </DropdownMenuLabel>
+                    {category.templates.map((template) => (
+                      <DropdownMenuItem
+                        key={template.name}
+                        onClick={() => applyFilterTemplate(template)}
+                        className="pl-8"
+                      >
+                        {template.name}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                  </div>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -380,15 +551,36 @@ export default function FiltersTab({
         {filters.map((filter, index) => {
           const operatorInfo = getOperatorInfo(filter.operator);
           const typeInfo = getTypeInfo(filter.type);
+          const isCollapsed = collapsedFilters.has(filter.id);
+          const filterSummary = `${buildFieldPath(filter)} ${operatorLabel(filter.operator)} ${formatValueForDisplay(filter)}`;
 
           return (
             <div key={filter.id} className="rounded-lg border bg-gray-50 p-3">
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-medium">Filter {index + 1}</span>
+                <div className="flex items-center gap-2 flex-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0"
+                    onClick={() => toggleFilterCollapse(filter.id)}
+                  >
+                    {isCollapsed ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronUp className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <span className="text-sm font-medium">Filter {index + 1}</span>
+                  {isCollapsed && (
+                    <code className="text-xs text-gray-600 font-mono ml-2">{filterSummary}</code>
+                  )}
+                </div>
                 <Button size="sm" variant="ghost" onClick={() => removeFilter(filter.id)}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+              {!isCollapsed && (
+                <>
               <div className="grid gap-3 md:grid-cols-[180px,1fr,180px]">
                 {/* Target Selection */}
                 <Select
@@ -524,6 +716,8 @@ export default function FiltersTab({
                     ? 'Field is required'
                     : 'Value is required'}
                 </p>
+              )}
+                </>
               )}
             </div>
           );
