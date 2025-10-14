@@ -48,6 +48,7 @@ export interface FilterCondition {
   operator: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'CONTAINS' | 'NOT_CONTAINS';
   value: string;
   type: 'string' | 'number' | 'boolean' | 'expression';
+  logicAfter?: '&&' | '||';  // Logic operator to connect with next filter
 }
 
 export interface FilterState {

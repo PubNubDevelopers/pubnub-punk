@@ -348,6 +348,7 @@ const createEmptyFilter = (): FilterCondition => ({
   operator: '==',
   value: '',
   type: 'string',
+  logicAfter: '&&',  // Default to AND
 });
 
 const buildFieldPath = (filter: FilterCondition): string => {
@@ -537,11 +538,14 @@ export default function FiltersTab({
       const fieldPath = buildFieldPath(filter);
       const valueDisplay = formatValueForDisplay(filter);
       const hasValue = !(filter.type !== 'boolean' && valueDisplay === '?');
+      // Get logic operator from previous filter's logicAfter, or use default
+      const logicOp = index > 0 ? (filters[index - 1].logicAfter || filterLogic) : null;
+
       return (
         <span key={filter.id}>
-          {index > 0 && (
+          {index > 0 && logicOp && (
             <>
-              <span className="mx-1 font-bold text-blue-600">{filterLogic === '&&' ? '&&' : '||'}</span>{' '}
+              <span className="mx-1 font-bold text-blue-600">{logicOp}</span>{' '}
             </>
           )}
           {index > 0 && '('}
@@ -604,18 +608,6 @@ export default function FiltersTab({
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <Label className="text-sm">Filter logic:</Label>
-          <Select value={filterLogic} onValueChange={(value: '&&' | '||') => onFilterLogicChange(value)}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="&&">AND (&&)</SelectItem>
-              <SelectItem value="||">OR (||)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
 
         {filters.length === 0 && (
           <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
@@ -1021,6 +1013,28 @@ export default function FiltersTab({
                   </>
                 )}
                 </>
+              )}
+
+              {/* Per-Filter Logic Operator (between filters) */}
+              {index < filters.length - 1 && !isCollapsed && (
+                <div className="mt-3 flex items-center justify-center">
+                  <div className="flex-1 border-t border-gray-300"></div>
+                  <div className="px-4">
+                    <Select
+                      value={filter.logicAfter || '&&'}
+                      onValueChange={(value: '&&' | '||') => updateFilter(filter.id, 'logicAfter', value)}
+                    >
+                      <SelectTrigger className="w-28 h-8 text-xs font-semibold">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="&&">AND</SelectItem>
+                        <SelectItem value="||">OR</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex-1 border-t border-gray-300"></div>
+                </div>
               )}
             </div>
           );

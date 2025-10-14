@@ -132,7 +132,7 @@ export const setNestedValue = (obj: any, path: string, value: any): void => {
 // Generate filter expression from filter conditions
 export const generateFilterExpression = (
   conditions: FilterCondition[],
-  logic: '&&' | '||',
+  defaultLogic: '&&' | '||',  // Fallback logic if logicAfter not specified
 ): string => {
   if (!conditions || conditions.length === 0) return '';
 
@@ -150,7 +150,8 @@ export const generateFilterExpression = (
 
   if (validConditions.length === 0) return '';
 
-  const expressions = validConditions.map((condition) => {
+  if (validConditions.length === 1) {
+    const condition = validConditions[0];
     const fieldPath = buildFilterFieldPath(condition);
     const valueExpression = formatFilterValue(condition);
 
@@ -164,11 +165,39 @@ export const generateFilterExpression = (
       default:
         return `${fieldPath} ${condition.operator} ${valueExpression}`;
     }
+  }
+
+  // Build expression with per-filter logic
+  let expression = '';
+  validConditions.forEach((condition, index) => {
+    const fieldPath = buildFilterFieldPath(condition);
+    const valueExpression = formatFilterValue(condition);
+
+    let conditionExpr = '';
+    switch (condition.operator) {
+      case 'CONTAINS':
+        conditionExpr = `${fieldPath} CONTAINS ${valueExpression}`;
+        break;
+      case 'NOT_CONTAINS':
+        conditionExpr = `!(${fieldPath} CONTAINS ${valueExpression})`;
+        break;
+      case 'LIKE':
+        conditionExpr = `${fieldPath} LIKE ${valueExpression}`;
+        break;
+      default:
+        conditionExpr = `${fieldPath} ${condition.operator} ${valueExpression}`;
+    }
+
+    if (index === 0) {
+      expression = `(${conditionExpr})`;
+    } else {
+      // Use logicAfter from previous condition, or default logic
+      const logicOperator = validConditions[index - 1].logicAfter || defaultLogic;
+      expression += ` ${logicOperator} (${conditionExpr})`;
+    }
   });
 
-  return expressions.length === 1
-    ? expressions[0]
-    : expressions.map((exp) => `(${exp})`).join(` ${logic} `);
+  return expression;
 };
 
 const buildFilterFieldPath = (condition: FilterCondition): string => {
