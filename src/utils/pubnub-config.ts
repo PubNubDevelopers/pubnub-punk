@@ -21,11 +21,6 @@ export function createPubNubConfig(
     ...overrides,
   };
 
-  // Add optional configurations
-  if (settings.credentials.secretKey) {
-    config.secretKey = settings.credentials.secretKey;
-  }
-
   if (settings.credentials.pamToken) {
     config.authKey = settings.credentials.pamToken;
   }
@@ -97,7 +92,6 @@ export function createConfigHash(config: PubNubConfig, instanceId: string): stri
     userId: config.userId,
     origin: config.origin,
     ssl: config.ssl,
-    secretKey: config.secretKey || '',
     authKey: config.authKey || '',
     instanceId,
   });
@@ -128,7 +122,6 @@ export function areConfigsEquivalent(
     'ssl',
     'logVerbosity',
     'heartbeatInterval',
-    'secretKey',
     'authKey',
   ];
 
@@ -155,10 +148,6 @@ export function getConfigDisplayString(config: PubNubConfig): string {
     `SSL: ${config.ssl ? 'Yes' : 'No'}`,
   ];
 
-  if (config.secretKey) {
-    parts.push('Secret Key: Yes');
-  }
-
   if (config.authKey) {
     parts.push('Auth Token: Yes');
   }
@@ -173,7 +162,6 @@ export function extractConnectionSettings(settings: AppSettings) {
   return {
     publishKey: settings.credentials.publishKey,
     subscribeKey: settings.credentials.subscribeKey,
-    secretKey: settings.credentials.secretKey,
     userId: settings.credentials.userId,
     pamToken: settings.credentials.pamToken,
     origin: settings.environment.origin,
@@ -191,7 +179,6 @@ export function hasPAMCapabilities(settings: AppSettings): boolean {
   return !!(
     settings.credentials.publishKey &&
     settings.credentials.subscribeKey &&
-    settings.credentials.secretKey &&
     !isDemoConfiguration(createPubNubConfig(settings))
   );
 }
@@ -222,7 +209,6 @@ export function createConfigDebugInfo(config: PubNubConfig) {
     ssl: config.ssl,
     logVerbosity: config.logVerbosity,
     heartbeatInterval: config.heartbeatInterval,
-    hasSecretKey: !!config.secretKey,
     hasAuthKey: !!config.authKey,
     isDemoConfig: isDemoConfiguration(config),
   };

@@ -376,12 +376,6 @@ export default function TestConnectionPage() {
                         {context.settings.credentials.userId || 'Not set'}
                       </div>
                     </div>
-                    <div>
-                      <span className="text-gray-500">Secret Key:</span>
-                      <div className="font-mono bg-gray-100 p-1 rounded">
-                        {context.settings.credentials.secretKey ? 'Set' : 'Not set'}
-                      </div>
-                    </div>
                   </div>
                 </div>
 

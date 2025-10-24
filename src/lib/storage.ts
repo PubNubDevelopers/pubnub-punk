@@ -8,7 +8,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   credentials: {
     publishKey: '',
     subscribeKey: '',
-    secretKey: '',
     userId: '',
     pamEnabled: false,
   },

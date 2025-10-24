@@ -11,8 +11,13 @@ export async function generateSignature(
   uri: string,
   queryParams: Record<string, string>,
   body: string,
-  secretKey: string
+  sessionSecretKey: string
 ): Promise<string> {
+  const trimmedSecret = sessionSecretKey.trim();
+  if (!trimmedSecret) {
+    throw new Error('Secret key is required to sign Access Manager requests.');
+  }
+
   // Create the string to sign following PubNub's v3 signature algorithm
   // Format: {method}\n{pub_key}\n{path}\n{query_string}\n{body}
   const sortedParams = Object.keys(queryParams)
@@ -29,7 +34,7 @@ export async function generateSignature(
   ].join('\n');
   
   // Use crypto-js for HMAC-SHA256 (works in all environments)
-  const signature = CryptoJS.HmacSHA256(stringToSign, secretKey);
+  const signature = CryptoJS.HmacSHA256(stringToSign, trimmedSecret);
   const base64Signature = CryptoJS.enc.Base64.stringify(signature);
   
   // Convert to URL-safe Base64 and remove padding
@@ -72,7 +77,7 @@ export function convertPermissionsToBitmask(permissions: any): any {
 export async function generateGrantTokenCurl(
   subscribeKey: string,
   publishKey: string,
-  secretKey: string,
+  sessionSecretKey: string,
   grantRequest: GrantRequest
 ): Promise<string> {
   // Generate current Unix timestamp - PubNub requires this to be within ±60 seconds of NTP time
@@ -133,7 +138,7 @@ export async function generateGrantTokenCurl(
   const body = JSON.stringify(requestBody, null, 2);
   
   // Generate signature for authentication
-  const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, secretKey);
+  const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, sessionSecretKey);
   queryParams.signature = signature;
   
   // Create curl command with proper authentication
@@ -163,7 +168,7 @@ export async function generateGrantTokenCurl(
 export async function generateRevokeTokenCurl(
   subscribeKey: string,
   publishKey: string,
-  secretKey: string,
+  sessionSecretKey: string,
   token: string
 ): Promise<string> {
   // Generate current Unix timestamp - PubNub requires this to be within ±60 seconds of NTP time
@@ -182,7 +187,7 @@ export async function generateRevokeTokenCurl(
   const body = JSON.stringify(requestBody);
   
   // Generate signature for authentication
-  const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, secretKey);
+  const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, sessionSecretKey);
   queryParams.signature = signature;
   
   // Build query string manually to avoid URL encoding the signature

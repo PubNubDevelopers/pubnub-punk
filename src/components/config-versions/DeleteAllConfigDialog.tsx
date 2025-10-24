@@ -117,10 +117,9 @@ export function DeleteAllConfigDialog({
             />
           </div>
 
-          {/* Additional Warning if Secret Key Missing */}
           <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-            <strong>Note:</strong> PubNub operations require a Secret Key. 
-            If no Secret Key is configured, only local storage will be cleared.
+            <strong>Note:</strong> This tool clears locally stored configuration data. 
+            Remote PubNub cleanup steps are currently disabled for safety.
           </div>
         </div>
 

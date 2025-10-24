@@ -31,6 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
 import { storage } from '@/lib/storage';
+import type { AppSettings } from '@/types/settings';
 import {
   DialogFooter,
 } from '@/components/ui/dialog';
@@ -71,6 +72,8 @@ import {
 } from '@/components/access-manager';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
+const loadSettingsWithoutSecret = (): AppSettings => storage.getSettings();
+
 export default function AccessManagerPage() {
   const { toast } = useToast();
   const { setPageSettings, setConfigType } = useConfig();
@@ -80,10 +83,9 @@ export default function AccessManagerPage() {
   const [pubnubReady, setPubnubReady] = useState(false);
   const [pubnub, setPubnub] = useState<any>(null);
   
-  // Get app settings for secret key
-  const [appSettings, setAppSettings] = useState(storage.getSettings());
-  const secretKey = appSettings.credentials.secretKey;
-  
+  // App settings (sans secret key) and ephemeral secret key for this session
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettingsWithoutSecret());
+  const [sessionSecretKey, setSessionSecretKey] = useState('');
   
   // Loading states
   const [isGranting, setIsGranting] = useState(false);
@@ -112,14 +114,20 @@ export default function AccessManagerPage() {
 
   // Helper function to check if PAM operations are available
   const isPamConfigurationValid = useMemo(() => {
-    const currentSettings = storage.getSettings();
-    return pubnubReady && 
-           currentSettings.credentials.secretKey && 
-           currentSettings.credentials.publishKey && 
-           currentSettings.credentials.subscribeKey &&
-           currentSettings.credentials.publishKey !== 'demo' && 
-           currentSettings.credentials.subscribeKey !== 'demo';
-  }, [pubnubReady, appSettings]);
+    const trimmedSecret = sessionSecretKey.trim();
+    const { publishKey, subscribeKey } = settings.credentials;
+    return Boolean(pubnubReady &&
+      trimmedSecret &&
+      publishKey &&
+      subscribeKey &&
+      publishKey !== 'demo' &&
+      subscribeKey !== 'demo');
+  }, [
+    pubnubReady,
+    sessionSecretKey,
+    settings.credentials.publishKey,
+    settings.credentials.subscribeKey,
+  ]);
   
   // Mount check
   useEffect(() => {
@@ -129,19 +137,20 @@ export default function AccessManagerPage() {
   // Set config type for the config service
   useEffect(() => {
     setConfigType('ACCESS_MANAGER');
-    
-    // Initialize page settings
+  }, [setConfigType]);
+
+  useEffect(() => {
     setPageSettings({
       accessManager: {
         tokens: FIELD_DEFINITIONS['accessManager.tokens'].default,
       },
       configForSaving: {
         tokens: FIELD_DEFINITIONS['accessManager.tokens'].default,
-        secretKeyConfigured: !!secretKey,
+        secretKeyConfigured: Boolean(sessionSecretKey.trim()),
         timestamp: new Date().toISOString(),
       }
     });
-  }, [setConfigType, setPageSettings, secretKey]);
+  }, [setPageSettings, sessionSecretKey]);
   
   // Check for PubNub availability on mount and create instance
   useEffect(() => {
@@ -157,15 +166,14 @@ export default function AccessManagerPage() {
         setPubnubReady(true);
         try {
           const pubnubConfig: any = {
-            publishKey: appSettings.credentials.publishKey || 'demo',
-            subscribeKey: appSettings.credentials.subscribeKey || 'demo',
-            userId: appSettings.credentials.userId || 'access-manager-user',
-            secretKey: secretKey || 'demo',
+            publishKey: settings.credentials.publishKey || 'demo',
+            subscribeKey: settings.credentials.subscribeKey || 'demo',
+            userId: settings.credentials.userId || 'access-manager-user',
           };
           
           // Add PAM token if available
-          if (appSettings.credentials.pamToken) {
-            pubnubConfig.authKey = appSettings.credentials.pamToken;
+          if (settings.credentials.pamToken) {
+            pubnubConfig.authKey = settings.credentials.pamToken;
           }
           
           const pubnubInstance = new window.PubNub(pubnubConfig);
@@ -178,30 +186,24 @@ export default function AccessManagerPage() {
     };
     
     checkPubNub();
-  }, [mounted, secretKey, appSettings]);
+  }, [mounted, settings]);
 
-  // Load app settings on mount and when they change
+  // Load app settings on mount (sans secret key)
   useEffect(() => {
-    const settings = storage.getSettings();
-    setAppSettings(settings);
+    setSettings(loadSettingsWithoutSecret());
   }, []);
-
-  // Function to refresh settings (called when needed)
-  const refreshSettings = () => {
-    const settings = storage.getSettings();
-    setAppSettings(settings);
-  };
 
   // Revoke token function
   const revokeToken = useCallback(async () => {
     // Refresh settings to ensure we have the latest configuration
     const currentSettings = storage.getSettings();
-    const currentSecretKey = currentSettings.credentials.secretKey;
+    setSettings(currentSettings);
+    const currentSecretKey = sessionSecretKey.trim();
     
     if (!pubnub || !currentSecretKey || !revokeTokenInput.trim()) {
       toast({
         title: 'Configuration Required',
-        description: 'Please configure your secret key and enter a token to revoke',
+        description: 'Paste your PubNub secret key above and provide a token to revoke.',
         variant: 'destructive',
       });
       return;
@@ -242,7 +244,7 @@ export default function AccessManagerPage() {
     } finally {
       setIsRevoking(false);
     }
-  }, [pubnub, revokeTokenInput, toast]);
+  }, [pubnub, revokeTokenInput, sessionSecretKey, toast, setSettings]);
 
   // Parse token function
   const parseToken = useCallback(async () => {
@@ -290,14 +292,15 @@ export default function AccessManagerPage() {
 
   // Grant token function
   const grantToken = useCallback(async () => {
-    // Refresh settings to ensure we have the latest configuration
+    // Refresh settings (sans secret) and ensure we have the latest configuration
     const currentSettings = storage.getSettings();
-    const currentSecretKey = currentSettings.credentials.secretKey;
+    setSettings(currentSettings);
+    const currentSecretKey = sessionSecretKey.trim();
     
     if (!pubnub || !currentSecretKey) {
       toast({
         title: 'Configuration Required',
-        description: 'Please configure your PubNub keys and secret key in the main settings',
+        description: 'Paste your PubNub secret key above before generating a token.',
         variant: 'destructive',
       });
       return;
@@ -408,7 +411,7 @@ export default function AccessManagerPage() {
     } finally {
       setIsGranting(false);
     }
-  }, [pubnub, grantForm, toast]);
+  }, [pubnub, grantForm, sessionSecretKey, toast, setSettings]);
 
 
 
@@ -426,24 +429,42 @@ export default function AccessManagerPage() {
   return (
     <div className="container mx-auto p-6 max-w-7xl">
 
-      {/* Configuration Warning */}
-      {!secretKey && (
-        <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-4">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 text-orange-600" />
-            <h3 className="font-semibold text-orange-800">Secret Key Required</h3>
+      {/* Secret Key Notice */}
+      <div className="mb-6 space-y-4">
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 mt-0.5 text-orange-600" />
+            <p className="text-sm text-orange-700">
+              Note: You should store your PubNub Secret Key securely and carefully. If you paste it here, it will only be used for transactions on this page; as soon as you navigate away from this page it will be erased. It is not stored in your browser.
+            </p>
           </div>
-          <p className="text-sm text-orange-700 mt-1">
-            To use Access Manager features, please configure your secret key in the main settings.
-          </p>
         </div>
-      )}
+        <div className="space-y-2">
+          <Label htmlFor="access-manager-secret-key" className="text-sm font-medium text-gray-700">
+            Session Secret Key
+          </Label>
+          <Input
+            id="access-manager-secret-key"
+            type="password"
+            placeholder="sec-c-..."
+            value={sessionSecretKey}
+            onChange={(event) => setSessionSecretKey(event.target.value)}
+            autoComplete="off"
+          />
+          {!sessionSecretKey.trim() && (
+            <p className="text-sm text-orange-700 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              Enter your secret key above to enable grant and revoke operations.
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* Demo Keys Warning */}
       {pubnubReady && 
-       appSettings.credentials.publishKey && 
-       appSettings.credentials.subscribeKey && 
-       (appSettings.credentials.publishKey === 'demo' || appSettings.credentials.subscribeKey === 'demo') && (
+       settings.credentials.publishKey && 
+       settings.credentials.subscribeKey && 
+       (settings.credentials.publishKey === 'demo' || settings.credentials.subscribeKey === 'demo') && (
         <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-5 w-5 text-yellow-600" />

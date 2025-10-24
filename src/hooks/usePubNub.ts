@@ -100,11 +100,6 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
         heartbeatInterval: settings.environment.heartbeatInterval,
       };
 
-      // Add optional configurations
-      if (settings.credentials.secretKey) {
-        pubnubConfig.secretKey = settings.credentials.secretKey;
-      }
-
       if (settings.credentials.pamToken) {
         pubnubConfig.authKey = settings.credentials.pamToken;
       }
@@ -218,7 +213,6 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
     const credentialsChanged = 
       currentSettings.credentials.publishKey !== previousSettings.credentials.publishKey ||
       currentSettings.credentials.subscribeKey !== previousSettings.credentials.subscribeKey ||
-      currentSettings.credentials.secretKey !== previousSettings.credentials.secretKey ||
       currentSettings.credentials.userId !== previousSettings.credentials.userId ||
       currentSettings.credentials.pamToken !== previousSettings.credentials.pamToken ||
       currentSettings.credentials.pamEnabled !== previousSettings.credentials.pamEnabled;

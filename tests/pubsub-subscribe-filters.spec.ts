@@ -18,11 +18,6 @@ async function configurePubNubSettings(page: any) {
   await subscribeKeyInput.clear();
   await subscribeKeyInput.fill('sub-c-f18d5abb-122f-4ca0-9031-64e002e0fad0');
   
-  // Configure Secret Key
-  const secretKeyInput = page.getByRole('textbox', { name: 'Secret Key (Optional)' });
-  await secretKeyInput.clear();
-  await secretKeyInput.fill('sec-c-MTc4MGEzMDUtNTU4Ni00MGEwLTgyYjItZDE3MzUxYTkxZjc0');
-  
   // Configure User ID
   const userIdInput = page.getByRole('textbox', { name: 'User ID' });
   await userIdInput.clear();

@@ -101,7 +101,6 @@ export class InstanceRegistry {
     return (
       oldSettings.credentials.publishKey !== newSettings.credentials.publishKey ||
       oldSettings.credentials.subscribeKey !== newSettings.credentials.subscribeKey ||
-      oldSettings.credentials.secretKey !== newSettings.credentials.secretKey ||
       oldSettings.credentials.userId !== newSettings.credentials.userId ||
       oldSettings.credentials.pamToken !== newSettings.credentials.pamToken ||
       oldSettings.environment.origin !== newSettings.environment.origin ||

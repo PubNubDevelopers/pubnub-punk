@@ -530,13 +530,6 @@ export class ConfigurationService {
     try {
       const settings = storage.getSettings();
       
-      if (!settings.credentials.secretKey) {
-        return {
-          success: false,
-          error: 'Secret key required for deletion'
-        };
-      }
-
       if (!settings.storage.autoSaveToPubNub || !settings.credentials.publishKey || !settings.credentials.subscribeKey) {
         // Just remove from local storage
         this.removeVersionLocally(configType, timetoken);
@@ -653,14 +646,6 @@ export class ConfigurationService {
   async deleteAllConfigurationData(): Promise<{ success: boolean; error?: string; details?: any }> {
     try {
       const settings = storage.getSettings();
-      
-      if (!settings.credentials.secretKey) {
-        return {
-          success: false,
-          error: 'Secret key required for deletion operations'
-        };
-      }
-
       const results = {
         localStorageCleared: false,
         appContextDeleted: false,

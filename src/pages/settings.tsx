@@ -21,7 +21,6 @@ import { useConfig } from '@/contexts/config-context';
 const settingsSchema = z.object({
   publishKey: z.string().min(1, 'Publish key is required'),
   subscribeKey: z.string().min(1, 'Subscribe key is required'),
-  secretKey: z.string().optional(),
   userId: z.string().min(1, 'User ID is required'),
   pamToken: z.string().optional(),
   pamEnabled: z.boolean(),
@@ -51,7 +50,6 @@ type SettingsFormData = z.infer<typeof settingsSchema>;
 const FIELD_DEFINITIONS = {
   publishKey: { section: 'credentials', type: 'string', default: '' },
   subscribeKey: { section: 'credentials', type: 'string', default: '' },
-  secretKey: { section: 'credentials', type: 'string', default: '' },
   userId: { section: 'credentials', type: 'string', default: '' },
   pamToken: { section: 'credentials', type: 'string', default: '' },
   pamEnabled: { section: 'credentials', type: 'boolean', default: false },
@@ -68,6 +66,7 @@ const FIELD_DEFINITIONS = {
 
 // Current config version
 const CURRENT_CONFIG_VERSION = 1;
+const DEFAULT_USER_ID = 'pubnub-devtools-user';
 
 // Migration functions for version compatibility
 const CONFIG_MIGRATIONS: Record<number, (config: any) => any> = {
@@ -199,7 +198,7 @@ const createDefaultPageSettings = () => {
 };
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<AppSettings>(storage.getSettings());
+  const [settings, setSettings] = useState<AppSettings>(() => storage.getSettings());
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false);
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -215,7 +214,6 @@ export default function SettingsPage() {
     const currentFormData = {
       publishKey: settings.credentials.publishKey,
       subscribeKey: settings.credentials.subscribeKey,
-      secretKey: settings.credentials.secretKey || '',
       userId: settings.credentials.userId,
       pamToken: settings.credentials.pamToken || '',
       pamEnabled: settings.credentials.pamEnabled ?? false,
@@ -263,10 +261,11 @@ export default function SettingsPage() {
 
   const form = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
+    mode: 'onChange',
+    reValidateMode: 'onChange',
     defaultValues: {
       publishKey: settings.credentials.publishKey,
       subscribeKey: settings.credentials.subscribeKey,
-      secretKey: settings.credentials.secretKey || '',
       userId: settings.credentials.userId,
       pamToken: settings.credentials.pamToken || '',
       pamEnabled: settings.credentials.pamEnabled ?? false,
@@ -331,7 +330,6 @@ export default function SettingsPage() {
   }, [
     watchedValues.publishKey,
     watchedValues.subscribeKey,
-    watchedValues.secretKey,
     watchedValues.userId,
     watchedValues.pamToken,
     watchedValues.pamEnabled,
@@ -354,13 +352,26 @@ export default function SettingsPage() {
 
   // Auto-save functionality - save settings whenever form values change
   useEffect(() => {
+    const publishKey = (watchedValues.publishKey || '').trim();
+    const subscribeKey = (watchedValues.subscribeKey || '').trim();
+    const trimmedUserId = (watchedValues.userId || '').trim();
+    const pamToken = (watchedValues.pamToken || '').trim();
+    const hasRequiredKeys = Boolean(publishKey) && Boolean(subscribeKey);
+    const normalizedUserId = trimmedUserId || (hasRequiredKeys ? DEFAULT_USER_ID : '');
+
+    if (hasRequiredKeys && !trimmedUserId && form.getValues('userId') !== DEFAULT_USER_ID) {
+      form.setValue('userId', DEFAULT_USER_ID, {
+        shouldDirty: false,
+        shouldTouch: true,
+      });
+    }
+
     const newSettings: AppSettings = {
       credentials: {
-        publishKey: watchedValues.publishKey || '',
-        subscribeKey: watchedValues.subscribeKey || '',
-        secretKey: watchedValues.secretKey || '',
-        userId: watchedValues.userId || '',
-        pamToken: watchedValues.pamToken || '',
+        publishKey,
+        subscribeKey,
+        userId: normalizedUserId,
+        pamToken,
         pamEnabled: watchedValues.pamEnabled ?? false,
       },
       environment: {
@@ -380,8 +391,12 @@ export default function SettingsPage() {
       },
     };
 
-    // Only save if the form is valid and values have actually changed
-    if (form.formState.isValid && JSON.stringify(newSettings) !== JSON.stringify(settings)) {
+    if (!hasRequiredKeys) {
+      return;
+    }
+
+    // Only save when credentials are present and values have actually changed
+    if (JSON.stringify(newSettings) !== JSON.stringify(settings)) {
       storage.saveSettings(newSettings);
       setSettings(newSettings);
       console.log('🔄 Auto-saved settings:', newSettings);
@@ -389,7 +404,6 @@ export default function SettingsPage() {
   }, [
     watchedValues.publishKey,
     watchedValues.subscribeKey,
-    watchedValues.secretKey,
     watchedValues.userId,
     watchedValues.pamToken,
     watchedValues.pamEnabled,
@@ -402,8 +416,8 @@ export default function SettingsPage() {
     watchedValues.autoSaveToPubNub,
     watchedValues.saveVersionHistory,
     watchedValues.maxVersionsToKeep,
-    form.formState.isValid,
     settings,
+    form,
   ]);
 
   // Set config type on mount
@@ -442,7 +456,6 @@ export default function SettingsPage() {
         hasKeys: {
           publishKey: !!settings.credentials.publishKey,
           subscribeKey: !!settings.credentials.subscribeKey,
-          secretKey: !!settings.credentials.secretKey
         }
       };
 
@@ -472,7 +485,6 @@ export default function SettingsPage() {
     form.reset({
       publishKey: restoredConfig.credentials.publishKey,
       subscribeKey: restoredConfig.credentials.subscribeKey,
-      secretKey: restoredConfig.credentials.secretKey || '',
       userId: restoredConfig.credentials.userId,
       pamToken: restoredConfig.credentials.pamToken || '',
       pamEnabled: restoredConfig.credentials.pamEnabled ?? false,
@@ -577,19 +589,6 @@ export default function SettingsPage() {
                         <FormLabel>Subscribe Key</FormLabel>
                         <FormControl>
                           <Input placeholder="sub-c-..." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="secretKey"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Secret Key (Optional)</FormLabel>
-                        <FormControl>
-                          <Input type="password" placeholder="sec-c-..." {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

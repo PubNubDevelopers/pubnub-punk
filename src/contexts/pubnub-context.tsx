@@ -117,10 +117,6 @@ export function PubNubProvider({ children }: PubNubProviderProps): JSX.Element {
       };
 
       // Add optional configurations
-      if (currentSettings.credentials.secretKey) {
-        pubnubConfig.secretKey = currentSettings.credentials.secretKey;
-      }
-
       if (currentSettings.credentials.pamToken) {
         pubnubConfig.authKey = currentSettings.credentials.pamToken;
       }
@@ -248,7 +244,6 @@ export function PubNubProvider({ children }: PubNubProviderProps): JSX.Element {
     // Check if we need to refresh connections due to credential changes
     if (previousSettings.credentials.publishKey !== settings.credentials.publishKey ||
         previousSettings.credentials.subscribeKey !== settings.credentials.subscribeKey ||
-        previousSettings.credentials.secretKey !== settings.credentials.secretKey ||
         previousSettings.credentials.pamToken !== settings.credentials.pamToken ||
         previousSettings.environment.origin !== settings.environment.origin ||
         previousSettings.environment.customOrigin !== settings.environment.customOrigin) {

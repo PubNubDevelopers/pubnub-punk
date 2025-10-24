@@ -1,7 +1,6 @@
 export interface PubNubCredentials {
   publishKey: string;
   subscribeKey: string;
-  secretKey?: string;
   userId: string;
   pamToken?: string;
   pamEnabled: boolean;
