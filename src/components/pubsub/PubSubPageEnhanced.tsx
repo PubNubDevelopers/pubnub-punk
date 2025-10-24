@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { MessageCircle, Settings, HelpCircle, RotateCcw, Filter as FilterIcon, ActivitySquare, Users, PanelRightOpen, History, ListTree } from 'lucide-react';
+import { MessageCircle, RotateCcw, Filter as FilterIcon, ActivitySquare, Users, PanelRightOpen, History, ListTree, ToggleRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -106,7 +106,6 @@ export default function PubSubPageEnhanced() {
   const [showRawMessageData, setShowRawMessageData] = useState(false);
   const [hasAutoConnected, setHasAutoConnected] = useState(false);
   const [hasSentWelcomeMessage, setHasSentWelcomeMessage] = useState(false);
-  const [quickStartDismissed, setQuickStartDismissed] = useState(false);
   const [isConfigDrawerOpen, setIsConfigDrawerOpen] = useState(false);
   const [configDrawerInitialTab, setConfigDrawerInitialTab] = useState<'channels' | 'groups' | 'filters' | 'advanced'>('channels');
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -421,18 +420,6 @@ export default function PubSubPageEnhanced() {
   }, [currentPageSettings, setConfigPageSettings, saveConfig, isConfigLoaded]);
 
   useEffect(() => {
-    const trimmedChannels = subscribeData.channels?.trim() || '';
-    const trimmedGroups = subscribeData.channelGroups?.trim() || '';
-    if (
-      trimmedChannels !== DEFAULT_CHANNEL ||
-      trimmedGroups.length > 0 ||
-      validFilterCount > 0
-    ) {
-      setQuickStartDismissed(true);
-    }
-  }, [subscribeData.channels, subscribeData.channelGroups, validFilterCount, DEFAULT_CHANNEL]);
-
-  useEffect(() => {
     if (!isConfigLoaded || hasAutoConnected || isSubscribed) {
       return;
     }
@@ -544,9 +531,6 @@ export default function PubSubPageEnhanced() {
         [field]: value
       }));
     }
-    if (field === 'channels' || field === 'channelGroups') {
-      setQuickStartDismissed(true);
-    }
   };
 
   const handleSubscribe = useCallback(async () => {
@@ -568,7 +552,6 @@ export default function PubSubPageEnhanced() {
       title: "Unsubscribed",
       description: "Disconnected from all channels",
     });
-    setQuickStartDismissed(true);
   }, [unsubscribe, toast]);
 
   // Auto-unsubscribe when subscription configuration changes
@@ -603,7 +586,6 @@ export default function PubSubPageEnhanced() {
 
       if (hasChannelChanges || hasFilterChanges || hasPresenceModeChange) {
         setNeedsReconnect(true);
-        setQuickStartDismissed(true);
         unsubscribe();
         toast({
           title: "Configuration Changed",
@@ -627,7 +609,6 @@ export default function PubSubPageEnhanced() {
     const defaultSettings = createDefaultPageSettings();
     restoreFromConfig(defaultSettings);
     storage.removeItem(STORAGE_KEYS.CONFIG);
-    setQuickStartDismissed(false);
     setNeedsReconnect(false);
     toast({
       title: "Config Reset",
@@ -654,47 +635,6 @@ export default function PubSubPageEnhanced() {
         .filter(Boolean),
     [subscribeData.channelGroups]
   );
-
-  const showQuickStart = useMemo(() => {
-    if (quickStartDismissed || !isConfigLoaded || needsReconnect) {
-      return false;
-    }
-    const trimmedChannels = subscribeData.channels?.trim() || '';
-    const trimmedGroups = subscribeData.channelGroups?.trim() || '';
-    const hasCustomChannels = trimmedChannels !== DEFAULT_CHANNEL;
-    const hasGroups = trimmedGroups.length > 0;
-    const hasFilters = validFilterCount > 0;
-    return !hasCustomChannels && !hasGroups && !hasFilters;
-  }, [
-    quickStartDismissed,
-    isConfigLoaded,
-    needsReconnect,
-    subscribeData.channels,
-    subscribeData.channelGroups,
-    DEFAULT_CHANNEL,
-    validFilterCount,
-  ]);
-
-  const handleSendQuickStartMessage = useCallback(async () => {
-    const quickStartMessage: PublishFormData = {
-      ...publishData,
-      channel: primaryChannel,
-      message: JSON.stringify({
-        text: 'Quick start test message from PubNub Developer Tools',
-        sentAt: new Date().toISOString(),
-        hint: 'Try editing channels or open Advanced settings for more options.',
-      }),
-    };
-
-    const didPublish = await publish(quickStartMessage);
-    if (didPublish) {
-      toast({
-        title: "Test Message Sent",
-        description: `Sent to ${primaryChannel}`,
-      });
-      setQuickStartDismissed(true);
-    }
-  }, [publish, publishData, primaryChannel, toast]);
 
   const handleReconnectNow = useCallback(async () => {
     const didSubscribe = await subscribe();
@@ -850,7 +790,6 @@ export default function PubSubPageEnhanced() {
       { label: 'Message Auto-scroll', value: boolLabel(autoScroll, 'On', 'Off') },
       { label: 'Presence Auto-scroll', value: boolLabel(presenceAutoScroll, 'On', 'Off') },
       { label: 'Needs Reconnect', value: boolLabel(needsReconnect), tone: needsReconnect ? 'warning' : 'success' },
-      { label: 'Quick Start Dismissed', value: boolLabel(quickStartDismissed) },
       { label: 'Has Auto Connected', value: boolLabel(hasAutoConnected) },
       { label: 'Welcome Message Sent', value: boolLabel(hasSentWelcomeMessage) },
       { label: 'Raw Message View', value: boolLabel(showRawMessageData) },
@@ -862,7 +801,6 @@ export default function PubSubPageEnhanced() {
     autoScroll,
     presenceAutoScroll,
     needsReconnect,
-    quickStartDismissed,
     hasAutoConnected,
     hasSentWelcomeMessage,
     showRawMessageData,
@@ -872,48 +810,7 @@ export default function PubSubPageEnhanced() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <MessageCircle className="text-white h-4 w-4" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Real-time Pub/Sub Console</h1>
-            <p className="text-gray-600">
-              Configure channels, monitor messages, and publish quickly.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button variant="ghost" size="sm" onClick={handleResetConfig}>
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Reset
-          </Button>
-          <Button variant="ghost" size="sm">
-            <HelpCircle className="h-4 w-4 mr-2" />
-            Help
-          </Button>
-          <Button variant="ghost" size="sm">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </Button>
-        </div>
-      </div>
-
       <div className="space-y-6">
-        {showQuickStart && (
-          <QuickStartBar
-            channelLabel={primaryChannel}
-            isConnected={isSubscribed}
-            onDismiss={() => setQuickStartDismissed(true)}
-            onSendTest={handleSendQuickStartMessage}
-            onConfigure={() => {
-              setQuickStartDismissed(true);
-              handleOpenConfigDrawer();
-            }}
-          />
-        )}
-
         <div className="space-y-6 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
           <div className="space-y-4">
             <SubscriptionSummaryCard
@@ -929,6 +826,7 @@ export default function PubSubPageEnhanced() {
               onConnect={handleSubscribe}
               onDisconnect={handleUnsubscribe}
               onConfigure={(tab) => handleOpenConfigDrawer(tab)}
+              onReset={handleResetConfig}
             />
 
             {needsReconnect && (
@@ -969,10 +867,7 @@ export default function PubSubPageEnhanced() {
                 handleSubscribeInputChange('receivePresenceEvents', checked)
               }
               onShowRawMessageDataChange={setShowRawMessageData}
-              onEmptyConnectCta={() => {
-                setQuickStartDismissed(true);
-                handleOpenConfigDrawer();
-              }}
+              onEmptyConnectCta={() => handleOpenConfigDrawer()}
             />
           </div>
 
@@ -983,7 +878,6 @@ export default function PubSubPageEnhanced() {
               isSubscribed={isSubscribed}
               onPublishDataChange={handlePublishInputChange}
               onPublish={handlePublish}
-              onAfterPublish={() => setQuickStartDismissed(true)}
             />
           </div>
         </div>
@@ -1069,6 +963,7 @@ interface SubscriptionSummaryCardProps {
   onConnect?: () => void | Promise<void> | Promise<boolean>;
   onDisconnect?: () => void | Promise<void>;
   onConfigure: (tab?: 'channels' | 'groups' | 'filters' | 'advanced') => void;
+  onReset: () => void;
 }
 
 function SubscriptionSummaryCard({
@@ -1084,6 +979,7 @@ function SubscriptionSummaryCard({
   onConnect,
   onDisconnect,
   onConfigure,
+  onReset,
 }: SubscriptionSummaryCardProps) {
   const buildDisplayItems = (items: string[], maxCount: number, moreLabel: (count: number) => string) => {
     if (items.length <= maxCount) {
@@ -1096,92 +992,50 @@ function SubscriptionSummaryCard({
   const channelItems = buildDisplayItems(channels, 4, (count) => `+${count} more`);
   const groupItems = buildDisplayItems(channelGroups, 4, (count) => `+${count} more`);
 
-  const summariseFilterField = (filter: FilterCondition) => {
-    const field = filter.field.trim();
-    if (!field) {
-      return filter.target;
-    }
-
-    if (
-      field.startsWith('data.') ||
-      field.startsWith('meta.') ||
-      field.startsWith(`${filter.target}.`)
-    ) {
-      return field;
-    }
-
-    if (field.startsWith('[')) {
-      return `${filter.target}${field}`;
-    }
-
-    return `${filter.target}.${field}`;
-  };
-
-  const summariseFilterValue = (filter: FilterCondition) => {
-    if (filter.type === 'boolean') {
-      return filter.value === 'false' ? 'false' : 'true';
-    }
-    if (filter.type === 'number') {
-      return filter.value || '0';
-    }
-    if (filter.type === 'expression') {
-      return filter.value || '';
-    }
-    return filter.value ? `'${filter.value}'` : '';
-  };
-
-  const formatFilterBadge = (filter: FilterCondition) => {
-    const fieldPath = summariseFilterField(filter);
-    const operator = filter.operator === 'NOT_CONTAINS' ? 'NOT CONTAINS' : filter.operator;
-    const value = summariseFilterValue(filter);
-    return value ? `${fieldPath} ${operator} ${value}` : `${fieldPath} ${operator}`;
-  };
-
-  const filterBadgeItems = buildDisplayItems(
-    filters.map(formatFilterBadge),
-    3,
-    (count) => `+${count} more`
-  );
   const filterExpression =
     filters.length > 0 ? generateFilterExpression(filters, filterLogic) : 'No filters active';
-
-  const presenceBadges = [
-    <Badge
-      key="presence-heartbeat"
-      variant={withPresence ? 'secondary' : 'outline'}
-      className="font-normal"
-    >
-      Heartbeat {withPresence ? 'enabled' : 'off'}
-    </Badge>,
-    <Badge
-      key="presence-events"
-      variant={receivePresenceEvents ? 'secondary' : 'outline'}
-      className="font-normal"
-    >
-      Events {receivePresenceEvents ? 'streaming' : 'off'}
-    </Badge>,
-  ];
+  const hasFilters = filters.length > 0;
 
   const connectionLabel = isSubscribed ? 'Connected' : 'Disconnected';
-
-  const renderBadges = (items: string[], emptyLabel: string, keyPrefix: string) => {
-    if (items.length === 0) {
-      return (
-        <Badge key={`${keyPrefix}-empty`} variant="outline" className="font-normal bg-white">
-          {emptyLabel}
+  const channelChips = channelItems.length
+    ? channelItems.map((item, index) => (
+        <Badge
+          key={`channel-${index}-${item}`}
+          variant="outline"
+          className="rounded-full border-green-200 bg-green-100 text-green-700 font-medium"
+        >
+          {item}
         </Badge>
-      );
-    }
-    return items.map((item, index) => (
-      <Badge
-        key={`${keyPrefix}-${index}-${item}`}
-        variant="outline"
-        className="font-normal bg-white"
-      >
-        {item}
-      </Badge>
-    ));
-  };
+      ))
+    : [
+        <Badge
+          key="channel-empty"
+          variant="outline"
+          className="rounded-full border-gray-200 bg-white text-gray-500"
+        >
+          No channels
+        </Badge>,
+      ];
+
+  const groupChips = groupItems.length
+    ? groupItems.map((item, index) => (
+        <Badge
+          key={`group-${index}-${item}`}
+          variant="outline"
+          className="rounded-full border-blue-200 bg-blue-100 text-blue-700 font-medium"
+        >
+          {item}
+        </Badge>
+      ))
+    : [
+        <Badge
+          key="group-empty"
+          variant="outline"
+          className="rounded-full border-gray-200 bg-white text-gray-500"
+        >
+          No groups
+        </Badge>,
+      ];
 
   const handleConnectionClick = () => {
     if (isSubscribed) {
@@ -1193,31 +1047,46 @@ function SubscriptionSummaryCard({
 
   return (
     <Card className="h-full">
-      <CardHeader className="pb-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <ListTree className="h-5 w-5 text-purple-600" />
-              Subscription Overview
-            </CardTitle>
-            <p className="text-sm text-gray-500">
-              Snapshot of channels, groups, filters, and presence configuration.
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-2 sm:items-end">
-            <div className="flex flex-wrap items-center gap-2">
+      <CardHeader className="pb-0">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <CardTitle className="text-lg flex items-start gap-3">
+              <span className="flex items-center gap-2">
+                <ListTree className="h-5 w-5 text-purple-600" />
+                Channel Subscriptions
+              </span>
               <Badge
                 variant="outline"
-                className={`font-normal border ${isSubscribed ? 'border-green-200 bg-green-100 text-green-700' : 'border-red-200 bg-red-100 text-red-700'}`}
+                className={`self-start font-normal border ${isSubscribed ? 'border-green-200 bg-green-100 text-green-700' : 'border-red-200 bg-red-100 text-red-700'}`}
               >
                 {connectionLabel}
               </Badge>
-              {needsReconnect && (
-                <Badge variant="destructive" className="font-normal">
-                  Reconnect required
-                </Badge>
+            </CardTitle>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Channels</span>
+                <div className="flex flex-wrap gap-2">{channelChips}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Groups</span>
+                <div className="flex flex-wrap gap-2">{groupChips}</div>
+              </div>
+              {hasFilters && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge className="flex items-center gap-1 rounded-full border-purple-200 bg-purple-100 text-purple-700 font-medium">
+                      <ToggleRight className="h-3.5 w-3.5" />
+                      Filter
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs">
+                    {filterExpression}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </div>
+          </div>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={handleConnectionClick}>
                 {isSubscribed ? 'Disconnect' : 'Connect'}
@@ -1226,34 +1095,19 @@ function SubscriptionSummaryCard({
                 Configure
               </Button>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-2 text-gray-500 hover:text-gray-700"
+              onClick={onReset}
+            >
+              <span>Reset</span>
+              <RotateCcw className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Channels</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {renderBadges(channelItems, 'No channels', 'channel')}
-          </div>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Channel Groups</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {renderBadges(groupItems, 'None', 'group')}
-          </div>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Filters</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {renderBadges(filterBadgeItems, 'None', 'filter')}
-          </div>
-          <p className="mt-2 text-sm text-gray-600 break-words">{filterExpression}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Presence</p>
-          <div className="mt-2 flex flex-wrap gap-2">{presenceBadges}</div>
-        </div>
-      </CardContent>
+      <CardContent className="pt-0 pb-0" />
     </Card>
   );
 }
@@ -1304,36 +1158,6 @@ function FloatingToolbar({
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left">Publish log</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="icon"
-            variant="secondary"
-            className="shadow-md"
-            onClick={onOpenFilters}
-            aria-label="Open filters"
-          >
-            <FilterIcon className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">Configure filters</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="icon"
-            variant={presenceEnabled ? 'default' : 'secondary'}
-            className="shadow-md"
-            onClick={onTogglePresence}
-            aria-label={presenceEnabled ? 'Disable presence events' : 'Enable presence events'}
-          >
-            <Users className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">
-          {presenceEnabled ? 'Disable presence events' : 'Enable presence events'}
-        </TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -1624,42 +1448,5 @@ function PublishLogOverlay({
         </div>
       </SheetContent>
     </Sheet>
-  );
-}
-
-interface QuickStartBarProps {
-  channelLabel: string;
-  isConnected: boolean;
-  onSendTest: () => void;
-  onConfigure: () => void;
-  onDismiss: () => void;
-}
-
-function QuickStartBar({ channelLabel, isConnected, onSendTest, onConfigure, onDismiss }: QuickStartBarProps) {
-  return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">Quick start</span>
-          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-            {isConnected ? `Connected to ${channelLabel}` : `Ready to connect to ${channelLabel}`}
-          </Badge>
-          <span className="text-blue-800">
-            Send a test message or configure channels to personalize your stream.
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={onSendTest} disabled={!isConnected}>
-            Send test message
-          </Button>
-          <Button variant="outline" size="sm" onClick={onConfigure}>
-            Change channels
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onDismiss}>
-            Dismiss
-          </Button>
-        </div>
-      </div>
-    </div>
   );
 }
