@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { storage } from '@/lib/storage';
 import { AppSettings } from '@/types/settings';
 import { InstanceRegistry } from '@/lib/instance-registry';
+import { ensurePubNubSdk } from '@/lib/sdk-loader';
 
 export interface PubNubHookOptions {
   userId?: string;
@@ -130,29 +131,20 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
   }, [instanceId, customUserId, onConnectionError]);
 
   const initializePubNub = useCallback(async () => {
-    if (typeof window === 'undefined' || !window.PubNub) {
-      if (attemptsRef.current < maxAttempts) {
-        attemptsRef.current++;
-        setTimeout(initializePubNub, 100);
-      } else {
-        const error = 'PubNub SDK not available after maximum attempts';
-        setConnectionError(error);
-        onConnectionError?.(error);
-      }
-      return;
-    }
-
-    setIsReady(true);
-    
     try {
       const settings = storage.getSettings();
+      await ensurePubNubSdk(settings.sdkVersion);
+
+      if (typeof window === 'undefined' || !window.PubNub) {
+        throw new Error('PubNub SDK not available after loading');
+      }
+
+      setIsReady(true);
       settingsRef.current = settings;
-      
+
       const instance = createPubNubInstance(settings);
       if (instance) {
         setPubnub(instance);
-        
-        // Validate connection
         await validateConnection(instance);
       }
     } catch (error) {
@@ -160,6 +152,11 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
       const errorMessage = error instanceof Error ? error.message : 'Failed to initialize PubNub';
       setConnectionError(errorMessage);
       onConnectionError?.(errorMessage);
+
+      if (attemptsRef.current < maxAttempts) {
+        attemptsRef.current++;
+        setTimeout(initializePubNub, 200);
+      }
     }
   }, [createPubNubInstance, validateConnection, onConnectionError]);
 
@@ -180,9 +177,11 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
     
     // Create new instance
     const settings = storage.getSettings();
+    await ensurePubNubSdk(settings.sdkVersion);
     const newInstance = createPubNubInstance(settings);
     if (newInstance) {
       setPubnub(newInstance);
+      settingsRef.current = settings;
       await validateConnection(newInstance);
     }
   }, [instanceId, customUserId, pubnub, clearError, createPubNubInstance, validateConnection]);
@@ -216,16 +215,23 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
       currentSettings.credentials.userId !== previousSettings.credentials.userId ||
       currentSettings.credentials.pamToken !== previousSettings.credentials.pamToken ||
       currentSettings.credentials.pamEnabled !== previousSettings.credentials.pamEnabled;
-    
+
     const environmentChanged = 
       currentSettings.environment.origin !== previousSettings.environment.origin ||
       currentSettings.environment.customOrigin !== previousSettings.environment.customOrigin ||
       currentSettings.environment.ssl !== previousSettings.environment.ssl ||
       currentSettings.environment.logVerbosity !== previousSettings.environment.logVerbosity ||
       currentSettings.environment.heartbeatInterval !== previousSettings.environment.heartbeatInterval;
-    
-    if (credentialsChanged || environmentChanged) {
+    const sdkChanged = currentSettings.sdkVersion !== previousSettings.sdkVersion;
+
+    if (credentialsChanged || environmentChanged || sdkChanged) {
       console.log(`🔧 Settings changed for ${instanceId}, reconnecting...`);
+
+      if (previousSettings) {
+        const previousKey = instanceRegistry.generateKey(instanceId, previousSettings);
+        instanceRegistry.cleanup(previousKey);
+      }
+
       reconnect();
     }
   }, [instanceId, reconnect]);

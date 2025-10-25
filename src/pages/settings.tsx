@@ -17,6 +17,8 @@ import { configService } from '@/lib/config-service';
 import { VersionHistoryPanel } from '@/components/config-versions/VersionHistoryPanel';
 import { DeleteAllConfigDialog } from '@/components/config-versions/DeleteAllConfigDialog';
 import { useConfig } from '@/contexts/config-context';
+import { usePubNubContext } from '@/contexts/pubnub-context';
+import { getSdkVersions, type SdkVersionInfo } from '@/lib/sdk-loader';
 
 const settingsSchema = z.object({
   publishKey: z.string().min(1, 'Publish key is required'),
@@ -33,6 +35,7 @@ const settingsSchema = z.object({
   autoSaveToPubNub: z.boolean(),
   saveVersionHistory: z.boolean(),
   maxVersionsToKeep: z.number().min(1).max(1000),
+  sdkVersion: z.string().min(1, 'SDK version is required'),
 }).refine((data) => {
   // If PAM is enabled, PAM token is required
   if (data.pamEnabled && (!data.pamToken || data.pamToken.trim() === '')) {
@@ -62,6 +65,7 @@ const FIELD_DEFINITIONS = {
   autoSaveToPubNub: { section: 'storage', type: 'boolean', default: true },
   saveVersionHistory: { section: 'storage', type: 'boolean', default: true },
   maxVersionsToKeep: { section: 'storage', type: 'number', default: 50 },
+  sdkVersion: { section: 'sdk', type: 'string', default: '9.6.1' },
 } as const;
 
 // Current config version
@@ -187,7 +191,7 @@ const migrateConfig = (config: any): any => {
 
 // Create default config structure
 const createDefaultPageSettings = () => {
-  const defaultSettings: any = { credentials: {}, environment: {}, storage: {} };
+  const defaultSettings: any = { credentials: {}, environment: {}, storage: {}, sdk: {} };
   
   Object.entries(FIELD_DEFINITIONS).forEach(([fieldName, definition]) => {
     setNestedValue(defaultSettings, `${definition.section}.${fieldName}`, definition.default);
@@ -204,6 +208,36 @@ export default function SettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
   const { setPageSettings: setConfigPageSettings, setConfigType } = useConfig();
+  const { updateSettings: updatePubNubSettings } = usePubNubContext();
+  const [sdkVersions, setSdkVersions] = useState<SdkVersionInfo[]>([]);
+  const [sdkVersionsLoading, setSdkVersionsLoading] = useState(true);
+  const [sdkVersionsError, setSdkVersionsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSdkVersionsLoading(true);
+    getSdkVersions()
+      .then((list) => {
+        if (!cancelled) {
+          setSdkVersions(list);
+          setSdkVersionsError(null);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load SDK versions manifest:', error);
+        if (!cancelled) {
+          setSdkVersionsError('Unable to load SDK version list');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSdkVersionsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Schema-driven page settings - auto-synced with form
   const [pageSettings, setPageSettings] = useState(() => {
@@ -226,6 +260,7 @@ export default function SettingsPage() {
       autoSaveToPubNub: settings.storage.autoSaveToPubNub ?? true,
       saveVersionHistory: settings.storage.saveVersionHistory ?? true,
       maxVersionsToKeep: settings.storage.maxVersionsToKeep || 50,
+      sdkVersion: settings.sdkVersion || '9.6.1',
     };
     const initialPageSettings = formDataToPageSettings(currentFormData);
     return deepMerge(defaultSettings, initialPageSettings);
@@ -278,8 +313,23 @@ export default function SettingsPage() {
       autoSaveToPubNub: settings.storage.autoSaveToPubNub ?? true,
       saveVersionHistory: settings.storage.saveVersionHistory ?? true,
       maxVersionsToKeep: settings.storage.maxVersionsToKeep || 50,
+      sdkVersion: settings.sdkVersion || '9.6.1',
     },
   });
+
+  useEffect(() => {
+    if (sdkVersionsLoading || sdkVersions.length === 0) {
+      return;
+    }
+    const currentValue = form.getValues('sdkVersion');
+    const exists = sdkVersions.some((entry) => entry.version === currentValue);
+    if (!exists) {
+      form.setValue('sdkVersion', sdkVersions[0].version, {
+        shouldDirty: true,
+        shouldTouch: true,
+      });
+    }
+  }, [sdkVersionsLoading, sdkVersions, form]);
 
   // Auto-load latest configuration when keys are populated - DISABLED
   // const loadLatestConfiguration = async () => {
@@ -342,6 +392,7 @@ export default function SettingsPage() {
     watchedValues.autoSaveToPubNub,
     watchedValues.saveVersionHistory,
     watchedValues.maxVersionsToKeep,
+    watchedValues.sdkVersion,
   ]);
   
   useEffect(() => {
@@ -389,6 +440,7 @@ export default function SettingsPage() {
         saveVersionHistory: watchedValues.saveVersionHistory ?? true,
         maxVersionsToKeep: watchedValues.maxVersionsToKeep || 50,
       },
+      sdkVersion: watchedValues.sdkVersion || '9.6.1',
     };
 
     if (!hasRequiredKeys) {
@@ -397,8 +449,8 @@ export default function SettingsPage() {
 
     // Only save when credentials are present and values have actually changed
     if (JSON.stringify(newSettings) !== JSON.stringify(settings)) {
-      storage.saveSettings(newSettings);
       setSettings(newSettings);
+      updatePubNubSettings(newSettings);
       console.log('🔄 Auto-saved settings:', newSettings);
     }
   }, [
@@ -416,8 +468,10 @@ export default function SettingsPage() {
     watchedValues.autoSaveToPubNub,
     watchedValues.saveVersionHistory,
     watchedValues.maxVersionsToKeep,
+    watchedValues.sdkVersion,
     settings,
     form,
+    updatePubNubSettings,
   ]);
 
   // Set config type on mount
@@ -457,6 +511,8 @@ export default function SettingsPage() {
           publishKey: !!settings.credentials.publishKey,
           subscribeKey: !!settings.credentials.subscribeKey,
         }
+        ,
+        sdkVersion: settings.sdkVersion,
       };
 
       // Simulate publishing to CONFIG_PN_DEVTOOLS channel
@@ -497,11 +553,12 @@ export default function SettingsPage() {
       autoSaveToPubNub: restoredConfig.storage.autoSaveToPubNub,
       saveVersionHistory: restoredConfig.storage.saveVersionHistory ?? true,
       maxVersionsToKeep: restoredConfig.storage.maxVersionsToKeep || 50,
+      sdkVersion: restoredConfig.sdkVersion || '9.6.1',
     });
-    
+
     // Update local state
     setSettings(restoredConfig);
-    storage.saveSettings(restoredConfig);
+    updatePubNubSettings(restoredConfig);
   };
 
   const handleDeleteAllConfig = async () => {
@@ -593,6 +650,44 @@ export default function SettingsPage() {
                         <FormMessage />
                       </FormItem>
                     )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="sdkVersion"
+                    render={({ field }) => {
+                      const versionsToDisplay = (sdkVersions.length > 0 ? sdkVersions : [{ version: field.value || '9.6.1', cdnUrl: '', releaseNotes: '' }]).sort((a, b) => compareVersionsDesc(a.version, b.version));
+                      const selectedInfo = versionsToDisplay.find((entry) => entry.version === field.value);
+                      return (
+                        <FormItem>
+                          <FormLabel>PubNub JS SDK Version</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value} disabled={sdkVersionsLoading && versionsToDisplay.length <= 1}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select SDK version" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {versionsToDisplay.map((entry) => (
+                                <SelectItem key={entry.version} value={entry.version}>
+                                  {entry.version}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {sdkVersionsError && (
+                            <FormDescription className="text-xs text-red-600">
+                              {sdkVersionsError}
+                            </FormDescription>
+                          )}
+                          {selectedInfo?.releaseNotes && (
+                            <FormDescription className="text-xs text-gray-500">
+                              {selectedInfo.releaseNotes}
+                            </FormDescription>
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
                   <FormField
                     control={form.control}
@@ -941,4 +1036,14 @@ export default function SettingsPage() {
       </div>
     </div>
   );
+}
+
+function compareVersionsDesc(a: string, b: string): number {
+  const parse = (v: string) => v.split('.').map((part) => parseInt(part, 10));
+  const [aMajor, aMinor, aPatch] = parse(a);
+  const [bMajor, bMinor, bPatch] = parse(b);
+
+  if (aMajor !== bMajor) return bMajor - aMajor;
+  if (aMinor !== bMinor) return bMinor - aMinor;
+  return bPatch - aPatch;
 }

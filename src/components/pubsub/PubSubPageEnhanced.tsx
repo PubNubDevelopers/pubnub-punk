@@ -420,7 +420,7 @@ export default function PubSubPageEnhanced() {
   }, [currentPageSettings, setConfigPageSettings, saveConfig, isConfigLoaded]);
 
   useEffect(() => {
-    if (!isConfigLoaded || hasAutoConnected || isSubscribed) {
+    if (!pubnubReady || !isConfigLoaded || hasAutoConnected || isSubscribed) {
       return;
     }
 
@@ -473,6 +473,7 @@ export default function PubSubPageEnhanced() {
     hasSentWelcomeMessage,
     toast,
     hasAutoConnected,
+    pubnubReady,
   ]);
 
   // Scroll handlers

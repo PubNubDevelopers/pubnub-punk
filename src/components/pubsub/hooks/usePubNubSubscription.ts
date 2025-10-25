@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { storage } from '@/lib/storage';
+import { ensurePubNubSdk } from '@/lib/sdk-loader';
 import { MessageData, PresenceEvent, FilterCondition } from '../types';
 import { generateFilterExpression, formatTimestamp, parseChannels } from '../utils';
 import { MAX_MESSAGES } from '../constants';
@@ -172,6 +173,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
       }
 
       // Create new PubNub instance for this subscription
+      await ensurePubNubSdk(settings.sdkVersion);
       const heartbeatInterval = withPresence ? heartbeat : 0;
       const pubnubConfig: any = {
         publishKey: settings.credentials.publishKey,

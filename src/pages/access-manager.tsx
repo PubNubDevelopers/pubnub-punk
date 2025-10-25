@@ -31,6 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
 import { storage } from '@/lib/storage';
+import { ensurePubNubSdk } from '@/lib/sdk-loader';
 import type { AppSettings } from '@/types/settings';
 import {
   DialogFooter,
@@ -155,37 +156,46 @@ export default function AccessManagerPage() {
   // Check for PubNub availability on mount and create instance
   useEffect(() => {
     if (!mounted) return;
-    
-    let attempts = 0;
-    const maxAttempts = 30;
-    
-    const checkPubNub = () => {
-      attempts++;
-      
-      if (typeof window !== 'undefined' && window.PubNub) {
-        setPubnubReady(true);
-        try {
-          const pubnubConfig: any = {
-            publishKey: settings.credentials.publishKey || 'demo',
-            subscribeKey: settings.credentials.subscribeKey || 'demo',
-            userId: settings.credentials.userId || 'access-manager-user',
-          };
-          
-          // Add PAM token if available
-          if (settings.credentials.pamToken) {
-            pubnubConfig.authKey = settings.credentials.pamToken;
-          }
-          
-          const pubnubInstance = new window.PubNub(pubnubConfig);
-          setPubnub(pubnubInstance);
-        } catch (error) {
+
+    let cancelled = false;
+
+    const initialize = async () => {
+      try {
+        await ensurePubNubSdk(settings.sdkVersion);
+        if (cancelled || typeof window === 'undefined' || !window.PubNub) {
+          throw new Error('PubNub SDK not available');
         }
-      } else if (attempts < maxAttempts) {
-        setTimeout(checkPubNub, 100);
+
+        const pubnubConfig: any = {
+          publishKey: settings.credentials.publishKey || 'demo',
+          subscribeKey: settings.credentials.subscribeKey || 'demo',
+          userId: settings.credentials.userId || 'access-manager-user',
+        };
+
+        if (settings.credentials.pamToken) {
+          pubnubConfig.authKey = settings.credentials.pamToken;
+        }
+
+        const pubnubInstance = new window.PubNub(pubnubConfig);
+        if (!cancelled) {
+          setPubnubReady(true);
+          setPubnub((prev: any) => {
+            prev?.destroy?.();
+            return pubnubInstance;
+          });
+        } else {
+          pubnubInstance.destroy?.();
+        }
+      } catch (error) {
+        console.error('Failed to initialize PubNub SDK for Access Manager:', error);
       }
     };
-    
-    checkPubNub();
+
+    initialize();
+
+    return () => {
+      cancelled = true;
+    };
   }, [mounted, settings]);
 
   // Load app settings on mount (sans secret key)
@@ -197,6 +207,7 @@ export default function AccessManagerPage() {
   const revokeToken = useCallback(async () => {
     // Refresh settings to ensure we have the latest configuration
     const currentSettings = storage.getSettings();
+    await ensurePubNubSdk(currentSettings.sdkVersion);
     setSettings(currentSettings);
     const currentSecretKey = sessionSecretKey.trim();
     
@@ -294,6 +305,7 @@ export default function AccessManagerPage() {
   const grantToken = useCallback(async () => {
     // Refresh settings (sans secret) and ensure we have the latest configuration
     const currentSettings = storage.getSettings();
+    await ensurePubNubSdk(currentSettings.sdkVersion);
     setSettings(currentSettings);
     const currentSecretKey = sessionSecretKey.trim();
     

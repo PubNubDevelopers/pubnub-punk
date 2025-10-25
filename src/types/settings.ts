@@ -51,4 +51,5 @@ export interface AppSettings {
   credentials: PubNubCredentials;
   environment: EnvironmentSettings;
   storage: StoragePreferences;
+  sdkVersion: string;
 }

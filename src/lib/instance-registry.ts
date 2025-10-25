@@ -105,7 +105,8 @@ export class InstanceRegistry {
       oldSettings.credentials.pamToken !== newSettings.credentials.pamToken ||
       oldSettings.environment.origin !== newSettings.environment.origin ||
       oldSettings.environment.customOrigin !== newSettings.environment.customOrigin ||
-      oldSettings.environment.ssl !== newSettings.environment.ssl
+      oldSettings.environment.ssl !== newSettings.environment.ssl ||
+      oldSettings.sdkVersion !== newSettings.sdkVersion
     );
   }
 
@@ -119,7 +120,8 @@ export class InstanceRegistry {
       settings.credentials.pamToken || '',
       settings.environment.origin,
       settings.environment.customOrigin || '',
-      settings.environment.ssl ? 'ssl' : 'no-ssl'
+      settings.environment.ssl ? 'ssl' : 'no-ssl',
+      settings.sdkVersion || ''
     ];
     
     return keyParts.join('-');

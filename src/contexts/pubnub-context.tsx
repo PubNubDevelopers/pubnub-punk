@@ -4,6 +4,7 @@ import { storage } from '@/lib/storage';
 import { AppSettings } from '@/types/settings';
 import { usePubNub, PubNubHookOptions, notifySettingsChange } from '@/hooks/usePubNub';
 import { InstanceRegistry } from '@/lib/instance-registry';
+import { ensurePubNubSdk } from '@/lib/sdk-loader';
 
 export interface PubNubContextValue {
   defaultPubnub: any | null;
@@ -73,6 +74,12 @@ export function PubNubProvider({ children }: PubNubProviderProps): JSX.Element {
     // Notify all usePubNub hooks about settings change
     notifySettingsChange();
   }, []);
+
+  useEffect(() => {
+    ensurePubNubSdk(settings.sdkVersion).catch((error) => {
+      console.error('Failed to load PubNub SDK version', settings.sdkVersion, error);
+    });
+  }, [settings.sdkVersion]);
 
   // Refresh all connections
   const refreshConnections = useCallback(() => {

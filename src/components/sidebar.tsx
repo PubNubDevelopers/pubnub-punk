@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { EasterEgg } from './easter-egg';
 import { 
@@ -21,6 +21,7 @@ import {
   Wifi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { usePubNubContext } from '@/contexts/pubnub-context';
 
 interface NavItem {
   id: string;
@@ -84,6 +85,8 @@ interface SidebarProps {
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [location] = useLocation();
   const [showEasterEgg, setShowEasterEgg] = useState(false);
+  const { settings } = usePubNubContext();
+  const activeSdkVersion = settings?.sdkVersion || '10.1.0';
   
   const isActive = (path: string) => {
     if (path === '/' && location === '/') return true;
@@ -229,11 +232,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
         {/* Footer */}
         <div className="p-4 border-t border-white/10" style={{ backgroundColor: 'hsl(228, 80%, 14%)' }}>
-          <div className="flex items-center justify-between text-sm" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+          <div className="flex flex-col text-sm" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
             <span>v1.0.0</span>
-            <a href="#" style={{ color: 'hsl(217, 96%, 64%)' }} className="hover:text-white transition-colors">
-              Help
-            </a>
+            <span className="text-xs mt-1" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+              JS SDK: {activeSdkVersion}
+            </span>
           </div>
         </div>
       </aside>

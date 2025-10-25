@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     saveVersionHistory: true,
     maxVersionsToKeep: 50,
   },
+  sdkVersion: '9.6.1',
 };
 
 

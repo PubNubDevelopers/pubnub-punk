@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { usePubNub } from '@/hooks/usePubNub';
 import { storage } from '@/lib/storage';
+import { ensurePubNubSdk } from '@/lib/sdk-loader';
 import { useConfig } from '@/contexts/config-context';
 
 // Current config version
@@ -414,6 +415,8 @@ export default function PresencePage() {
         pubnubConfig.authKey = settings.credentials.pamToken;
       }
       
+      await ensurePubNubSdk(settings.sdkVersion);
+
       if (!window.PubNub) {
         throw new Error('PubNub SDK not available');
       }
