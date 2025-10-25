@@ -4,11 +4,9 @@ import { EasterEgg } from './easter-egg';
 import { 
   Settings, 
   MessageCircle, 
-  Smartphone, 
   Upload, 
   Users, 
   Code, 
-  Database, 
   Activity, 
   GitBranch,
   Box,
@@ -49,7 +47,6 @@ const navigationConfig: (NavItem | NavCategory)[] = [
       { id: 'pubsub', label: 'Pub/Sub', icon: MessageCircle, path: '/pubsub' },
       { id: 'pubnub-persistence', label: 'PubNub Persistence', icon: Archive, path: '/pubnub-persistence' },
       { id: 'channel-groups', label: 'Channel Groups', icon: Layers, path: '/channel-groups' },
-      { id: 'mobile-push', label: 'Mobile Push', icon: Smartphone, path: '/mobile-push' },
     ],
   },
   {
@@ -58,7 +55,6 @@ const navigationConfig: (NavItem | NavCategory)[] = [
       { id: 'file-sharing', label: 'File Sharing', icon: Upload, path: '/file-sharing' },
       { id: 'presence', label: 'Presence', icon: Users, path: '/presence' },
       { id: 'functions', label: 'Functions', icon: Code, path: '/functions' },
-      { id: 'app-context', label: 'App Context', icon: Database, path: '/app-context' },
     ],
   },
   {
