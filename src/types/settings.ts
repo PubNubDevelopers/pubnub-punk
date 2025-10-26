@@ -52,4 +52,5 @@ export interface AppSettings {
   environment: EnvironmentSettings;
   storage: StoragePreferences;
   sdkVersion: string;
+  sdkVersionExplicitlySet?: boolean; // Track if user manually selected a version
 }

@@ -23,7 +23,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     saveVersionHistory: true,
     maxVersionsToKeep: 50,
   },
-  sdkVersion: '9.6.1',
+  sdkVersion: '10.1.0', // Fallback only, will be replaced by latest from API
+  sdkVersionExplicitlySet: false,
 };
 
 

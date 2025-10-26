@@ -65,7 +65,7 @@ const FIELD_DEFINITIONS = {
   autoSaveToPubNub: { section: 'storage', type: 'boolean', default: true },
   saveVersionHistory: { section: 'storage', type: 'boolean', default: true },
   maxVersionsToKeep: { section: 'storage', type: 'number', default: 50 },
-  sdkVersion: { section: 'sdk', type: 'string', default: '9.6.1' },
+  sdkVersion: { section: 'sdk', type: 'string', default: '10.1.0' },
 } as const;
 
 // Current config version
@@ -212,6 +212,7 @@ export default function SettingsPage() {
   const [sdkVersions, setSdkVersions] = useState<SdkVersionInfo[]>([]);
   const [sdkVersionsLoading, setSdkVersionsLoading] = useState(true);
   const [sdkVersionsError, setSdkVersionsError] = useState<string | null>(null);
+  const [sdkVersionExplicitlySet, setSdkVersionExplicitlySet] = useState(settings.sdkVersionExplicitlySet || false);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,7 +261,7 @@ export default function SettingsPage() {
       autoSaveToPubNub: settings.storage.autoSaveToPubNub ?? true,
       saveVersionHistory: settings.storage.saveVersionHistory ?? true,
       maxVersionsToKeep: settings.storage.maxVersionsToKeep || 50,
-      sdkVersion: settings.sdkVersion || '9.6.1',
+      sdkVersion: settings.sdkVersion || '10.1.0',
     };
     const initialPageSettings = formDataToPageSettings(currentFormData);
     return deepMerge(defaultSettings, initialPageSettings);
@@ -313,23 +314,40 @@ export default function SettingsPage() {
       autoSaveToPubNub: settings.storage.autoSaveToPubNub ?? true,
       saveVersionHistory: settings.storage.saveVersionHistory ?? true,
       maxVersionsToKeep: settings.storage.maxVersionsToKeep || 50,
-      sdkVersion: settings.sdkVersion || '9.6.1',
+      sdkVersion: settings.sdkVersion || '10.1.0',
     },
   });
 
+  // Auto-upgrade to latest SDK version if user hasn't explicitly selected one
   useEffect(() => {
     if (sdkVersionsLoading || sdkVersions.length === 0) {
       return;
     }
+    const latestVersion = sdkVersions[0].version;
     const currentValue = form.getValues('sdkVersion');
-    const exists = sdkVersions.some((entry) => entry.version === currentValue);
-    if (!exists) {
-      form.setValue('sdkVersion', sdkVersions[0].version, {
-        shouldDirty: true,
-        shouldTouch: true,
-      });
+    const explicitlySet = settings.sdkVersionExplicitlySet;
+
+    // If user hasn't explicitly set a version, always upgrade to latest
+    if (!explicitlySet) {
+      if (currentValue !== latestVersion) {
+        console.log(`🔄 Auto-upgrading SDK from ${currentValue} to ${latestVersion} (not explicitly set)`);
+        form.setValue('sdkVersion', latestVersion, {
+          shouldDirty: false,
+          shouldTouch: false,
+        });
+      }
+    } else {
+      // If user explicitly set a version, just validate it still exists
+      const exists = sdkVersions.some((entry) => entry.version === currentValue);
+      if (!exists) {
+        console.log(`⚠️ Selected SDK version ${currentValue} no longer available, upgrading to ${latestVersion}`);
+        form.setValue('sdkVersion', latestVersion, {
+          shouldDirty: true,
+          shouldTouch: true,
+        });
+      }
     }
-  }, [sdkVersionsLoading, sdkVersions, form]);
+  }, [sdkVersionsLoading, sdkVersions, form, settings.sdkVersionExplicitlySet]);
 
   // Auto-load latest configuration when keys are populated - DISABLED
   // const loadLatestConfiguration = async () => {
@@ -443,7 +461,8 @@ export default function SettingsPage() {
         saveVersionHistory: watchedValues.saveVersionHistory ?? true,
         maxVersionsToKeep: watchedValues.maxVersionsToKeep || 50,
       },
-      sdkVersion: watchedValues.sdkVersion || '9.6.1',
+      sdkVersion: watchedValues.sdkVersion || '10.1.0',
+      sdkVersionExplicitlySet,
     };
 
     if (!hasRequiredKeys) {
@@ -674,12 +693,17 @@ export default function SettingsPage() {
                       control={form.control}
                       name="sdkVersion"
                       render={({ field }) => {
-                        const versionsToDisplay = (sdkVersions.length > 0 ? sdkVersions : [{ version: field.value || '9.6.1', cdnUrl: '', releaseNotes: '' }]).sort((a, b) => compareVersionsDesc(a.version, b.version));
+                        const versionsToDisplay = (sdkVersions.length > 0 ? sdkVersions : [{ version: field.value || '10.1.0', cdnUrl: '', releaseNotes: '' }]).sort((a, b) => compareVersionsDesc(a.version, b.version));
                         const selectedInfo = versionsToDisplay.find((entry) => entry.version === field.value);
+                        const handleVersionChange = (value: string) => {
+                          console.log(`✏️ User manually selected SDK version: ${value}`);
+                          setSdkVersionExplicitlySet(true);
+                          field.onChange(value);
+                        };
                         return (
                           <FormItem>
                             <FormLabel>PubNub JS SDK Version</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value} disabled={sdkVersionsLoading && versionsToDisplay.length <= 1}>
+                            <Select onValueChange={handleVersionChange} value={field.value} disabled={sdkVersionsLoading && versionsToDisplay.length <= 1}>
                               <FormControl>
                                 <SelectTrigger>
                                   <SelectValue placeholder="Select SDK version" />

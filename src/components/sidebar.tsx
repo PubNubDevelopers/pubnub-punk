@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
 import { EasterEgg } from './easter-egg';
-import { 
-  Settings, 
-  MessageCircle, 
-  Upload, 
-  Users, 
-  Code, 
-  Activity, 
+import {
+  Settings,
+  MessageCircle,
+  Upload,
+  Users,
+  Code,
+  Activity,
   GitBranch,
   Box,
   X,
@@ -16,10 +16,12 @@ import {
   Layers,
   Shield,
   Clock,
-  Wifi
+  Wifi,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePubNubContext } from '@/contexts/pubnub-context';
+import { getSdkVersions, type SdkVersionInfo } from '@/lib/sdk-loader';
 
 interface NavItem {
   id: string;
@@ -79,7 +81,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [showEasterEgg, setShowEasterEgg] = useState(false);
   const { settings } = usePubNubContext();
   const activeSdkVersion = settings?.sdkVersion || '10.1.0';
@@ -87,6 +89,25 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const subscribeKey = settings?.credentials?.subscribeKey?.trim();
   const hasRequiredKeys = Boolean(publishKey && subscribeKey);
   const credentialsLocked = !hasRequiredKeys;
+  const [sdkVersions, setSdkVersions] = useState<SdkVersionInfo[]>([]);
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+
+  // Load SDK versions to compare with current
+  useEffect(() => {
+    getSdkVersions()
+      .then((versions) => {
+        setSdkVersions(versions);
+        if (versions.length > 0) {
+          setLatestVersion(versions[0].version);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load SDK versions in sidebar:', error);
+      });
+  }, []);
+
+  // Check if current version is older than latest
+  const isOutdatedVersion = latestVersion && activeSdkVersion !== latestVersion;
   
   const isActive = (path: string) => {
     if (path === '/' && location === '/') return true;
@@ -254,9 +275,27 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="p-4 border-t border-white/10" style={{ backgroundColor: 'hsl(228, 80%, 14%)' }}>
           <div className="flex flex-col text-sm" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
             <span>v1.0.0</span>
-            <span className="text-xs mt-1" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
-              JS SDK: {activeSdkVersion}
-            </span>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                JS SDK: {activeSdkVersion}
+              </span>
+              {isOutdatedVersion && (
+                <Link href="/">
+                  <a
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigate('/');
+                      onClose();
+                    }}
+                    className="flex items-center gap-1 text-xs text-yellow-400 hover:text-yellow-300 transition-colors cursor-pointer"
+                    title={`Newer version available: ${latestVersion}`}
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>Update available</span>
+                  </a>
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </aside>
