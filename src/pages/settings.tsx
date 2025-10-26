@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Settings, Key, Globe, Save, AlertTriangle, Trash2 } from 'lucide-react';
+import { Key, Globe, Save, AlertTriangle, Trash2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -371,6 +371,9 @@ export default function SettingsPage() {
 
   // Auto-sync: Watch all form values and update pageSettings automatically
   const watchedValues = form.watch();
+  const trimmedPublishKey = (watchedValues.publishKey ?? '').trim();
+  const trimmedSubscribeKey = (watchedValues.subscribeKey ?? '').trim();
+  const isMissingPrimaryKeys = !trimmedPublishKey || !trimmedSubscribeKey;
   
   // Memoize the pageSettings to avoid unnecessary updates
   const currentPageSettings = useMemo(() => {
@@ -610,6 +613,22 @@ export default function SettingsPage() {
       <div className="max-w-4xl mx-auto space-y-8">
         <Form {...form}>
           <div className="space-y-8">
+            {isMissingPrimaryKeys && (
+              <div className="rounded-xl border border-rose-300 bg-rose-100 px-4 py-3 text-sm text-rose-900 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <Info className="mt-0.5 h-5 w-5 text-rose-600" />
+                  <div className="space-y-1">
+                    <p className="font-semibold">
+                      Add your publish and subscribe keys to explore every tool.
+                    </p>
+                    <p className="text-xs text-rose-800/80">
+                      They stay on this device only. Once saved, navigation to the other pages unlocks automatically.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* PubNub Configuration */}
             <Card>
               <CardHeader>
@@ -624,114 +643,114 @@ export default function SettingsPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <FormField
-                    control={form.control}
-                    name="publishKey"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Publish Key</FormLabel>
-                        <FormControl>
-                          <Input placeholder="pub-c-..." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="subscribeKey"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Subscribe Key</FormLabel>
-                        <FormControl>
-                          <Input placeholder="sub-c-..." {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="sdkVersion"
-                    render={({ field }) => {
-                      const versionsToDisplay = (sdkVersions.length > 0 ? sdkVersions : [{ version: field.value || '9.6.1', cdnUrl: '', releaseNotes: '' }]).sort((a, b) => compareVersionsDesc(a.version, b.version));
-                      const selectedInfo = versionsToDisplay.find((entry) => entry.version === field.value);
-                      return (
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="publishKey"
+                      render={({ field }) => (
                         <FormItem>
-                          <FormLabel>PubNub JS SDK Version</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value} disabled={sdkVersionsLoading && versionsToDisplay.length <= 1}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select SDK version" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {versionsToDisplay.map((entry) => (
-                                <SelectItem key={entry.version} value={entry.version}>
-                                  {entry.version}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {sdkVersionsError && (
-                            <FormDescription className="text-xs text-red-600">
-                              {sdkVersionsError}
-                            </FormDescription>
-                          )}
-                          {selectedInfo?.releaseNotes && (
-                            <FormDescription className="text-xs text-gray-500">
-                              {selectedInfo.releaseNotes}
-                            </FormDescription>
-                          )}
-                          <FormMessage />
-                        </FormItem>
-                      );
-                    }}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="userId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>User ID</FormLabel>
-                        <FormControl>
-                          <Input placeholder="unique-user-id" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="pamToken"
-                    render={({ field }) => {
-                      const isPamEnabled = form.watch('pamEnabled');
-                      return (
-                        <FormItem>
-                          <FormLabel>
-                            PAM Token{!isPamEnabled && ' (Optional)'}
-                            {isPamEnabled && <span className="text-red-500 ml-1">*</span>}
-                          </FormLabel>
+                          <FormLabel>Publish Key</FormLabel>
                           <FormControl>
-                            <Input 
-                              type="password" 
-                              placeholder="Access Manager Token" 
-                              className={isPamEnabled && !field.value ? 'border-red-500 focus:border-red-500' : ''}
-                              {...field} 
-                            />
+                            <Input placeholder="pub-c-..." {...field} />
                           </FormControl>
-                          <FormDescription className="text-xs text-gray-500">
-                            {isPamEnabled 
-                              ? 'Access Manager token is required when PAM is enabled'
-                              : 'Access Manager token for authenticated API calls'
-                            }
-                          </FormDescription>
                           <FormMessage />
                         </FormItem>
-                      );
-                    }}
-                  />
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="subscribeKey"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Subscribe Key</FormLabel>
+                          <FormControl>
+                            <Input placeholder="sub-c-..." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="sdkVersion"
+                      render={({ field }) => {
+                        const versionsToDisplay = (sdkVersions.length > 0 ? sdkVersions : [{ version: field.value || '9.6.1', cdnUrl: '', releaseNotes: '' }]).sort((a, b) => compareVersionsDesc(a.version, b.version));
+                        const selectedInfo = versionsToDisplay.find((entry) => entry.version === field.value);
+                        return (
+                          <FormItem>
+                            <FormLabel>PubNub JS SDK Version</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value} disabled={sdkVersionsLoading && versionsToDisplay.length <= 1}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select SDK version" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {versionsToDisplay.map((entry) => (
+                                  <SelectItem key={entry.version} value={entry.version}>
+                                    {entry.version}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {sdkVersionsError && (
+                              <FormDescription className="text-xs text-red-600">
+                                {sdkVersionsError}
+                              </FormDescription>
+                            )}
+                            {selectedInfo?.releaseNotes && (
+                              <FormDescription className="text-xs text-gray-500">
+                                {selectedInfo.releaseNotes}
+                              </FormDescription>
+                            )}
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="userId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>User ID</FormLabel>
+                          <FormControl>
+                            <Input placeholder="unique-user-id" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="pamToken"
+                      render={({ field }) => {
+                        const isPamEnabled = form.watch('pamEnabled');
+                        return (
+                          <FormItem>
+                            <FormLabel>
+                              PAM Token{!isPamEnabled && ' (Optional)'}
+                              {isPamEnabled && <span className="text-red-500 ml-1">*</span>}
+                            </FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="password" 
+                                placeholder="Access Manager Token" 
+                                className={isPamEnabled && !field.value ? 'border-red-500 focus:border-red-500' : ''}
+                                {...field} 
+                              />
+                            </FormControl>
+                            <FormDescription className="text-xs text-gray-500">
+                              {isPamEnabled 
+                                ? 'Access Manager token is required when PAM is enabled'
+                                : 'Access Manager token for authenticated API calls'
+                              }
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
+                    />
                 </div>
 
                 <div className="pt-4 border-t border-gray-200">

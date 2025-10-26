@@ -1,9 +1,10 @@
+import { useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
 import { ConfigProvider } from "@/contexts/config-context";
-import { PubNubProvider } from "@/contexts/pubnub-context";
+import { PubNubProvider, usePubNubContext } from "@/contexts/pubnub-context";
 import SettingsPage from "@/pages/settings";
 // import PubSubPage from "@/pages/pubsub"; // Original implementation - archived
 // import PubSubWireframePage from "@/pages/pubsub-wireframe"; // Wireframe - no longer needed
@@ -18,6 +19,7 @@ import StreamGeneratorPage from "@/pages/stream-generator";
 import EventWorkflowPage from "@/pages/event-workflow";
 import TestConnectionPage from "@/pages/test-connection";
 import NotFound from "@/pages/not-found";
+import { useToast } from "@/hooks/use-toast";
 
 const pageConfig: Record<string, { title: string; subtitle: string }> = {
   '/': {
@@ -67,8 +69,35 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
 };
 
 function Router() {
-  const [location] = useLocation();
-  const config = pageConfig[location] || { title: '404', subtitle: 'Page not found' };
+  const [location, navigate] = useLocation();
+  const { settings } = usePubNubContext();
+  const { toast } = useToast();
+
+  const publishKey = settings?.credentials?.publishKey?.trim();
+  const subscribeKey = settings?.credentials?.subscribeKey?.trim();
+  const hasRequiredKeys = Boolean(publishKey && subscribeKey);
+  const lockedToSettings = !hasRequiredKeys && location !== '/';
+  const configKey = lockedToSettings ? '/' : location;
+  const config = pageConfig[configKey] || { title: '404', subtitle: 'Page not found' };
+
+  useEffect(() => {
+    if (lockedToSettings) {
+      navigate('/');
+      toast({
+        title: 'PubNub keys required',
+        description: 'Enter your publish and subscribe keys on the Settings page before using other tools.',
+        variant: 'destructive',
+      });
+    }
+  }, [lockedToSettings, navigate, toast]);
+
+  if (lockedToSettings) {
+    return (
+      <AppShell pageTitle={config.title} pageSubtitle={config.subtitle}>
+        <SettingsPage />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell pageTitle={config.title} pageSubtitle={config.subtitle}>

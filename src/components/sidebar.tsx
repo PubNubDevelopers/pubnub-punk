@@ -83,6 +83,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [showEasterEgg, setShowEasterEgg] = useState(false);
   const { settings } = usePubNubContext();
   const activeSdkVersion = settings?.sdkVersion || '10.1.0';
+  const publishKey = settings?.credentials?.publishKey?.trim();
+  const subscribeKey = settings?.credentials?.subscribeKey?.trim();
+  const hasRequiredKeys = Boolean(publishKey && subscribeKey);
+  const credentialsLocked = !hasRequiredKeys;
   
   const isActive = (path: string) => {
     if (path === '/' && location === '/') return true;
@@ -121,6 +125,26 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 </span>
               </div>
             </div>
+          </Button>
+        </div>
+      );
+    }
+
+    if (credentialsLocked && item.path !== '/') {
+      return (
+        <div key={item.id}>
+          <Button
+            variant="ghost"
+            disabled
+            title="Enter your publish and subscribe keys on the Settings page to unlock this tool."
+            className="w-full justify-start space-x-3 px-4 py-2.5 h-auto font-medium transition-all duration-200 cursor-not-allowed"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'rgba(255, 255, 255, 0.55)'
+            }}
+          >
+            <Icon className="w-5 h-5" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />
+            <span>{item.label}</span>
           </Button>
         </div>
       );
