@@ -16,3 +16,16 @@ short_how_to_implement_access_control.md
 playwright-report/
 test-results/
 *.archived
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+utils/env/
+*.egg-info/
+.pytest_cache/
