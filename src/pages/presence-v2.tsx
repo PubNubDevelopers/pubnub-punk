@@ -3,6 +3,13 @@ import { Activity, Play, Square, Users, Radio, User, Plus, Pencil, X } from 'luc
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import {
   Dialog,
   DialogContent,
@@ -41,12 +48,17 @@ interface SimulatedUser {
   subscription: any | null;
   isConnected: boolean;
   channel: string | null;
+  stateDraft: string;
+  isUpdatingState: boolean;
+  lastStateError: string | null;
+  isStateExpanded: boolean;
 }
 
 interface WhereNowHistoryEntry {
   id: string;
   uuid: string;
   channels: string[];
+  states?: Record<string, Record<string, unknown> | null>;
   timestamp: number;
   raw: unknown;
 }
@@ -81,6 +93,7 @@ export default function PresenceV2Page() {
     channel: string;
     occupancy: number;
     uuids: string[];
+    states: Record<string, Record<string, unknown> | null>;
     timestamp: number | null;
     raw: unknown;
   } | null>(null);
@@ -97,6 +110,7 @@ export default function PresenceV2Page() {
   const [whereNowSnapshot, setWhereNowSnapshot] = useState<{
     uuid: string;
     channels: string[];
+    states: Record<string, Record<string, unknown> | null>;
     timestamp: number | null;
     raw: unknown;
   } | null>(null);
@@ -106,6 +120,8 @@ export default function PresenceV2Page() {
   const [nextSimulatedUserIndex, setNextSimulatedUserIndex] = useState(1);
   const [isCreatingSimulatedUser, setIsCreatingSimulatedUser] = useState(false);
   const simulatedUsersRef = useRef<SimulatedUser[]>([]);
+  const [presenceStateByUuid, setPresenceStateByUuid] = useState<Record<string, Record<string, unknown> | null>>({});
+  const presenceStateRef = useRef<Record<string, Record<string, unknown> | null>>({});
 
   const formattedActiveChannel = useMemo(() => activeChannel ?? '', [activeChannel]);
   const presenceChannel = useMemo(() => (activeChannel ? `${activeChannel}-pnpres` : null), [activeChannel]);
@@ -139,11 +155,93 @@ export default function PresenceV2Page() {
     }
   }, []);
 
+  const upsertPresenceStates = useCallback(
+    (
+      entries: Array<{ uuid?: string | null; state?: Record<string, unknown> | null | undefined }>,
+      options?: { notify?: boolean },
+    ) => {
+      if (!entries || entries.length === 0) {
+        return;
+      }
+
+      const current = presenceStateRef.current;
+      let mutated = false;
+      const next: Record<string, Record<string, unknown> | null> = { ...current };
+      const diffs: Array<{ uuid: string; before: Record<string, unknown> | null | undefined; after: Record<string, unknown> | null }> = [];
+
+      for (const entry of entries) {
+        const normalized = normalizeUuid(entry.uuid || undefined);
+        if (!normalized) {
+          continue;
+        }
+
+        const stateValue = entry.state && typeof entry.state === 'object' && Object.keys(entry.state).length > 0
+          ? (entry.state as Record<string, unknown>)
+          : null;
+
+        const before = Object.prototype.hasOwnProperty.call(next, normalized) ? next[normalized] : undefined;
+        const beforeSerialized = before ? JSON.stringify(before) : null;
+        const afterSerialized = stateValue ? JSON.stringify(stateValue) : null;
+
+        if (stateValue === null) {
+          if (before !== undefined) {
+            mutated = true;
+            delete next[normalized];
+            diffs.push({ uuid: normalized, before: before ?? null, after: null });
+          }
+          continue;
+        }
+
+        if (beforeSerialized === afterSerialized) {
+          continue;
+        }
+
+        mutated = true;
+        next[normalized] = stateValue;
+        diffs.push({ uuid: normalized, before: before ?? null, after: stateValue });
+      }
+
+      if (!mutated) {
+        return;
+      }
+
+      presenceStateRef.current = next;
+      setPresenceStateByUuid(next);
+
+      if (options?.notify === false || diffs.length === 0) {
+        return;
+      }
+
+      diffs.forEach(({ uuid, before, after }) => {
+        const beforeLabel = before ? JSON.stringify(before) : 'none';
+        const afterLabel = after ? JSON.stringify(after) : 'none';
+        toast({
+          title: 'Presence state changed',
+          description: `${uuid}: ${beforeLabel} → ${afterLabel}`,
+        });
+      });
+    },
+    [normalizeUuid, toast],
+  );
+
+  const removePresenceStates = useCallback(
+    (uuids: string[] | undefined, notify = false) => {
+      if (!uuids || uuids.length === 0) {
+        return;
+      }
+      const entries = uuids.map((uuid) => ({ uuid, state: null }));
+      upsertPresenceStates(entries, { notify });
+    },
+    [upsertPresenceStates],
+  );
+
   const resetPresenceState = useCallback(() => {
     setConnectedUUIDs([]);
     setOccupancy(0);
     setSnapshotData(null);
     setWhereNowSnapshot(null);
+    presenceStateRef.current = {};
+    setPresenceStateByUuid({});
   }, []);
 
   const hydratePresenceFromHereNow = useCallback(
@@ -157,7 +255,7 @@ export default function PresenceV2Page() {
         const response = await pubnub.hereNow({
           channels: [channel],
           includeUUIDs: true,
-          includeState: false,
+          includeState: true,
         });
 
         const channelData = response?.channels?.[channel];
@@ -166,6 +264,25 @@ export default function PresenceV2Page() {
           .map((entry) => (typeof entry === 'string' ? entry : entry?.uuid))
           .map((entry) => normalizeUuid(entry))
           .filter((entry): entry is string => Boolean(entry));
+
+        const states: Record<string, Record<string, unknown> | null> = {};
+        occupants.forEach((entry) => {
+          const candidateUuid = typeof entry === 'string' ? entry : entry?.uuid;
+          const normalizedUuid = normalizeUuid(candidateUuid);
+          if (!normalizedUuid) {
+            return;
+          }
+          const stateValue = typeof entry === 'string' ? null : entry?.state;
+          if (stateValue && typeof stateValue === 'object' && Object.keys(stateValue).length > 0) {
+            states[normalizedUuid] = stateValue;
+          } else {
+            states[normalizedUuid] = null;
+          }
+        });
+        const stateEntries = Object.entries(states).map(([uuid, state]) => ({ uuid, state }));
+        if (stateEntries.length > 0) {
+          upsertPresenceStates(stateEntries, { notify: false });
+        }
 
         const occupancyValue = typeof channelData?.occupancy === 'number' ? channelData.occupancy : uuids.length;
         const timestamp = Date.now();
@@ -182,6 +299,7 @@ export default function PresenceV2Page() {
           channel,
           occupancy: occupancyValue,
           uuids: Array.from(new Set(uuids)),
+          states,
           timestamp,
           raw: response,
         });
@@ -211,7 +329,7 @@ export default function PresenceV2Page() {
         const response = await pubnub.hereNow({
           channels: [channel],
           includeUUIDs: true,
-          includeState: false,
+          includeState: true,
         });
 
         const channelData = response?.channels?.[channel];
@@ -220,6 +338,25 @@ export default function PresenceV2Page() {
           .map((entry) => (typeof entry === 'string' ? entry : entry?.uuid))
           .map((entry) => normalizeUuid(entry))
           .filter((entry): entry is string => Boolean(entry));
+
+        const states: Record<string, Record<string, unknown> | null> = {};
+        occupants.forEach((entry) => {
+          const candidateUuid = typeof entry === 'string' ? entry : entry?.uuid;
+          const normalizedUuid = normalizeUuid(candidateUuid);
+          if (!normalizedUuid) {
+            return;
+          }
+          const stateValue = typeof entry === 'string' ? null : entry?.state;
+          if (stateValue && typeof stateValue === 'object' && Object.keys(stateValue).length > 0) {
+            states[normalizedUuid] = stateValue;
+          } else {
+            states[normalizedUuid] = null;
+          }
+        });
+        const stateEntries = Object.entries(states).map(([uuid, state]) => ({ uuid, state }));
+        if (stateEntries.length > 0) {
+          upsertPresenceStates(stateEntries, { notify: false });
+        }
 
         const uniqueUuids = Array.from(new Set(uuids));
         const occupancyValue = typeof channelData?.occupancy === 'number' ? channelData.occupancy : uniqueUuids.length;
@@ -248,11 +385,33 @@ export default function PresenceV2Page() {
         setIsWhereNowLoading(true);
         const response = await pubnub.whereNow({ uuid });
         const channels = Array.isArray(response?.channels) ? response.channels : [];
+
+        let stateByChannel: Record<string, Record<string, unknown> | null> = {};
+        if (channels.length > 0) {
+          try {
+            const stateResponse = await pubnub.getState({ uuid, channels });
+            const channelStates = stateResponse?.channels && typeof stateResponse.channels === 'object'
+              ? (stateResponse.channels as Record<string, unknown>)
+              : {};
+
+            Object.entries(channelStates).forEach(([channelName, value]) => {
+              if (value && typeof value === 'object' && Object.keys(value as Record<string, unknown>).length > 0) {
+                stateByChannel[channelName] = value as Record<string, unknown>;
+              } else {
+                stateByChannel[channelName] = null;
+              }
+            });
+          } catch (stateError) {
+            console.warn('Failed to retrieve presence state for Where Now lookup', stateError);
+          }
+        }
+
         const timestamp = Date.now();
         const historyEntry: WhereNowHistoryEntry = {
           id: `${timestamp}-${uuid}`,
           uuid,
           channels,
+          states: stateByChannel,
           timestamp,
           raw: response,
         };
@@ -260,6 +419,7 @@ export default function PresenceV2Page() {
         setWhereNowSnapshot({
           uuid,
           channels,
+          states: stateByChannel,
           timestamp,
           raw: response,
         });
@@ -287,6 +447,16 @@ export default function PresenceV2Page() {
 
     if (typeof event.occupancy === 'number') {
       setOccupancy(event.occupancy);
+    }
+
+    if (event.state && event.uuid) {
+      upsertPresenceStates([{ uuid: event.uuid, state: event.state }]);
+    }
+
+    if (event.action === 'leave' || event.action === 'timeout') {
+      if (event.uuid) {
+        removePresenceStates([event.uuid]);
+      }
     }
 
     setConnectedUUIDs((prev) => {
@@ -319,13 +489,15 @@ export default function PresenceV2Page() {
       }
 
       if (typeof event.occupancy === 'number' && event.occupancy === 0) {
+        presenceStateRef.current = {};
+        setPresenceStateByUuid({});
         return [];
       }
 
       return Array.from(nextSet);
     });
 
-  }, [normalizeUuid]);
+  }, [normalizeUuid, removePresenceStates, upsertPresenceStates]);
 
   useEffect(() => {
     if (!isHereNowChannelCustom) {
@@ -354,6 +526,10 @@ export default function PresenceV2Page() {
   useEffect(() => {
     simulatedUsersRef.current = simulatedUsers;
   }, [simulatedUsers]);
+
+  useEffect(() => {
+    presenceStateRef.current = presenceStateByUuid;
+  }, [presenceStateByUuid]);
 
   useEffect(() => {
     return () => {
@@ -439,6 +615,7 @@ export default function PresenceV2Page() {
       hereNowHistory,
       whereNowHistory,
       simulatedUsers,
+      presenceStateByUuid,
     };
   }, [
     occupancy,
@@ -449,6 +626,7 @@ export default function PresenceV2Page() {
     hereNowHistory,
     whereNowHistory,
     simulatedUsers,
+    presenceStateByUuid,
   ]);
 
   const handleConnect = async () => {
@@ -641,6 +819,10 @@ export default function PresenceV2Page() {
           subscription,
           isConnected: true,
           channel: targetChannel,
+          stateDraft: '{}',
+          isUpdatingState: false,
+          lastStateError: null,
+          isStateExpanded: false,
         },
       ]);
       setNextSimulatedUserIndex((prev) => prev + 1);
@@ -670,6 +852,133 @@ export default function PresenceV2Page() {
     setEditingLabel('');
   }, []);
 
+  const updateSimulatedUserStateDraft = useCallback((internalId: string, nextDraft: string) => {
+    setSimulatedUsers((previous) =>
+      previous.map((entry) =>
+        entry.internalId === internalId
+          ? {
+              ...entry,
+              stateDraft: nextDraft,
+              lastStateError: null,
+            }
+          : entry,
+      ),
+    );
+  }, []);
+
+  const applySimulatedUserState = useCallback(
+    async (internalId: string) => {
+      const target = simulatedUsersRef.current.find((entry) => entry.internalId === internalId);
+      if (!target) {
+        toast({ title: 'User not found', description: 'Unable to locate the simulated user.', variant: 'destructive' });
+        return;
+      }
+
+      if (!target.isConnected || !target.channel || !target.pubnub) {
+        toast({
+          title: 'User disconnected',
+          description: 'Connect the simulated user before setting state.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const draft = target.stateDraft.trim();
+      let parsedState: Record<string, unknown> | null = {};
+      if (draft.length === 0 || draft === '{}') {
+        parsedState = {};
+      } else {
+        try {
+          const candidate = JSON.parse(draft);
+          if (candidate === null) {
+            parsedState = {};
+          } else if (typeof candidate === 'object' && !Array.isArray(candidate)) {
+            parsedState = candidate as Record<string, unknown>;
+          } else {
+            throw new Error('Presence state must be a JSON object.');
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Invalid JSON payload.';
+          setSimulatedUsers((previous) =>
+            previous.map((entry) =>
+              entry.internalId === internalId
+                ? {
+                    ...entry,
+                    lastStateError: message,
+                  }
+                : entry,
+            ),
+          );
+          toast({
+            title: 'Invalid state JSON',
+            description: message,
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
+        setSimulatedUsers((previous) =>
+          previous.map((entry) =>
+            entry.internalId === internalId
+              ? {
+                  ...entry,
+                  isUpdatingState: true,
+                  lastStateError: null,
+                }
+              : entry,
+          ),
+        );
+
+      try {
+        await target.pubnub.setState({
+          channels: [target.channel],
+          state: parsedState ?? {},
+        });
+
+        upsertPresenceStates([{ uuid: target.userId, state: parsedState ?? {} }], { notify: false });
+
+      setSimulatedUsers((previous) =>
+        previous.map((entry) =>
+          entry.internalId === internalId
+            ? {
+                ...entry,
+                isUpdatingState: false,
+                lastStateError: null,
+                stateDraft: JSON.stringify(parsedState ?? {}, null, 2),
+                isStateExpanded: false,
+              }
+            : entry,
+        ),
+      );
+
+        toast({
+          title: 'Presence state updated',
+          description: `${target.userId} state saved successfully.`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to update presence state.';
+        setSimulatedUsers((previous) =>
+          previous.map((entry) =>
+            entry.internalId === internalId
+              ? {
+                  ...entry,
+                  isUpdatingState: false,
+                  lastStateError: message,
+                }
+              : entry,
+          ),
+        );
+        toast({
+          title: 'State update failed',
+          description: message,
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast, upsertPresenceStates],
+  );
+
   const removeSimulatedUser = useCallback(
     (internalId: string) => {
       const target = simulatedUsersRef.current.find((entry) => entry.internalId === internalId);
@@ -690,6 +999,8 @@ export default function PresenceV2Page() {
         console.warn('Failed to destroy simulated user client during removal', error);
       }
 
+      removePresenceStates([target.userId]);
+
       setSimulatedUsers((prev) => prev.filter((entry) => entry.internalId !== internalId));
 
       if (editingUserId === internalId) {
@@ -702,7 +1013,7 @@ export default function PresenceV2Page() {
         description: `${target.userId} has been disconnected and deleted.`,
       });
     },
-    [editingUserId, toast],
+    [editingUserId, removePresenceStates, toast],
   );
 
   const removeAllSimulatedUsers = useCallback(async () => {
@@ -726,6 +1037,8 @@ export default function PresenceV2Page() {
       }
     });
 
+    removePresenceStates(users.map((user) => user.userId), false);
+
     setSimulatedUsers([]);
     setEditingUserId(null);
     setEditingLabel('');
@@ -740,7 +1053,7 @@ export default function PresenceV2Page() {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       await primeLivePresence(channelToHydrate);
     }
-  }, [activeChannel, inputChannel, primeLivePresence, toast]);
+  }, [activeChannel, inputChannel, primeLivePresence, removePresenceStates, toast]);
 
   const commitSimulatedUserRename = useCallback(
     async (internalId: string) => {
@@ -811,6 +1124,8 @@ export default function PresenceV2Page() {
         existing.pubnub?.removeAllListeners?.();
         existing.pubnub?.destroy?.();
 
+        removePresenceStates([existing.userId]);
+
         if (!(window as any).PubNub) {
           throw new Error('PubNub SDK not available');
         }
@@ -867,7 +1182,7 @@ export default function PresenceV2Page() {
           variant: 'destructive',
         });
       }
-    }, [editingLabel, simulatedUsers, toast, cancelSimulatedUserRename]);
+    }, [editingLabel, simulatedUsers, toast, cancelSimulatedUserRename, removePresenceStates]);
 
   const toggleSimulatedUserConnection = useCallback(
     async (internalId: string) => {
@@ -1059,14 +1374,22 @@ export default function PresenceV2Page() {
                     </p>
                   ) : (
                     <ul className="space-y-2">
-                      {sortedUUIDs.map((uuid) => (
-                        <li
-                          key={uuid}
-                          className="rounded-md border border-white/40 bg-white px-3 py-2 text-sm font-medium text-pubnub-text shadow-sm"
-                        >
-                          {uuid}
-                        </li>
-                      ))}
+                      {sortedUUIDs.map((uuid) => {
+                        const state = presenceStateByUuid[uuid];
+                        return (
+                          <li
+                            key={uuid}
+                            className="space-y-1 rounded-md border border-white/40 bg-white px-3 py-2 text-sm text-pubnub-text shadow-sm"
+                          >
+                            <div className="font-semibold">{uuid}</div>
+                            {state ? (
+                              <pre className="whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+                                {JSON.stringify(state, null, 2)}
+                              </pre>
+                            ) : null}
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
@@ -1128,11 +1451,15 @@ export default function PresenceV2Page() {
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {simulatedUsers.map((user) => {
                   const isEditing = editingUserId === user.internalId;
+                  const appliedState = presenceStateByUuid[user.userId] ?? null;
+                  const hasAppliedState = appliedState && Object.keys(appliedState).length > 0;
+                  const appliedStateText = appliedState ? JSON.stringify(appliedState, null, 2) : 'No state set';
+                  const stateApplyDisabled = !user.isConnected || user.isUpdatingState;
 
                   return (
                     <div
                       key={user.internalId}
-                      className="relative flex flex-col items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 text-center shadow-sm"
+                      className="relative flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-3 pr-7 text-left shadow-sm"
                     >
                       <Button
                         type="button"
@@ -1144,54 +1471,64 @@ export default function PresenceV2Page() {
                       >
                         <X className="h-3 w-3" />
                       </Button>
-                      <div
-                        className={`flex h-12 w-12 items-center justify-center rounded-full ${
-                          user.isConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
-                        }`}
-                      >
-                        <User className="h-6 w-6" />
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                            user.isConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
+                          <User className="h-5 w-5" />
+                        </div>
+                        {isEditing ? (
+                          <div className="flex w-full flex-wrap items-center gap-2">
+                            <Input
+                              value={editingLabel}
+                              onChange={(event) => setEditingLabel(event.target.value)}
+                              className="h-8 min-w-[120px] flex-1 text-xs"
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault();
+                                  commitSimulatedUserRename(user.internalId);
+                                }
+                              }}
+                              autoFocus
+                            />
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                className="text-xs"
+                                onClick={() => commitSimulatedUserRename(user.internalId)}
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="text-xs"
+                                onClick={cancelSimulatedUserRename}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-xs font-semibold text-pubnub-text">
+                            {user.userId}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-pubnub-text"
+                              onClick={() => startSimulatedUserRename(user.internalId, user.userId)}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                      {isEditing ? (
-                        <div className="flex w-full items-center justify-center gap-2">
-                          <Input
-                            value={editingLabel}
-                            onChange={(event) => setEditingLabel(event.target.value)}
-                            className="h-8 text-xs"
-                            autoFocus
-                          />
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            className="text-xs"
-                            onClick={() => commitSimulatedUserRename(user.internalId)}
-                          >
-                            Save
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="text-xs"
-                            onClick={cancelSimulatedUserRename}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 text-xs font-semibold text-pubnub-text">
-                          {user.userId}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-pubnub-text"
-                            onClick={() => startSimulatedUserRename(user.internalId, user.userId)}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      )}
                       <div className="text-[10px] text-muted-foreground">
                         {user.channel ? `#${user.channel}` : 'Not connected'}
                       </div>
@@ -1215,6 +1552,90 @@ export default function PresenceV2Page() {
                           </>
                         )}
                       </Button>
+                      <Accordion
+                        type="single"
+                        collapsible
+                        className="w-full"
+                        value={user.isStateExpanded ? 'presence-state' : ''}
+                        onValueChange={(next) =>
+                          setSimulatedUsers((previous) =>
+                            previous.map((entry) =>
+                              entry.internalId === user.internalId
+                                ? { ...entry, isStateExpanded: next === 'presence-state' }
+                                : entry,
+                            ),
+                          )
+                        }
+                      >
+                        <AccordionItem value="presence-state">
+                          <AccordionTrigger
+                            className={`text-xs font-semibold uppercase tracking-wide ${
+                              hasAppliedState ? 'text-emerald-600' : 'text-muted-foreground'
+                            }`}
+                          >
+                            Presence State
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-2 text-xs pt-2">
+                              <Textarea
+                                value={user.stateDraft}
+                                onChange={(event) => updateSimulatedUserStateDraft(user.internalId, event.target.value)}
+                                className="h-24 text-xs"
+                                disabled={user.isUpdatingState}
+                              />
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => applySimulatedUserState(user.internalId)}
+                                  disabled={stateApplyDisabled}
+                                >
+                                  {user.isUpdatingState ? 'Saving…' : 'Apply'}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => updateSimulatedUserStateDraft(user.internalId, '{}')}
+                                  disabled={user.isUpdatingState}
+                                >
+                                  Reset
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    updateSimulatedUserStateDraft(
+                                      user.internalId,
+                                      JSON.stringify({ status: 'typing', battery: 33 }, null, 2),
+                                    )
+                                  }
+                                  disabled={user.isUpdatingState}
+                                >
+                                  Example
+                                </Button>
+                              </div>
+                              {user.lastStateError ? (
+                                <p className="text-[11px] text-destructive">{user.lastStateError}</p>
+                              ) : null}
+                              {!user.isConnected && (
+                                <p className="text-[10px] text-muted-foreground">
+                                  Connect this user to apply state changes.
+                                </p>
+                              )}
+                              <div className="space-y-1 rounded bg-slate-50 p-2">
+                                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                  Applied State
+                                </span>
+                                <pre className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-[11px] text-pubnub-text">
+                                  {appliedStateText}
+                                </pre>
+                              </div>
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
                     </div>
                   );
                 })}
@@ -1287,17 +1708,27 @@ export default function PresenceV2Page() {
                         {snapshotData.uuids.length > 0 ? (
                           <div className="space-y-1">
                             <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                              UUIDs
+                              Users
                             </span>
-                            <div className="max-h-24 overflow-y-auto space-y-1">
-                              {snapshotData.uuids.map((uuid) => (
-                                <div
-                                  key={`snapshot-${uuid}`}
-                                  className="break-all rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-pubnub-text"
-                                >
-                                  {uuid}
-                                </div>
-                              ))}
+                            <div className="max-h-32 overflow-y-auto space-y-2">
+                              {snapshotData.uuids.map((uuid) => {
+                                const state = snapshotData.states[uuid] ?? null;
+                                return (
+                                  <div
+                                    key={`snapshot-${uuid}`}
+                                    className="space-y-1 rounded border border-gray-200 bg-white px-2 py-1 text-[11px]"
+                                  >
+                                    <div className="font-semibold text-pubnub-text">{uuid}</div>
+                                    {state ? (
+                                      <pre className="whitespace-pre-wrap break-words text-muted-foreground">
+                                        {JSON.stringify(state, null, 2)}
+                                      </pre>
+                                    ) : (
+                                      <p className="text-muted-foreground">No state</p>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         ) : (
@@ -1374,15 +1805,25 @@ export default function PresenceV2Page() {
                             <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                               Channels
                             </span>
-                            <div className="max-h-24 overflow-y-auto space-y-1">
-                              {whereNowSnapshot.channels.map((channel) => (
-                                <div
-                                  key={`where-now-${channel}`}
-                                  className="break-all rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-pubnub-text"
-                                >
-                                  #{channel}
-                                </div>
-                              ))}
+                            <div className="max-h-32 overflow-y-auto space-y-2">
+                              {whereNowSnapshot.channels.map((channel) => {
+                                const channelState = whereNowSnapshot.states[channel] ?? null;
+                                return (
+                                  <div
+                                    key={`where-now-${channel}`}
+                                    className="space-y-1 rounded border border-gray-200 bg-white px-2 py-1 text-[11px]"
+                                  >
+                                    <div className="font-semibold text-pubnub-text">#{channel}</div>
+                                    {channelState ? (
+                                      <pre className="whitespace-pre-wrap break-words text-muted-foreground">
+                                        {JSON.stringify(channelState, null, 2)}
+                                      </pre>
+                                    ) : (
+                                      <p className="text-muted-foreground">No state</p>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         ) : (
