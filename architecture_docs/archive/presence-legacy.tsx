@@ -1,3 +1,5 @@
+// Archived copy of the original Presence page implementation.
+// This file is preserved for reference only and is no longer part of the build.
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Users, 

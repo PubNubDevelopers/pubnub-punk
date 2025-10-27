@@ -669,9 +669,9 @@ export default function SettingsPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Publish Key</FormLabel>
-                          <FormControl>
-                            <Input placeholder="pub-c-..." {...field} />
-                          </FormControl>
+                        <FormControl>
+                          <Input data-testid="publish-key-input" placeholder="pub-c-..." {...field} />
+                        </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -682,9 +682,9 @@ export default function SettingsPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Subscribe Key</FormLabel>
-                          <FormControl>
-                            <Input placeholder="sub-c-..." {...field} />
-                          </FormControl>
+                        <FormControl>
+                          <Input data-testid="subscribe-key-input" placeholder="sub-c-..." {...field} />
+                        </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -738,9 +738,9 @@ export default function SettingsPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>User ID</FormLabel>
-                          <FormControl>
-                            <Input placeholder="unique-user-id" {...field} />
-                          </FormControl>
+                        <FormControl>
+                          <Input data-testid="user-id-input" placeholder="unique-user-id" {...field} />
+                        </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}

@@ -15,7 +15,7 @@ import { usePubNubSubscription, usePubNubPublish } from './hooks';
 import LiveMessagesPanel from './LiveMessagesPanel';
 import { QuickPublishPanel } from './QuickPublishPanel';
 import SubscriptionConfigPanel from './SubscriptionConfigPanel';
-import { debounce } from 'lodash';
+import { debounce } from '@/utils/debounce';
 
 import {
   PubSubConfig,

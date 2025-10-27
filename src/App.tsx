@@ -12,7 +12,7 @@ import { PubSubPageEnhanced } from "@/components/pubsub";
 import PubNubPersistencePage from "@/pages/pubnub-persistence";
 import ChannelGroupsPage from "@/pages/channel-groups";
 import FileSharingPage from "@/pages/file-sharing";
-import PresencePage from "@/pages/presence";
+import PresenceV2Page from "@/pages/presence-v2";
 import FunctionsPage from "@/pages/functions";
 import AccessManagerPage from "@/pages/access-manager";
 import StreamGeneratorPage from "@/pages/stream-generator";
@@ -45,6 +45,10 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
   '/presence': {
     title: 'Presence Tool',
     subtitle: 'Monitor user presence and occupancy'
+  },
+  '/presence-v2': {
+    title: 'Presence Tool',
+    subtitle: 'This path now points to the refreshed Presence experience'
   },
   '/functions': {
     title: 'Functions Tool',
@@ -112,7 +116,8 @@ function Router() {
         <Route path="/pubnub-persistence" component={PubNubPersistencePage} />
         <Route path="/channel-groups" component={ChannelGroupsPage} />
         <Route path="/file-sharing" component={FileSharingPage} />
-        <Route path="/presence" component={PresencePage} />
+        <Route path="/presence" component={PresenceV2Page} />
+        <Route path="/presence-v2" component={PresenceV2Page} />
         <Route path="/functions" component={FunctionsPage} />
         <Route path="/access-manager" component={AccessManagerPage} />
         <Route path="/stream-generator" component={StreamGeneratorPage} />

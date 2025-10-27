@@ -121,19 +121,25 @@ async function fetchGithubVersions(): Promise<SdkVersionInfo[]> {
 
 async function fetchLocalManifest(): Promise<SdkVersionInfo[]> {
   if (!manifestPromise) {
-    manifestPromise = fetch(MANIFEST_URL)
-      .then(async (response) => {
+    manifestPromise = (async () => {
+      try {
+        const response = await fetch(MANIFEST_URL, { cache: 'no-store' });
         if (!response.ok) {
-          throw new Error(`Unable to load SDK manifest (${response.status})`);
+          return [];
         }
-        return response.json();
-      })
-      .then((data) => data as SdkVersionInfo[])
-      .catch((error) => {
-        manifestPromise = null;
-        console.warn('Failed to load local SDK manifest:', error);
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          return [];
+        }
+
+        const data = await response.json();
+        return Array.isArray(data) ? (data as SdkVersionInfo[]) : [];
+      } catch (error) {
+        console.debug('Local SDK manifest unavailable (optional):', error);
         return [];
-      });
+      }
+    })();
   }
   return manifestPromise;
 }
