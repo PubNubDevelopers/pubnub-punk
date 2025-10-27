@@ -354,9 +354,7 @@ const addChannel = () => {
 
 ## Related Files
 - `/src/lib/storage.ts`: Settings storage
-- `/src/lib/config-service.ts`: Config persistence service
 - `/src/contexts/config-context.tsx`: Page settings context
-- `/src/components/config-panel.tsx`: "Save Current Settings" functionality
 - `/src/index.css`: PubNub color utilities
 - `/src/components/ui/*`: Shared UI components
 - `tailwind.config.ts`: Color definitions

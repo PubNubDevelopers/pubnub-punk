@@ -50,7 +50,6 @@ src/
 ├── pages/                     # Feature pages (one per PubNub service)
 ├── lib/
 │   ├── storage.ts            # LocalStorage wrapper for settings
-│   ├── config-service.ts     # Configuration versioning system
 │   ├── instance-registry.ts  # PubNub instance management registry
 │   └── utils.ts              # Utility functions
 ├── contexts/
@@ -115,7 +114,6 @@ The application implements a sophisticated configuration versioning system:
 
 **Key Files**:
 - `src/lib/storage.ts` - LocalStorage operations
-- `src/lib/config-service.ts` - Configuration versioning (PubNub operations disabled)
 - `src/contexts/config-context.tsx` - React context for page settings
 
 **Configuration Pattern**:
@@ -250,7 +248,7 @@ PubNub Brand Colors:
 - `src/hooks/usePubNub.ts` - Core PubNub connection management
 - `src/contexts/pubnub-context.tsx` - Global PubNub context provider
 - `src/lib/storage.ts` - Settings persistence layer
-- `src/lib/config-service.ts` - Configuration versioning system
+_(Versioned configuration subsystem removed; settings now persist only via `storage.ts`.)_
 - `src/lib/instance-registry.ts` - Instance management and reuse
 - `src/components/app-shell.tsx` - Main layout wrapper
 - `src/components/sidebar.tsx` - Navigation and routing

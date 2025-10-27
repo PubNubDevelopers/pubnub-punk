@@ -171,7 +171,6 @@ npm run preview
 │   │   └── settings.tsx   # Configuration
 │   ├── lib/               # Core utilities
 │   │   ├── storage.ts     # Local storage management
-│   │   └── config-service.ts # Configuration versioning
 │   ├── contexts/          # React contexts
 │   │   └── config-context.tsx # Page settings management
 │   ├── hooks/             # Custom React hooks

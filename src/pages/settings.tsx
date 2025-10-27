@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Key, Globe, Save, AlertTriangle, Trash2, Info } from 'lucide-react';
+import { Key, Globe, Save, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,9 +13,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { useToast } from '@/hooks/use-toast';
 import { storage } from '@/lib/storage';
 import { AppSettings } from '@/types/settings';
-import { configService } from '@/lib/config-service';
-import { VersionHistoryPanel } from '@/components/config-versions/VersionHistoryPanel';
-import { DeleteAllConfigDialog } from '@/components/config-versions/DeleteAllConfigDialog';
 import { useConfig } from '@/contexts/config-context';
 import { usePubNubContext } from '@/contexts/pubnub-context';
 import { getSdkVersions, type SdkVersionInfo } from '@/lib/sdk-loader';
@@ -204,8 +201,6 @@ const createDefaultPageSettings = () => {
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>(() => storage.getSettings());
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false);
-  const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
   const { setPageSettings: setConfigPageSettings, setConfigType } = useConfig();
   const { updateSettings: updatePubNubSettings } = usePubNubContext();
@@ -352,7 +347,6 @@ export default function SettingsPage() {
   // Auto-load latest configuration when keys are populated - DISABLED
   // const loadLatestConfiguration = async () => {
   //   try {
-  //     const result = await configService.loadLatestConfig('SETTINGS');
   //     if (result.success && result.config) {
   //       const latestConfig = result.config as AppSettings;
   //       
@@ -582,50 +576,6 @@ export default function SettingsPage() {
     setSettings(restoredConfig);
     updatePubNubSettings(restoredConfig);
   };
-
-  const handleDeleteAllConfig = async () => {
-    setIsDeleting(true);
-    
-    try {
-      const result = await configService.deleteAllConfigurationData();
-      
-      if (result.success) {
-        toast({
-          title: "All Configuration Data Deleted",
-          description: "Application has been reset to vanilla state. Please refresh the page.",
-        });
-        
-        // Close dialog
-        setShowDeleteAllDialog(false);
-        
-        // Reload the page after a short delay to reset everything
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      } else {
-        toast({
-          title: "Deletion Failed",
-          description: result.error || "Some operations failed. Check console for details.",
-          variant: "destructive",
-        });
-        
-        // Show details if available
-        if (result.details) {
-          console.log('Delete operation details:', result.details);
-        }
-      }
-    } catch (error) {
-      console.error('Error during delete all operation:', error);
-      toast({
-        title: "Deletion Error",
-        description: "An unexpected error occurred. Check console for details.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
 
   return (
     <div className="p-6">
@@ -1010,12 +960,7 @@ export default function SettingsPage() {
               </CardContent>
             </Card> */}
 
-            {/* Version History Panel - DISABLED */}
-            {/* <VersionHistoryPanel
-              configType="SETTINGS"
-              currentConfig={settings}
-              onConfigRestore={handleConfigRestore}
-            /> */}
+            {/* Version history UI removed during simplification */}
 
             {/* Save Configuration Button - DISABLED (Auto-save is now enabled) */}
             {/* <div className="flex justify-center pt-8 border-t border-gray-200">
@@ -1029,53 +974,11 @@ export default function SettingsPage() {
               </Button>
             </div> */}
 
-            {/* Danger Zone - DISABLED */}
-            {/* <Card className="mt-8 border-red-200 bg-red-50">
-              <CardHeader>
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-red-500 rounded-lg flex items-center justify-center">
-                    <AlertTriangle className="text-white h-5 w-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-red-800">Danger Zone</CardTitle>
-                    <CardDescription className="text-red-600">
-                      Irreversible actions that will permanently delete data
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
-                  <div className="flex-1">
-                    <h3 className="text-sm font-medium text-red-800">Delete All Configuration Data</h3>
-                    <p className="text-sm text-red-600 mt-1">
-                      Permanently delete all settings, version history, and App Context data. 
-                      This will reset the entire application to a vanilla state.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={() => setShowDeleteAllDialog(true)}
-                    disabled={isDeleting}
-                    className="bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete All Data
-                  </Button>
-                </div>
-              </CardContent>
-            </Card> */}
+            {/* Danger zone functionality removed during simplification */}
           </div>
         </Form>
 
-        {/* Delete All Configuration Dialog - DISABLED */}
-        {/* <DeleteAllConfigDialog
-          isOpen={showDeleteAllDialog}
-          onConfirm={handleDeleteAllConfig}
-          onCancel={() => setShowDeleteAllDialog(false)}
-          isDeleting={isDeleting}
-        /> */}
+        {/* Delete All Configuration Dialog removed during simplification */}
       </div>
     </div>
   );

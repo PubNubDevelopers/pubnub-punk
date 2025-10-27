@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/sidebar';
-import { ConfigPanel } from '@/components/config-panel';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -35,7 +34,6 @@ export function AppShell({ children, pageTitle, pageSubtitle }: AppShellProps) {
             </div>
           </div>
           
-          {/* <ConfigPanel /> */}
         </header>
 
         {/* Content Area */}

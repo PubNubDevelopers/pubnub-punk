@@ -578,7 +578,6 @@ do {
 
 ## Related Files - UNCHANGED
 - `/src/lib/storage.ts`: Settings storage
-- `/src/lib/config-service.ts`: Config persistence service
 - `/src/contexts/config-context.tsx`: Page settings context
 - `/src/components/ui/tabs.tsx`: Tab component
 - `/src/components/ui/*`: Shared UI components

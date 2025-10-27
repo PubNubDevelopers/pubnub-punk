@@ -1075,7 +1075,10 @@ function SubscriptionSummaryCard({
               {hasFilters && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Badge className="flex items-center gap-1 rounded-full border-purple-200 bg-purple-100 text-purple-700 font-medium">
+                    <Badge
+                      className="flex cursor-pointer items-center gap-1 rounded-full border-purple-200 bg-purple-100 text-purple-700 font-medium"
+                      onClick={() => onConfigure('filters')}
+                    >
                       <ToggleRight className="h-3.5 w-3.5" />
                       Filter
                     </Badge>
