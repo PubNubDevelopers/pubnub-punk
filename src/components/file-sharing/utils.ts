@@ -14,8 +14,8 @@ export const formatDate = (dateString: string) => {
 
 // Field definitions for config management
 export const FIELD_DEFINITIONS = {
-  'files.selectedChannel': { section: 'files', field: 'selectedChannel', type: 'string', default: 'file-uploads' },
-  'files.channels': { section: 'files', field: 'channels', type: 'array', default: ['file-uploads'] },
+  'files.selectedChannel': { section: 'files', field: 'selectedChannel', type: 'string', default: '' },
+  'files.channels': { section: 'files', field: 'channels', type: 'array', default: [] as string[] },
   'files.searchTerm': { section: 'files', field: 'searchTerm', type: 'string', default: '' },
   'files.sortBy': { section: 'files', field: 'sortBy', type: 'string', default: 'created' },
   'files.sortOrder': { section: 'files', field: 'sortOrder', type: 'string', default: 'desc' },

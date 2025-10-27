@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
 import { usePubNub } from '@/hooks/usePubNub';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { storage } from '@/lib/storage';
 
 import { ChannelBrowser } from './ChannelBrowser';
 import { FileUpload } from './FileUpload';
@@ -21,6 +22,8 @@ import { DownloadProgressDialog } from './DownloadProgressDialog';
 
 import { FileItem, ChannelStats, DeleteProgress, DownloadProgress, DeleteResults } from './types';
 import { FIELD_DEFINITIONS, formatFileSize } from './utils';
+
+const CHANNELS_STORAGE_KEY = 'file-sharing-channels';
 
 export default function FileSharingPage() {
   const { toast } = useToast();
@@ -54,23 +57,46 @@ export default function FileSharingPage() {
   // Set config type for the config service
   useEffect(() => {
     setConfigType('FILES');
-    
-    // Initialize page settings with the expected files structure
-    setPageSettings({
-      files: {
-        channels: FIELD_DEFINITIONS['files.channels'].default,
-        selectedChannel: FIELD_DEFINITIONS['files.selectedChannel'].default,
-        searchTerm: FIELD_DEFINITIONS['files.searchTerm'].default,
-        sortBy: FIELD_DEFINITIONS['files.sortBy'].default,
-        sortOrder: FIELD_DEFINITIONS['files.sortOrder'].default,
-        viewMode: FIELD_DEFINITIONS['files.viewMode'].default,
-        pageSize: FIELD_DEFINITIONS['files.pageSize'].default,
-        currentPage: FIELD_DEFINITIONS['files.currentPage'].default,
-      },
-      configForSaving: {
-        channels: FIELD_DEFINITIONS['files.channels'].default,
-        timestamp: new Date().toISOString(),
+
+    setPageSettings((prev: any) => {
+      const storedChannels = storage.getItem<string[]>(CHANNELS_STORAGE_KEY) ?? [];
+      const initialChannels = storedChannels;
+      const initialSelected = initialChannels[0] ?? '';
+
+      if (prev?.files) {
+        if (initialChannels.length === 0) {
+          return prev;
+        }
+        return {
+          ...prev,
+          files: {
+            ...(prev.files ?? {}),
+            channels: initialChannels,
+            selectedChannel: prev.files.selectedChannel || initialSelected,
+          },
+          configForSaving: {
+            channels: initialChannels,
+            timestamp: new Date().toISOString(),
+          },
+        };
       }
+
+      return {
+        files: {
+          channels: initialChannels,
+          selectedChannel: initialSelected,
+          searchTerm: FIELD_DEFINITIONS['files.searchTerm'].default,
+          sortBy: FIELD_DEFINITIONS['files.sortBy'].default,
+          sortOrder: FIELD_DEFINITIONS['files.sortOrder'].default,
+          viewMode: FIELD_DEFINITIONS['files.viewMode'].default,
+          pageSize: FIELD_DEFINITIONS['files.pageSize'].default,
+          currentPage: FIELD_DEFINITIONS['files.currentPage'].default,
+        },
+        configForSaving: {
+          channels: initialChannels,
+          timestamp: new Date().toISOString(),
+        },
+      };
     });
   }, [setConfigType, setPageSettings]);
   
@@ -118,6 +144,32 @@ export default function FileSharingPage() {
       }));
     }
   };
+
+  const persistChannels = useCallback(
+    (nextChannels: string[], nextSelected?: string) => {
+      const resolvedSelected = nextSelected !== undefined
+        ? nextSelected
+        : (nextChannels.includes(selectedChannel) ? selectedChannel : nextChannels[0] ?? '');
+
+      if (nextChannels.length > 0) {
+        storage.setItem(CHANNELS_STORAGE_KEY, nextChannels);
+      } else {
+        storage.removeItem(CHANNELS_STORAGE_KEY);
+      }
+
+      updateField('files.channels', nextChannels);
+      updateField('files.selectedChannel', resolvedSelected);
+
+      setPageSettings((prev: any) => ({
+        ...(prev ?? {}),
+        configForSaving: {
+          channels: nextChannels,
+          timestamp: new Date().toISOString(),
+        },
+      }));
+    },
+    [selectedChannel, updateField, setPageSettings],
+  );
 
   // Handle column header click for sorting
   const handleSort = (column: string) => {
@@ -365,21 +417,65 @@ export default function FileSharingPage() {
 
   // Add new channel
   const addChannel = (channelName: string) => {
-    const updatedChannels = [...channels, channelName];
-    updateField('files.channels', updatedChannels);
-    updateField('files.selectedChannel', channelName);
-    
-    setPageSettings((prev: any) => ({
+    const normalized = channelName.trim();
+    if (!normalized) {
+      return;
+    }
+
+    if (channels.includes(normalized)) {
+      toast({
+        title: "Channel exists",
+        description: `${normalized} is already in your channel list.`,
+      });
+      return;
+    }
+
+    const updatedChannels = [...channels, normalized];
+    persistChannels(updatedChannels, normalized);
+
+    setChannelStats((prev) => ({
       ...prev,
-      configForSaving: {
-        channels: updatedChannels,
-        timestamp: new Date().toISOString(),
-      }
+      [normalized]: prev[normalized] ?? {
+        totalFiles: 0,
+        totalSize: 0,
+        lastActivity: 'No files',
+      },
     }));
 
     toast({
       title: "Channel added",
-      description: `Added channel: ${channelName}`,
+      description: `Added channel: ${normalized}`,
+    });
+  };
+
+  const removeChannel = (channelName: string) => {
+    const filteredChannels = channels.filter((channel) => channel !== channelName);
+    const nextSelected = channelName === selectedChannel ? (filteredChannels[0] ?? '') : selectedChannel;
+
+    setAllFiles((prev) => {
+      if (!prev[channelName]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[channelName];
+      return next;
+    });
+
+    setChannelStats((prev) => {
+      if (!prev[channelName]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[channelName];
+      return next;
+    });
+
+    persistChannels(filteredChannels, nextSelected);
+    setSelectedFiles(new Set());
+
+    toast({
+      title: "Channel removed",
+      description: 'This only deletes the cache in your browser. You must explicitly delete files within this channel if you want to remove the files.',
     });
   };
 
@@ -831,6 +927,7 @@ export default function FileSharingPage() {
             channelStats={channelStats}
             onChannelSelect={(channel) => updateField('files.selectedChannel', channel)}
             onChannelAdd={addChannel}
+            onChannelDelete={removeChannel}
           />
 
           {/* Main Content Area */}

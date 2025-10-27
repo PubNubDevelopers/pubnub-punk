@@ -52,6 +52,7 @@ This page interacts with `localStorage` directly (without the helper) to remembe
 |------|-------------------|------|-------|
 | Global settings | `storage` helper | `pubnub_developer_tools_settings` | Holds credentials, environment, and storage preferences. |
 | Pub/Sub tool | `storage` helper | `pubsub-config`, `pubsub-publish-history` | Persists form state and last publish history; auto-saves via debounce. |
+| File Sharing tool | `storage` helper | `file-sharing-channels` | Stores the list of channels the user added to the file manager UI. |
 | Mobile Push tool | direct `localStorage` | `pubnub_mobile_push_devices` | Caches simulated device tokens for UI convenience. |
 
 No part of the app currently writes cookies. All persistence is handled via `window.localStorage` with JSON-serialized payloads.
