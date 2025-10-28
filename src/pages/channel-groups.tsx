@@ -4,17 +4,17 @@ import {
   Plus,
   Trash2,
   RefreshCw,
-  Search,
   ChevronDown,
   ChevronUp,
   AlertCircle,
   CheckCircle2,
   Copy,
+  MinusCircle,
   Users,
   Hash,
   Settings,
-  Edit3,
-  X
+  X,
+  ShieldAlert
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,27 +40,43 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 
 interface ChannelGroup {
   name: string;
   channels: string[];
-  description?: string;
 }
+
+const CHANNEL_GROUPS_STORAGE_KEY = 'channel-groups-list';
 
 // Field definitions for config management
 const FIELD_DEFINITIONS = {
-  'channelGroups.groups': { section: 'channelGroups', field: 'groups', type: 'array', default: [] },
+  'channelGroups.groups': { section: 'channelGroups', field: 'groups', type: 'array', default: [] as ChannelGroup[] },
+  'channelGroups.groupNames': { section: 'channelGroups', field: 'groupNames', type: 'array', default: [] as string[] },
   'channelGroups.selectedGroup': { section: 'channelGroups', field: 'selectedGroup', type: 'string', default: '' },
-  'channelGroups.searchTerm': { section: 'channelGroups', field: 'searchTerm', type: 'string', default: '' },
 } as const;
 
 
 export default function ChannelGroupsPage() {
   const { toast } = useToast();
-  const { setPageSettings, setConfigType } = useConfig();
+  const { pageSettings, setPageSettings, setConfigType } = useConfig();
   
   // State for component mounting
   const [mounted, setMounted] = useState(false);
+  
+  const initialGroups = (pageSettings?.channelGroups?.groups as ChannelGroup[]) ?? [];
+  const [channelGroups, setChannelGroups] = useState<ChannelGroup[]>(initialGroups);
   
   // Use centralized PubNub connection
   const { pubnub, isReady: pubnubReady, connectionError, isConnected } = usePubNub({
@@ -87,37 +103,64 @@ export default function ChannelGroupsPage() {
   useEffect(() => {
     setConfigType('CHANNEL_GROUPS');
     
-    // Initialize page settings
-    setPageSettings({
-      channelGroups: {
-        groups: FIELD_DEFINITIONS['channelGroups.groups'].default,
-        selectedGroup: FIELD_DEFINITIONS['channelGroups.selectedGroup'].default,
-        searchTerm: FIELD_DEFINITIONS['channelGroups.searchTerm'].default,
-      },
-      configForSaving: {
-        groups: FIELD_DEFINITIONS['channelGroups.groups'].default,
-        timestamp: new Date().toISOString(),
-      }
+    setPageSettings((prev: any) => {
+      const storedGroupNames = storage.getItem<string[]>(CHANNEL_GROUPS_STORAGE_KEY) ?? [];
+      const previousGroupsRaw = (prev?.channelGroups?.groups as any[]) ?? FIELD_DEFINITIONS['channelGroups.groups'].default;
+      const sanitizedPreviousGroups: ChannelGroup[] = previousGroupsRaw
+        .map((group) => ({
+          name: typeof group?.name === 'string' ? group.name : '',
+          channels: Array.isArray(group?.channels) ? group.channels.filter((c: unknown): c is string => typeof c === 'string') : []
+        }))
+        .filter((group) => group.name);
+      const resolvedGroupNames = storedGroupNames.length > 0
+        ? storedGroupNames
+        : (prev?.channelGroups?.groupNames as string[]) ?? FIELD_DEFINITIONS['channelGroups.groupNames'].default;
+      const resolvedSelected = prev?.channelGroups?.selectedGroup
+        || resolvedGroupNames[0]
+        || FIELD_DEFINITIONS['channelGroups.selectedGroup'].default;
+
+      return {
+        ...prev,
+        channelGroups: {
+          groups: sanitizedPreviousGroups,
+          groupNames: resolvedGroupNames,
+          selectedGroup: resolvedSelected,
+        },
+        configForSaving: {
+          groups: sanitizedPreviousGroups,
+          timestamp: new Date().toISOString(),
+        }
+      };
     });
   }, [setConfigType, setPageSettings]);
   
   // No longer need manual PubNub initialization - handled by usePubNub hook
   
   // State management
-  const [channelGroups, setChannelGroups] = useState<ChannelGroup[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
   const [showAddChannelDialog, setShowAddChannelDialog] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<ChannelGroup | null>(null);
   
   // Form state
   const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupDescription, setNewGroupDescription] = useState('');
   const [channelsToAdd, setChannelsToAdd] = useState('');
   const [channelToAdd, setChannelToAdd] = useState('');
+  const [showCreatePrompt, setShowCreatePrompt] = useState(false);
+  const [pendingGroupName, setPendingGroupName] = useState<string | null>(null);
+
+  const beginCreateFromPrompt = useCallback(() => {
+    if (!pendingGroupName) {
+      setShowCreatePrompt(false);
+      return;
+    }
+
+    setNewGroupName(pendingGroupName);
+    setChannelsToAdd('');
+    setShowCreatePrompt(false);
+    setShowCreateDialog(true);
+    setPendingGroupName(null);
+    setNewGroupToQuery('');
+  }, [pendingGroupName]);
 
   // Update page settings helper
   const updateField = (path: string, value: any) => {
@@ -135,13 +178,66 @@ export default function ChannelGroupsPage() {
 
   // Load channel groups by name - PubNub doesn't provide a "list all" API
   // Users must specify which groups they want to query
-  const [groupNamesToQuery, setGroupNamesToQuery] = useState<string[]>([]);
   const [newGroupToQuery, setNewGroupToQuery] = useState('');
   const [showAddQueryDialog, setShowAddQueryDialog] = useState(false);
 
+  const selectedGroup = (pageSettings?.channelGroups?.selectedGroup as string) || FIELD_DEFINITIONS['channelGroups.selectedGroup'].default;
+  const groupNamesToQuery = Array.isArray(pageSettings?.channelGroups?.groupNames)
+    ? (pageSettings?.channelGroups?.groupNames as string[])
+    : FIELD_DEFINITIONS['channelGroups.groupNames'].default;
+
+  useEffect(() => {
+    const groupsFromSettings = (pageSettings?.channelGroups?.groups as any[]) ?? [];
+    const sanitizedGroups: ChannelGroup[] = groupsFromSettings
+      .map((group) => ({
+        name: typeof group?.name === 'string' ? group.name : '',
+        channels: Array.isArray(group?.channels) ? group.channels.filter((c: unknown): c is string => typeof c === 'string') : []
+      }))
+      .filter((group) => group.name);
+    setChannelGroups(sanitizedGroups);
+  }, [pageSettings?.channelGroups?.groups]);
+
+  const persistGroupNames = useCallback(
+    (nextGroupNames: string[], nextSelected?: string) => {
+      const sanitized = nextGroupNames
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0);
+      const uniqueNames = Array.from(new Set(sanitized));
+
+      const resolvedSelected = nextSelected !== undefined
+        ? nextSelected
+        : (uniqueNames.includes(selectedGroup) ? selectedGroup : uniqueNames[0] ?? '');
+
+      if (uniqueNames.length > 0) {
+        storage.setItem(CHANNEL_GROUPS_STORAGE_KEY, uniqueNames);
+      } else {
+        storage.removeItem(CHANNEL_GROUPS_STORAGE_KEY);
+      }
+
+      updateField('channelGroups.groupNames', uniqueNames);
+      updateField('channelGroups.selectedGroup', resolvedSelected);
+    },
+    [selectedGroup, updateField]
+  );
+
   const loadChannelGroups = useCallback(async () => {
-    if (!pubnub || groupNamesToQuery.length === 0) {
+    if (!pubnub) {
+      return;
+    }
+
+    if (groupNamesToQuery.length === 0) {
       setChannelGroups([]);
+      setPageSettings((prev: any) => ({
+        ...prev,
+        channelGroups: {
+          ...(prev?.channelGroups ?? {}),
+          groups: []
+        },
+        configForSaving: {
+          groups: [],
+          timestamp: new Date().toISOString(),
+        }
+      }));
       return;
     }
 
@@ -159,8 +255,7 @@ export default function ChannelGroupsPage() {
           // Group exists, add it to our list
           verifiedGroups.push({
             name: groupName,
-            channels: result.channels || [],
-            description: undefined // PubNub doesn't store descriptions
+            channels: result.channels || []
           });
         } catch (error) {
           // Group doesn't exist or error occurred
@@ -173,8 +268,12 @@ export default function ChannelGroupsPage() {
       setPageSettings((prev: any) => ({
         ...prev,
         channelGroups: {
-          ...prev?.channelGroups,
+          ...(prev?.channelGroups ?? {}),
           groups: verifiedGroups
+        },
+        configForSaving: {
+          groups: verifiedGroups,
+          timestamp: new Date().toISOString(),
         }
       }));
       
@@ -196,6 +295,7 @@ export default function ChannelGroupsPage() {
   const createChannelGroup = async () => {
     if (!pubnub || !newGroupName.trim()) return;
 
+    const trimmedGroupName = newGroupName.trim();
     const channels = channelsToAdd.split(',').map(c => c.trim()).filter(c => c);
     
     if (channels.length === 0) {
@@ -219,32 +319,43 @@ export default function ChannelGroupsPage() {
     try {
       await pubnub.channelGroups.addChannels({
         channels: channels,
-        channelGroup: newGroupName.trim()
+        channelGroup: trimmedGroupName
       });
 
       const newGroup: ChannelGroup = {
-        name: newGroupName.trim(),
-        channels: channels,
-        description: newGroupDescription.trim() || undefined
+        name: trimmedGroupName,
+        channels: channels
       };
 
       const updatedGroups = [...channelGroups, newGroup];
       setChannelGroups(updatedGroups);
+      setPageSettings((prev: any) => ({
+        ...prev,
+        channelGroups: {
+          ...(prev?.channelGroups ?? {}),
+          groups: updatedGroups
+        },
+        configForSaving: {
+          groups: updatedGroups,
+          timestamp: new Date().toISOString(),
+        }
+      }));
       
       // Add this group to our query list if not already there
-      if (!groupNamesToQuery.includes(newGroupName.trim())) {
-        const newQueryList = [...groupNamesToQuery, newGroupName.trim()];
-        setGroupNamesToQuery(newQueryList);
+      if (!groupNamesToQuery.includes(trimmedGroupName)) {
+        const newQueryList = [...groupNamesToQuery, trimmedGroupName];
+        persistGroupNames(newQueryList, trimmedGroupName);
+      } else {
+        updateField('channelGroups.selectedGroup', trimmedGroupName);
       }
 
       toast({
         title: "Channel Group Created",
-        description: `Successfully created channel group "${newGroupName}" with ${channels.length} channels.`,
+        description: `Successfully created channel group "${trimmedGroupName}" with ${channels.length} channels.`,
       });
 
       // Reset form
       setNewGroupName('');
-      setNewGroupDescription('');
       setChannelsToAdd('');
       setShowCreateDialog(false);
 
@@ -284,8 +395,12 @@ export default function ChannelGroupsPage() {
       setPageSettings((prev: any) => ({
         ...prev,
         channelGroups: {
-          ...prev?.channelGroups,
+          ...(prev?.channelGroups ?? {}),
           groups: updatedGroups
+        },
+        configForSaving: {
+          groups: updatedGroups,
+          timestamp: new Date().toISOString(),
         }
       }));
 
@@ -333,8 +448,12 @@ export default function ChannelGroupsPage() {
       setPageSettings((prev: any) => ({
         ...prev,
         channelGroups: {
-          ...prev?.channelGroups,
+          ...(prev?.channelGroups ?? {}),
           groups: updatedGroups
+        },
+        configForSaving: {
+          groups: updatedGroups,
+          timestamp: new Date().toISOString(),
         }
       }));
 
@@ -368,18 +487,19 @@ export default function ChannelGroupsPage() {
       setPageSettings((prev: any) => ({
         ...prev,
         channelGroups: {
-          ...prev?.channelGroups,
+          ...(prev?.channelGroups ?? {}),
           groups: updatedGroups
+        },
+        configForSaving: {
+          groups: updatedGroups,
+          timestamp: new Date().toISOString(),
         }
       }));
       
       // Remove from query list
       const updatedQueryList = groupNamesToQuery.filter(name => name !== groupName);
-      setGroupNamesToQuery(updatedQueryList);
-
-      if (selectedGroup === groupName) {
-        setSelectedGroup('');
-      }
+      const nextSelected = selectedGroup === groupName ? (updatedQueryList[0] ?? '') : selectedGroup;
+      persistGroupNames(updatedQueryList, nextSelected);
 
       toast({
         title: "Channel Group Deleted",
@@ -396,46 +516,94 @@ export default function ChannelGroupsPage() {
     }
   };
 
-  // Update group description
-  const updateGroupDescription = async () => {
-    if (!editingGroup) return;
+  const removeGroupFromList = (groupName: string) => {
+    const filteredNames = groupNamesToQuery.filter(name => name !== groupName);
+    const updatedGroups = channelGroups.filter(group => group.name !== groupName);
+    const nextSelected = selectedGroup === groupName ? (filteredNames[0] ?? '') : selectedGroup;
 
-    // Note: PubNub doesn't store group descriptions server-side
-    // This is just for local UI purposes
-    const updatedGroups = channelGroups.map(group => {
-      if (group.name === editingGroup.name) {
-        return {
-          ...group,
-          description: editingGroup.description
-        };
-      }
-      return group;
-    });
-    
     setChannelGroups(updatedGroups);
     setPageSettings((prev: any) => ({
       ...prev,
       channelGroups: {
-        ...prev?.channelGroups,
+        ...(prev?.channelGroups ?? {}),
         groups: updatedGroups
+      },
+      configForSaving: {
+        groups: updatedGroups,
+        timestamp: new Date().toISOString(),
       }
     }));
 
-    toast({
-      title: "Group Updated",
-      description: `Successfully updated description for "${editingGroup.name}".`,
-    });
+    persistGroupNames(filteredNames, nextSelected);
 
-    setEditingGroup(null);
-    setShowEditDialog(false);
+    toast({
+      title: "Group removed",
+      description: `Removed "${groupName}" from your local list. The channel group remains available in PubNub.`,
+    });
   };
+
+  const handleAddGroupToQuery = useCallback(
+    async (groupName: string) => {
+      const trimmed = groupName.trim();
+      if (!trimmed) {
+        return false;
+      }
+
+      if (!pubnub) {
+        toast({
+          title: 'PubNub not ready',
+          description: 'Connect to PubNub before loading channel groups.',
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      if (groupNamesToQuery.includes(trimmed)) {
+        toast({
+          title: "Group exists",
+          description: `"${trimmed}" is already saved in your list.`,
+        });
+        return false;
+      }
+
+      try {
+        const result = await pubnub.channelGroups.listChannels({
+          channelGroup: trimmed
+        });
+
+        if (!Array.isArray(result.channels) || result.channels.length === 0) {
+          setPendingGroupName(trimmed);
+          setShowAddQueryDialog(false);
+          setShowCreatePrompt(true);
+          setNewGroupToQuery('');
+          return false;
+        }
+      } catch (error) {
+        setPendingGroupName(trimmed);
+        setShowAddQueryDialog(false);
+        setShowCreatePrompt(true);
+        setNewGroupToQuery('');
+        return false;
+      }
+
+      const nextGroups = [...groupNamesToQuery, trimmed];
+      persistGroupNames(nextGroups, trimmed);
+
+      toast({
+        title: "Group added",
+        description: `Added "${trimmed}" to your local list.`,
+      });
+
+      return true;
+    },
+    [groupNamesToQuery, persistGroupNames, toast, pubnub]
+  );
 
   // Copy group configuration
   const copyGroupConfig = async (group: ChannelGroup) => {
     const config = {
       name: group.name,
-      channels: group.channels,
-      description: group.description
+      channels: group.channels
     };
 
     try {
@@ -453,15 +621,6 @@ export default function ChannelGroupsPage() {
     }
   };
 
-  // Filter channel groups based on search
-  const filteredGroups = useMemo(() => {
-    return channelGroups.filter(group => 
-      group.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      group.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      group.channels.some(channel => channel.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-  }, [channelGroups, searchTerm]);
-
   // Get selected group details
   const selectedGroupDetails = useMemo(() => {
     return channelGroups.find(group => group.name === selectedGroup);
@@ -469,7 +628,7 @@ export default function ChannelGroupsPage() {
 
   // Load channel groups when component mounts or query list changes
   useEffect(() => {
-    if (pubnub && groupNamesToQuery.length > 0) {
+    if (pubnub) {
       loadChannelGroups();
     }
   }, [pubnub, loadChannelGroups, groupNamesToQuery]);
@@ -544,168 +703,73 @@ export default function ChannelGroupsPage() {
   return (
     <div className="p-6 h-full">
       <div className="max-w-7xl mx-auto h-full flex flex-col">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm text-blue-800">
-              <strong>Requirements:</strong> Stream Controller add-on must be enabled in your PubNub Admin Portal. 
-              Channel groups allow you to bundle up to 2,000 channels for subscription management.
-            </p>
-          </div>
-          <div className="mt-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-            <p className="text-sm text-yellow-800">
-              <strong>Note:</strong> PubNub doesn't provide a "list all channel groups" API. 
-              You must specify which groups you want to query by adding them to the query list.
-            </p>
-          </div>
-        </div>
 
         {/* Main Layout */}
         <div className="flex-1 flex gap-6 min-h-0">
           {/* Left Sidebar - Channel Groups List */}
           <div className="w-80 flex-shrink-0">
             <Card className="h-full flex flex-col">
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between mb-3">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <Layers className="w-4 h-4" />
-                    Channel Groups
-                  </CardTitle>
-                  <div className="flex gap-1">
-                    <Dialog open={showAddQueryDialog} onOpenChange={setShowAddQueryDialog}>
-                      <DialogTrigger asChild>
-                        <Button size="sm" variant="outline" title="Add group to query">
-                          <Search className="w-4 h-4" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-md">
-                        <DialogHeader>
-                          <DialogTitle>Add Group to Query</DialogTitle>
-                          <DialogDescription>
-                            Enter the name of an existing channel group to query.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div>
-                            <Label>Group Name</Label>
-                            <Input
-                              value={newGroupToQuery}
-                              onChange={(e) => setNewGroupToQuery(e.target.value)}
-                              placeholder="existing-group-name"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  const trimmed = newGroupToQuery.trim();
-                                  if (trimmed && !groupNamesToQuery.includes(trimmed)) {
-                                    setGroupNamesToQuery([...groupNamesToQuery, trimmed]);
-                                    setNewGroupToQuery('');
-                                    setShowAddQueryDialog(false);
-                                  }
-                                }
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setShowAddQueryDialog(false)}>
-                            Cancel
-                          </Button>
-                          <Button 
-                            onClick={() => {
-                              const trimmed = newGroupToQuery.trim();
-                              if (trimmed && !groupNamesToQuery.includes(trimmed)) {
-                                setGroupNamesToQuery([...groupNamesToQuery, trimmed]);
-                                setNewGroupToQuery('');
-                                setShowAddQueryDialog(false);
-                              }
-                            }}
-                            disabled={!newGroupToQuery.trim() || groupNamesToQuery.includes(newGroupToQuery.trim())}
-                          >
-                            Add to Query
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                    <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-                      <DialogTrigger asChild>
-                        <Button size="sm" className="bg-pubnub-red hover:bg-pubnub-red/90">
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-md">
-                        <DialogHeader>
-                          <DialogTitle>Create Channel Group</DialogTitle>
-                          <DialogDescription>
-                            Create a new channel group with initial channels.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div>
-                            <Label>Group Name *</Label>
-                            <Input
-                              value={newGroupName}
-                              onChange={(e) => setNewGroupName(e.target.value)}
-                              placeholder="my-channel-group"
-                            />
-                          </div>
-                          <div>
-                            <Label>Description (Optional)</Label>
-                            <Input
-                              value={newGroupDescription}
-                              onChange={(e) => setNewGroupDescription(e.target.value)}
-                              placeholder="Group description"
-                            />
-                          </div>
-                          <div>
-                            <Label>Initial Channels *</Label>
-                            <Textarea
-                              value={channelsToAdd}
-                              onChange={(e) => setChannelsToAdd(e.target.value)}
-                              placeholder="channel1, channel2, channel3"
-                              rows={3}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              Comma-separated list. Max 200 channels per operation.
-                            </p>
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-                            Cancel
-                          </Button>
-                          <Button onClick={createChannelGroup} disabled={!newGroupName.trim() || !channelsToAdd.trim()}>
-                            Create Group
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </div>
-                
-                {/* Search and Refresh Controls */}
-                <div className="space-y-2">
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                    <Input
-                      placeholder="Search groups..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                  
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={loadChannelGroups}
-                    disabled={loading}
-                    className="w-full"
-                  >
-                    <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                    Refresh Groups
-                  </Button>
-                </div>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Layers className="w-4 h-4" />
+                  Channel Groups
+                </CardTitle>
               </CardHeader>
-              
+              <div className="px-4 pb-3 flex justify-center">
+                <Dialog open={showAddQueryDialog} onOpenChange={setShowAddQueryDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline" title="Manage an existing channel group">
+                      Manage Existing Channel Group
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Add Group to Query</DialogTitle>
+                      <DialogDescription>
+                        Enter the name of an existing channel group to query.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Group Name</Label>
+                        <Input
+                          value={newGroupToQuery}
+                          onChange={(e) => setNewGroupToQuery(e.target.value)}
+                          placeholder="existing-group-name"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddGroupToQuery(newGroupToQuery).then((added) => {
+                                if (added) {
+                                  setNewGroupToQuery('');
+                                  setShowAddQueryDialog(false);
+                                }
+                              });
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowAddQueryDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button 
+                        onClick={async () => {
+                          const added = await handleAddGroupToQuery(newGroupToQuery);
+                          if (added) {
+                            setNewGroupToQuery('');
+                            setShowAddQueryDialog(false);
+                          }
+                        }}
+                        disabled={!newGroupToQuery.trim() || groupNamesToQuery.includes(newGroupToQuery.trim())}
+                      >
+                        Add to Query
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
               <CardContent className="flex-1 overflow-y-auto space-y-1">
                 {loading ? (
                   <div className="flex items-center justify-center p-8">
@@ -716,19 +780,19 @@ export default function ChannelGroupsPage() {
                     <Layers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-sm">No groups to query</p>
                     <p className="text-xs text-gray-400 mt-1">
-                      Use the search button to add groups to query
+                      Use the load button to add channel groups to this list
                     </p>
                   </div>
-                ) : filteredGroups.length === 0 ? (
+                ) : channelGroups.length === 0 ? (
                   <div className="text-center p-8 text-gray-500">
-                    {searchTerm ? 'No groups match your search' : 'No channel groups found'}
+                    No channel groups found
                     <p className="text-xs text-gray-400 mt-1">
                       Groups may not exist or may be empty
                     </p>
                   </div>
                 ) : (
                   <TooltipProvider>
-                    {filteredGroups.map((group) => (
+                    {channelGroups.map((group) => (
                       <Tooltip key={group.name}>
                         <TooltipTrigger asChild>
                           <div
@@ -737,31 +801,42 @@ export default function ChannelGroupsPage() {
                                 ? 'bg-pubnub-blue text-white border-pubnub-blue' 
                                 : 'hover:bg-gray-50 border-gray-200'
                             }`}
-                            onClick={() => setSelectedGroup(group.name)}
+                            onClick={() => updateField('channelGroups.selectedGroup', group.name)}
                           >
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-2">
                               <div className="min-w-0 flex-1">
                                 <div className="font-medium text-sm truncate">{group.name}</div>
                                 <div className={`text-xs ${selectedGroup === group.name ? 'text-blue-200' : 'text-gray-500'}`}>
                                   {group.channels.length} channels
                                 </div>
                               </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={`h-6 w-6 flex-shrink-0 ${
+                                  selectedGroup === group.name
+                                    ? 'text-blue-100 hover:text-red-200 hover:bg-blue-700/40'
+                                    : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                                }`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  removeGroupFromList(group.name);
+                                }}
+                              >
+                                <X className="w-4 h-4" />
+                                <span className="sr-only">Remove from local list</span>
+                              </Button>
                             </div>
-                            {group.description && (
-                              <div className={`text-xs mt-1 truncate ${selectedGroup === group.name ? 'text-blue-100' : 'text-gray-600'}`}>
-                                {group.description}
-                              </div>
-                            )}
                           </div>
                         </TooltipTrigger>
                         <TooltipContent side="right">
                           <div className="max-w-xs">
                             <div className="font-semibold">{group.name}</div>
-                            {group.description && (
-                              <div className="text-sm">{group.description}</div>
-                            )}
-                            <div className="text-xs text-gray-300 mt-1">
+                            <div className="text-xs text-gray-400 mt-1">
                               {group.channels.length} channels
+                            </div>
+                            <div className="text-xs text-gray-400 mt-2">
+                              Removing the group here only clears it from this tool.
                             </div>
                           </div>
                         </TooltipContent>
@@ -774,29 +849,83 @@ export default function ChannelGroupsPage() {
           </div>
 
           {/* Main Content Area */}
-          <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 flex flex-col min-w-0 space-y-4">
+            <div className="mx-auto w-full max-w-3xl">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 flex flex-col gap-3">
+                <p className="text-xs text-blue-900 leading-relaxed">
+                  <strong>Requirements:</strong> Stream Controller add-on must be enabled in your PubNub Admin Portal. Channel groups allow you to bundle up to 200 channels for subscription management.
+                </p>
+                <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                  <DialogTrigger asChild>
+                    <Button className="ml-auto bg-pubnub-red hover:bg-pubnub-red/90">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Channel Group
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Create Channel Group</DialogTitle>
+                      <DialogDescription>
+                        This creates a brand new channel group on your PubNub keyset.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Group Name *</Label>
+                        <Input
+                          value={newGroupName}
+                          onChange={(e) => setNewGroupName(e.target.value)}
+                          placeholder="my-channel-group"
+                        />
+                      </div>
+                      <div>
+                        <Label>Initial Channels *</Label>
+                        <Textarea
+                          value={channelsToAdd}
+                          onChange={(e) => setChannelsToAdd(e.target.value)}
+                          placeholder="channel1, channel2, channel3"
+                          rows={3}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Comma-separated list. Max 200 channels per operation.
+                        </p>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={createChannelGroup} disabled={!newGroupName.trim() || !channelsToAdd.trim()}>
+                        Create Group on PubNub
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+
             {!selectedGroupDetails ? (
               <Card className="flex-1 flex items-center justify-center">
                 <CardContent className="text-center">
                   <Layers className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Select a Channel Group</h3>
                   <p className="text-gray-500">
-                    Choose a channel group from the sidebar to view and manage its channels
+                    Load or select a channel group from the sidebar to manage it.
                   </p>
                 </CardContent>
               </Card>
             ) : (
               <Card className="flex-1 flex flex-col">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
+                <CardHeader className="space-y-4">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
                       <CardTitle className="flex items-center gap-2">
                         <Layers className="w-5 h-5" />
                         {selectedGroupDetails.name}
                       </CardTitle>
-                      {selectedGroupDetails.description && (
-                        <p className="text-sm text-gray-600 mt-1">{selectedGroupDetails.description}</p>
-                      )}
+                      <p className="text-xs text-gray-500 mt-3">
+                        The actions in this panel call PubNub directly. Changes apply immediately to your keyset.
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
@@ -805,27 +934,7 @@ export default function ChannelGroupsPage() {
                         onClick={() => copyGroupConfig(selectedGroupDetails)}
                       >
                         <Copy className="w-4 h-4 mr-2" />
-                        Copy Config
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setEditingGroup({ ...selectedGroupDetails });
-                          setShowEditDialog(true);
-                        }}
-                      >
-                        <Edit3 className="w-4 h-4 mr-2" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => deleteChannelGroup(selectedGroupDetails.name)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete Group
+                        Copy JSON
                       </Button>
                     </div>
                   </div>
@@ -842,14 +951,14 @@ export default function ChannelGroupsPage() {
                       <DialogTrigger asChild>
                         <Button size="sm" className="bg-pubnub-blue hover:bg-pubnub-blue/90">
                           <Plus className="w-4 h-4 mr-2" />
-                          Add Channel
+                          Add Channel (PubNub)
                         </Button>
                       </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
                           <DialogTitle>Add Channel to Group</DialogTitle>
                           <DialogDescription>
-                            Add a new channel to the "{selectedGroupDetails.name}" group.
+                            Adds the channel to "{selectedGroupDetails.name}" via the PubNub API.
                           </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4">
@@ -879,79 +988,108 @@ export default function ChannelGroupsPage() {
                   </div>
                 </CardHeader>
                 
-                <CardContent className="flex-1 overflow-y-auto">
-                  {selectedGroupDetails.channels.length === 0 ? (
-                    <div className="flex items-center justify-center h-32">
-                      <div className="text-center">
-                        <Hash className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <p className="text-gray-500">No channels in this group</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid gap-2">
-                      {selectedGroupDetails.channels.map((channel, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Hash className="w-4 h-4 text-gray-400" />
-                            <span className="font-mono text-sm">{channel}</span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeChannelFromGroup(selectedGroupDetails.name, channel)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
+                <CardContent className="flex-1 overflow-y-auto space-y-6">
+                  <div>
+                    {selectedGroupDetails.channels.length === 0 ? (
+                      <div className="flex items-center justify-center h-32">
+                        <div className="text-center">
+                          <Hash className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                          <p className="text-gray-500">No channels in this group</p>
                         </div>
-                      ))}
+                      </div>
+                    ) : (
+                      <div className="grid gap-2">
+                        {selectedGroupDetails.channels.map((channel, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Hash className="w-4 h-4 text-gray-400" />
+                              <span className="font-mono text-sm">{channel}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeChannelFromGroup(selectedGroupDetails.name, channel)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                    <div className="flex items-center gap-2 text-red-800 font-semibold">
+                      <ShieldAlert className="w-4 h-4" />
+                      Delete Channel Group from PubNub
                     </div>
-                  )}
+                    <p className="text-xs text-red-800 mt-2 leading-relaxed">
+                      This permanently removes the channel group and all of its channel associations from your PubNub keyset.
+                      Remove the group from the sidebar instead if you only want to stop tracking it locally.
+                    </p>
+                    <div className="mt-3">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete Channel Group Permanently
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Channel Group</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This action permanently removes "{selectedGroupDetails.name}" and all associated channels from your PubNub keyset. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => deleteChannelGroup(selectedGroupDetails.name)}>
+                              Delete Channel Group
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             )}
           </div>
         </div>
       </div>
-      
-      {/* Edit Group Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Channel Group</DialogTitle>
-            <DialogDescription>
-              Update the description for "{editingGroup?.name}".
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Group Name</Label>
-              <Input value={editingGroup?.name || ''} disabled className="bg-gray-50" />
-              <p className="text-xs text-gray-500 mt-1">Group name cannot be changed</p>
-            </div>
-            <div>
-              <Label>Description</Label>
-              <Textarea
-                value={editingGroup?.description || ''}
-                onChange={(e) => setEditingGroup(prev => prev ? { ...prev, description: e.target.value } : null)}
-                placeholder="Optional group description"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={updateGroupDescription}>
-              Update Group
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+      <AlertDialog
+        open={showCreatePrompt}
+        onOpenChange={(open) => {
+          setShowCreatePrompt(open);
+          if (!open) {
+            setPendingGroupName(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Create Channel Group?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingGroupName ? `"${pendingGroupName}" is not currently available. Would you like to create it now?` : 'Would you like to create this channel group now?'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={beginCreateFromPrompt}>
+              Create Channel Group
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
