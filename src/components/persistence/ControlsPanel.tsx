@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { 
@@ -36,6 +37,9 @@ interface ControlsPanelProps {
   countLoading: boolean;
   onFetchHistory: () => void;
   onGetMessageCounts: () => void;
+  channelsManagedExternally?: boolean;
+  channelsHelperText?: string;
+  selectedChannelsList?: string[];
 }
 
 export function ControlsPanel({
@@ -53,6 +57,9 @@ export function ControlsPanel({
   countLoading,
   onFetchHistory,
   onGetMessageCounts,
+  channelsManagedExternally = false,
+  channelsHelperText,
+  selectedChannelsList = [],
 }: ControlsPanelProps) {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
@@ -69,13 +76,40 @@ export function ControlsPanel({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label htmlFor="channels">Channels *</Label>
-            <Input
-              id="channels"
-              placeholder="channel1, channel2"
-              value={settings.selectedChannels}
-              onChange={(e) => onSettingsChange({ selectedChannels: e.target.value })}
-            />
-            <p className="text-xs text-gray-500">Comma-separated channel names</p>
+            {channelsManagedExternally ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  {selectedChannelsList.length > 0 ? (
+                    selectedChannelsList.map((channel) => (
+                      <Badge
+                        key={channel}
+                        variant="outline"
+                        className="rounded-full border-green-200 bg-green-100 text-green-700 font-medium"
+                      >
+                        {channel}
+                      </Badge>
+                    ))
+                  ) : (
+                    <Badge variant="outline" className="rounded-full border-gray-200 bg-white text-gray-500">
+                      No channels selected
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500">
+                  {channelsHelperText || 'Select channels from the Channel List panel'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <Input
+                  id="channels"
+                  placeholder="channel1, channel2"
+                  value={settings.selectedChannels}
+                  onChange={(e) => onSettingsChange({ selectedChannels: e.target.value })}
+                />
+                <p className="text-xs text-gray-500">Comma-separated channel names</p>
+              </>
+            )}
           </div>
           
           <div className="space-y-2">

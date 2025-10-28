@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
-import { RefreshCw, AlertCircle } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { RefreshCw, AlertCircle, Hash, Plus, X } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '@/contexts/config-context';
 import { usePubNub } from '@/hooks/usePubNub';
@@ -24,11 +24,31 @@ import {
   FetchProgress,
   FIELD_DEFINITIONS 
 } from '@/types/persistence';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { storage } from '@/lib/storage';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+
+const CHANNELS_STORAGE_KEY = 'persistence-managed-channels';
 
 
 export default function PubNubPersistencePage() {
   const { toast } = useToast();
   const { setPageSettings, setConfigType } = useConfig();
+  const [channelList, setChannelList] = useState<string[]>([]);
+  const [showAddChannelDialog, setShowAddChannelDialog] = useState(false);
+  const [newChannelName, setNewChannelName] = useState('');
   
   // Use centralized PubNub connection manager
   const { pubnub, isReady: pubnubReady, connectionError, isConnected } = usePubNub({
@@ -60,6 +80,17 @@ export default function PubNubPersistencePage() {
     searchTerm: FIELD_DEFINITIONS['persistence.searchTerm'].default as string,
     showRawData: FIELD_DEFINITIONS['persistence.showRawData'].default as boolean,
   });
+  const selectedChannelsArray = useMemo(() => {
+    return settings.selectedChannels
+      .split(',')
+      .map((channel) => channel.trim())
+      .filter((channel, index, arr) => channel && arr.indexOf(channel) === index);
+  }, [settings.selectedChannels]);
+
+  const updateSelectedChannels = useCallback((channels: string[]) => {
+    const unique = Array.from(new Set(channels.map((channel) => channel.trim()).filter(Boolean)));
+    setSettings((prev) => ({ ...prev, selectedChannels: unique.join(', ') }));
+  }, [setSettings]);
   
   const [startTimestamp, setStartTimestamp] = useState('');
   const [endTimestamp, setEndTimestamp] = useState('');
@@ -87,6 +118,33 @@ export default function PubNubPersistencePage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Initialize channel list from localStorage or settings
+  useEffect(() => {
+    const storedChannels = storage.getItem<string[]>(CHANNELS_STORAGE_KEY) ?? [];
+    if (storedChannels.length > 0) {
+      setChannelList(storedChannels);
+      const validSelection = selectedChannelsArray.filter((channel) => storedChannels.includes(channel));
+      if (validSelection.length > 0) {
+        updateSelectedChannels(validSelection);
+      } else {
+        updateSelectedChannels([storedChannels[0]]);
+      }
+    } else if (selectedChannelsArray.length > 0) {
+      setChannelList(selectedChannelsArray);
+      storage.setItem(CHANNELS_STORAGE_KEY, selectedChannelsArray);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist channel list whenever it changes
+  useEffect(() => {
+    if (channelList.length > 0) {
+      storage.setItem(CHANNELS_STORAGE_KEY, channelList);
+    } else {
+      storage.removeItem(CHANNELS_STORAGE_KEY);
+    }
+  }, [channelList]);
 
   // Initialize timezone
   useEffect(() => {
@@ -144,6 +202,61 @@ export default function PubNubPersistencePage() {
       setPageSettings(pageSettings);
     }
   }, [pageSettings, setPageSettings, mounted]);
+
+  const handleChannelToggle = (channel: string) => {
+    const nextSet = new Set(selectedChannelsArray);
+    if (nextSet.has(channel)) {
+      nextSet.delete(channel);
+    } else {
+      nextSet.add(channel);
+    }
+    updateSelectedChannels(Array.from(nextSet));
+  };
+
+  const handleAddChannel = () => {
+    const trimmed = newChannelName.trim();
+    if (!trimmed) {
+      toast({
+        title: 'Channel name required',
+        description: 'Enter a channel name to track history.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (channelList.includes(trimmed)) {
+      toast({
+        title: 'Channel already added',
+        description: `${trimmed} is already in your channel list.`,
+      });
+      return;
+    }
+
+    const updatedList = [...channelList, trimmed];
+    setChannelList(updatedList);
+    updateSelectedChannels([...selectedChannelsArray, trimmed]);
+    setNewChannelName('');
+    setShowAddChannelDialog(false);
+    toast({
+      title: 'Channel added',
+      description: `Added ${trimmed} to your channel list.`,
+    });
+  };
+
+  const handleRemoveChannel = (channel: string) => {
+    const updatedList = channelList.filter((item) => item !== channel);
+    setChannelList(updatedList);
+    const updatedSelection = selectedChannelsArray.filter((item) => item !== channel);
+    if (updatedList.length > 0 && updatedSelection.length === 0) {
+      updateSelectedChannels([updatedList[0]]);
+    } else {
+      updateSelectedChannels(updatedSelection);
+    }
+    toast({
+      title: 'Channel removed',
+      description: `${channel} removed from your local list.`,
+    });
+  };
 
   // Handle timestamp input changes
   const handleStartTimestampChange = (timestamp: string) => {
@@ -216,7 +329,7 @@ export default function PubNubPersistencePage() {
       return;
     }
 
-    const channels = settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c);
+    const channels = selectedChannelsArray;
     if (channels.length === 0) {
       toast({
         title: "Channels Required",
@@ -292,7 +405,7 @@ export default function PubNubPersistencePage() {
       return;
     }
 
-    const channels = settings.selectedChannels.split(',').map(c => c.trim()).filter(c => c);
+    const channels = selectedChannelsArray;
     if (channels.length === 0) {
       toast({
         title: "Channels Required",
@@ -472,47 +585,137 @@ export default function PubNubPersistencePage() {
 
   return (
     <div className="p-6 h-full">
-      <div className="max-w-7xl mx-auto h-full flex flex-col">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm text-blue-800">
-              <strong>Requirements:</strong> Message Persistence add-on must be enabled in your PubNub Admin Portal. 
-              Messages are stored automatically when published with storeInHistory: true.
-            </p>
-          </div>
+      <div className="h-full flex gap-6">
+        {/* Channel List Panel */}
+        <div className="basis-1/5 min-w-[240px]">
+          <Card className="h-full flex flex-col">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Hash className="w-4 h-4" />
+                Channel List
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 flex flex-col">
+              <div className="flex justify-end mb-3">
+                <Dialog open={showAddChannelDialog} onOpenChange={setShowAddChannelDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Channel
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add Channel</DialogTitle>
+                      <DialogDescription>
+                        Add a channel to manage persistence queries locally.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <Input
+                        value={newChannelName}
+                        onChange={(e) => setNewChannelName(e.target.value)}
+                        placeholder="channel-name"
+                        autoFocus
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowAddChannelDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleAddChannel}>Add Channel</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-1">
+                {channelList.length === 0 ? (
+                  <div className="text-sm text-gray-500 p-4 border border-dashed rounded-lg text-center">
+                    No channels saved yet. Click <span className="font-medium">Add Channel</span> to manage your history queries.
+                  </div>
+                ) : (
+                  channelList.map((channel) => {
+                    const isSelected = selectedChannelsArray.includes(channel);
+                    return (
+                      <div
+                        key={channel}
+                        className={`p-3 rounded border transition-colors cursor-pointer ${
+                          isSelected ? 'bg-pubnub-blue text-white border-pubnub-blue' : 'border-gray-200 hover:bg-gray-50'
+                        }`}
+                        onClick={() => handleChannelToggle(channel)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Hash className={`w-4 h-4 ${isSelected ? 'text-blue-100' : 'text-gray-400'}`} />
+                            <span className="font-mono text-sm truncate">{channel}</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={isSelected ? 'text-blue-100 hover:text-red-200 hover:bg-blue-700/40' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRemoveChannel(channel);
+                            }}
+                          >
+                            <X className="w-4 h-4" />
+                            <span className="sr-only">Remove channel</span>
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <p className="text-xs text-gray-500 mt-4">
+                Channels are stored locally in your browser. Select one or more channels to manage history queries.
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Controls Panel */}
-        <ControlsPanel
-          settings={settings}
-          onSettingsChange={(updates) => setSettings(prev => ({ ...prev, ...updates }))}
-          selectedTimezone={selectedTimezone}
-          onTimezoneChange={handleTimezoneChange}
-          startTimestamp={startTimestamp}
-          endTimestamp={endTimestamp}
-          onStartTimestampChange={handleStartTimestampChange}
-          onEndTimestampChange={handleEndTimestampChange}
-          onStartTimetokenChange={handleStartTimetokenChange}
-          onEndTimetokenChange={handleEndTimetokenChange}
-          loading={loading}
-          countLoading={countLoading}
-          onFetchHistory={fetchHistory}
-          onGetMessageCounts={getMessageCounts}
-        />
+        {/* Message History Controls Panel */}
+        <div className="basis-2/5 min-w-[320px] flex flex-col gap-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-xs text-blue-900 leading-relaxed">
+            <strong>Requirements:</strong> Message Persistence must be enabled in your PubNub Admin Portal. Each fetch call can return up to 200 messages per channel.
+          </div>
+          <ControlsPanel
+            settings={settings}
+            onSettingsChange={(updates) => setSettings(prev => ({ ...prev, ...updates }))}
+            selectedTimezone={selectedTimezone}
+            onTimezoneChange={handleTimezoneChange}
+            startTimestamp={startTimestamp}
+            endTimestamp={endTimestamp}
+            onStartTimestampChange={handleStartTimestampChange}
+            onEndTimestampChange={handleEndTimestampChange}
+            onStartTimetokenChange={handleStartTimetokenChange}
+            onEndTimetokenChange={handleEndTimetokenChange}
+            loading={loading}
+            countLoading={countLoading}
+            onFetchHistory={fetchHistory}
+            onGetMessageCounts={getMessageCounts}
+            channelsManagedExternally
+            channelsHelperText="Select channels from the Channel List panel"
+            selectedChannelsList={selectedChannelsArray}
+          />
+        </div>
 
-        {/* Results Panel */}
-        <ResultsPanel
-          channelHistories={channelHistories}
-          searchTerm={settings.searchTerm}
-          onSearchTermChange={(searchTerm) => setSettings(prev => ({ ...prev, searchTerm }))}
-          showRawData={settings.showRawData}
-          onShowRawDataChange={(showRawData) => setSettings(prev => ({ ...prev, showRawData }))}
-          onCopyToClipboard={handleCopyToClipboard}
-          onDeleteMessage={handleDeleteMessage}
-        />
+        {/* Message History Results Panel */}
+        <div className="basis-2/5 min-w-[320px] flex flex-col">
+          <ResultsPanel
+            channelHistories={channelHistories}
+            searchTerm={settings.searchTerm}
+            onSearchTermChange={(searchTerm) => setSettings(prev => ({ ...prev, searchTerm }))}
+            showRawData={settings.showRawData}
+            onShowRawDataChange={(showRawData) => setSettings(prev => ({ ...prev, showRawData }))}
+            onCopyToClipboard={handleCopyToClipboard}
+            onDeleteMessage={handleDeleteMessage}
+          />
+        </div>
       </div>
-      
+
       {/* Dialogs */}
       <DeleteMessageDialog
         open={showDeleteDialog}
@@ -530,7 +733,7 @@ export default function PubNubPersistencePage() {
       <FetchProgressDialog
         open={showFetchProgress}
         progress={fetchProgress}
-        selectedChannels={settings.selectedChannels}
+        selectedChannels={selectedChannelsArray.join(', ')}
         count={settings.count}
       />
     </div>
