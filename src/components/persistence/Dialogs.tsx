@@ -72,20 +72,51 @@ interface MessageCountsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   messageCounts: Record<string, number>;
+  range?: {
+    start?: string;
+    end?: string;
+    startTimetoken?: string;
+    endTimetoken?: string;
+  };
 }
 
 export function MessageCountsDialog({
   open,
   onOpenChange,
   messageCounts,
+  range,
 }: MessageCountsDialogProps) {
+  const formatDate = (value?: string) => {
+    if (!value) return null;
+    try {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleString();
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return value;
+  };
+
+  const startDisplay = formatDate(range?.start);
+  const endDisplay = formatDate(range?.end);
+
+  const startLabel = startDisplay ?? range?.startTimetoken ?? 'the first date found';
+  const endLabel = endDisplay ?? range?.endTimetoken ?? 'the last date found';
+  const hasAdvancedRange = Boolean(startDisplay || endDisplay || range?.startTimetoken || range?.endTimetoken);
+
+  const description = hasAdvancedRange
+    ? `Number of messages stored in each channel between ${startLabel} and ${endLabel} as specified in the Advanced Options panel.`
+    : 'Number of messages stored in each channel between the first date found and the last date found.';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Message Counts (Last 30 Days)</DialogTitle>
+          <DialogTitle>Message Counts</DialogTitle>
           <DialogDescription>
-            Number of messages stored in each channel since 30 days ago
+            {description}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">

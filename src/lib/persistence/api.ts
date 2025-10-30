@@ -1,4 +1,5 @@
 import { HistoryMessage, ChannelHistory, PubNubHistoryParams, FetchProgress } from '@/types/persistence';
+import { MessageCountsResponse } from '@/types/pubnub';
 
 // Time Range Strategy Constants (from fetch_example.js)
 const TRS_NONE = 0;
@@ -249,16 +250,52 @@ export class PersistenceAPI {
   /**
    * Get message counts for channels
    */
-  async getMessageCounts(channels: string[]): Promise<Record<string, number>> {
-    // Use a recent timetoken as baseline (last 30 days)
-    const thirtyDaysAgo = (Date.now() - 30 * 24 * 60 * 60 * 1000) * 10000; // Convert to PubNub timetoken
-    
-    const result = await this.pubnub.messageCounts({
-      channels: channels,
-      channelTimetokens: [thirtyDaysAgo.toString()]
+  async getMessageCounts(
+    channels: string[],
+    options: { startTimetoken?: string; endTimetoken?: string } = {}
+  ): Promise<Record<string, number>> {
+    const sanitizeToken = (token?: string) => {
+      const trimmed = token?.trim();
+      return trimmed && trimmed.length > 0 ? trimmed : undefined;
+    };
+
+    const startToken = sanitizeToken(options.startTimetoken);
+    const endToken = sanitizeToken(options.endTimetoken);
+
+    // Default baseline (last 30 days) when no start timetoken provided
+    const defaultStartTimetoken = (
+      (Date.now() - 30 * 24 * 60 * 60 * 1000) * 10000
+    ).toString();
+
+    const channelTokens = (token: string) => channels.map(() => token);
+
+    const startRequest: Promise<MessageCountsResponse> = this.pubnub.messageCounts({
+      channels,
+      channelTimetokens: channelTokens(startToken ?? defaultStartTimetoken),
     });
 
-    return result.channels || {};
+    const endRequest: Promise<MessageCountsResponse | null> = endToken
+      ? this.pubnub.messageCounts({
+          channels,
+          channelTimetokens: channelTokens(endToken),
+        })
+      : Promise.resolve<MessageCountsResponse | null>(null);
+
+    const [startResponse, endResponse] = await Promise.all<[MessageCountsResponse, MessageCountsResponse | null]>([
+      startRequest,
+      endRequest,
+    ]);
+
+    const counts: Record<string, number> = {};
+
+    channels.forEach((channel) => {
+      const startCount = startResponse.channels?.[channel] ?? 0;
+      const endCount = endResponse ? endResponse.channels?.[channel] ?? 0 : 0;
+
+      counts[channel] = endToken ? Math.max(0, startCount - endCount) : startCount;
+    });
+
+    return counts;
   }
 
   /**

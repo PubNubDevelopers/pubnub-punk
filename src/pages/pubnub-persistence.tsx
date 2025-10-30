@@ -42,6 +42,16 @@ import {
 
 const CHANNELS_STORAGE_KEY = 'persistence-managed-channels';
 
+const ADVANCED_DEFAULTS = {
+  includeTimetoken: FIELD_DEFINITIONS['persistence.includeTimetoken'].default as boolean,
+  includeMeta: FIELD_DEFINITIONS['persistence.includeMeta'].default as boolean,
+  includeMessageActions: FIELD_DEFINITIONS['persistence.includeMessageActions'].default as boolean,
+  includeUUID: FIELD_DEFINITIONS['persistence.includeUUID'].default as boolean,
+  reverse: FIELD_DEFINITIONS['persistence.reverse'].default as boolean,
+  startTimetoken: FIELD_DEFINITIONS['persistence.startTimetoken'].default as string,
+  endTimetoken: FIELD_DEFINITIONS['persistence.endTimetoken'].default as string,
+} as const;
+
 
 export default function PubNubPersistencePage() {
   const { toast } = useToast();
@@ -95,6 +105,7 @@ export default function PubNubPersistencePage() {
   const [startTimestamp, setStartTimestamp] = useState('');
   const [endTimestamp, setEndTimestamp] = useState('');
   const [selectedTimezone, setSelectedTimezone] = useState('');
+  const [defaultTimezone, setDefaultTimezone] = useState('');
   const [mounted, setMounted] = useState(false);
   
   // UI state
@@ -104,6 +115,7 @@ export default function PubNubPersistencePage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showMessageCountDialog, setShowMessageCountDialog] = useState(false);
   const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
+  const [messageCountRange, setMessageCountRange] = useState<{ start?: string; end?: string; startTimetoken?: string; endTimetoken?: string }>({});
   const [countLoading, setCountLoading] = useState(false);
   const [showFetchProgress, setShowFetchProgress] = useState(false);
   const [fetchProgress, setFetchProgress] = useState<FetchProgress>({
@@ -151,6 +163,7 @@ export default function PubNubPersistencePage() {
     // Get browser timezone
     const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setSelectedTimezone(browserTimezone);
+    setDefaultTimezone(browserTimezone);
   }, []);
 
   // Set config type for the config service
@@ -306,6 +319,60 @@ export default function PubNubPersistencePage() {
     }
   };
 
+  const clearAdvancedOptions = useCallback(() => {
+    setStartTimestamp('');
+    setEndTimestamp('');
+    setSettings((prev) => ({
+      ...prev,
+      includeTimetoken: ADVANCED_DEFAULTS.includeTimetoken,
+      includeMeta: ADVANCED_DEFAULTS.includeMeta,
+      includeMessageActions: ADVANCED_DEFAULTS.includeMessageActions,
+      includeUUID: ADVANCED_DEFAULTS.includeUUID,
+      reverse: ADVANCED_DEFAULTS.reverse,
+      startTimetoken: ADVANCED_DEFAULTS.startTimetoken,
+      endTimetoken: ADVANCED_DEFAULTS.endTimetoken,
+    }));
+    if (defaultTimezone) {
+      setSelectedTimezone(defaultTimezone);
+    }
+    setMessageCountRange({});
+  }, [defaultTimezone, setSelectedTimezone, setSettings, setMessageCountRange]);
+
+  const advancedOptionsActive = useMemo(() => {
+    const hasStartToken = settings.startTimetoken.trim().length > 0;
+    const hasEndToken = settings.endTimetoken.trim().length > 0;
+    const hasStartTimestamp = Boolean(startTimestamp);
+    const hasEndTimestamp = Boolean(endTimestamp);
+    const timezoneChanged = Boolean(defaultTimezone && selectedTimezone && defaultTimezone !== selectedTimezone);
+    const togglesChanged =
+      settings.includeTimetoken !== ADVANCED_DEFAULTS.includeTimetoken ||
+      settings.includeMeta !== ADVANCED_DEFAULTS.includeMeta ||
+      settings.includeMessageActions !== ADVANCED_DEFAULTS.includeMessageActions ||
+      settings.includeUUID !== ADVANCED_DEFAULTS.includeUUID ||
+      settings.reverse !== ADVANCED_DEFAULTS.reverse;
+
+    return (
+      hasStartToken ||
+      hasEndToken ||
+      hasStartTimestamp ||
+      hasEndTimestamp ||
+      timezoneChanged ||
+      togglesChanged
+    );
+  }, [
+    defaultTimezone,
+    selectedTimezone,
+    settings.endTimetoken,
+    settings.includeMessageActions,
+    settings.includeMeta,
+    settings.includeTimetoken,
+    settings.includeUUID,
+    settings.reverse,
+    settings.startTimetoken,
+    startTimestamp,
+    endTimestamp,
+  ]);
+
   // Update timestamps when timezone changes
   useEffect(() => {
     if (selectedTimezone && settings.startTimetoken) {
@@ -417,8 +484,20 @@ export default function PubNubPersistencePage() {
 
     setCountLoading(true);
     try {
-      const counts = await persistenceAPI.getMessageCounts(channels);
+      const rangeTokens = {
+        startToken: settings.startTimetoken || undefined,
+        endToken: settings.endTimetoken || undefined,
+      };
+
+      const counts = await persistenceAPI.getMessageCounts(channels, rangeTokens);
       setMessageCounts(counts);
+      const derivedRange = {
+        start: startTimestamp || undefined,
+        end: endTimestamp || undefined,
+        startTimetoken: rangeTokens.startToken,
+        endTimetoken: rangeTokens.endToken,
+      };
+      setMessageCountRange(derivedRange);
       setShowMessageCountDialog(true);
     } catch (error) {
       console.error('Error getting message counts:', error);
@@ -457,9 +536,20 @@ export default function PubNubPersistencePage() {
       if (error?.status === 403 || error?.statusCode === 403) {
         const errorMessage = error?.error_message || error?.message || '';
         const service = error?.service || '';
+        const normalizedMessage = (errorMessage || '').toLowerCase();
+        const payloadMessage = (error?.payload?.error || error?.payload?.message || '').toLowerCase();
+        const errorKey = (error?.error || '').toLowerCase();
+        const combinedMessage = `${normalizedMessage} ${payloadMessage} ${errorKey}`;
         
         // Check if this is a Delete-From-History feature not enabled error
-        if (errorMessage.includes('history Delete API') || errorMessage.includes('Storage Delete')) {
+        if (
+          combinedMessage.includes('delete-from-history') ||
+          combinedMessage.includes('delete from history') ||
+          combinedMessage.includes('history delete api') ||
+          combinedMessage.includes('storage:delete') ||
+          combinedMessage.includes('history.delete') ||
+          combinedMessage.includes('pnfeaturedisabled')
+        ) {
           toast({
             title: "Delete-From-History Not Enabled",
             description: (
@@ -590,8 +680,8 @@ export default function PubNubPersistencePage() {
         <div className="basis-1/5 min-w-[240px]">
           <Card className="h-full flex flex-col">
             <CardHeader>
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Hash className="w-4 h-4" />
+              <CardTitle className="flex items-center gap-2">
+                <Hash className="w-5 h-5" />
                 Channel List
               </CardTitle>
             </CardHeader>
@@ -679,7 +769,7 @@ export default function PubNubPersistencePage() {
         {/* Message History Controls Panel */}
         <div className="basis-2/5 min-w-[320px] flex flex-col gap-4">
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-xs text-blue-900 leading-relaxed">
-            <strong>Requirements:</strong> Message Persistence must be enabled in your PubNub Admin Portal. Each fetch call can return up to 200 messages per channel.
+            <strong>Requirements:</strong> Message Persistence must be enabled in your PubNub Admin Portal.
           </div>
           <ControlsPanel
             settings={settings}
@@ -699,6 +789,8 @@ export default function PubNubPersistencePage() {
             channelsManagedExternally
             channelsHelperText="Select channels from the Channel List panel"
             selectedChannelsList={selectedChannelsArray}
+            advancedOptionsActive={advancedOptionsActive}
+            onClearAdvancedOptions={clearAdvancedOptions}
           />
         </div>
 
@@ -728,6 +820,7 @@ export default function PubNubPersistencePage() {
         open={showMessageCountDialog}
         onOpenChange={setShowMessageCountDialog}
         messageCounts={messageCounts}
+        range={messageCountRange}
       />
 
       <FetchProgressDialog

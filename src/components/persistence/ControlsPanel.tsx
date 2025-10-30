@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import { 
   Tooltip,
   TooltipContent,
@@ -40,6 +41,8 @@ interface ControlsPanelProps {
   channelsManagedExternally?: boolean;
   channelsHelperText?: string;
   selectedChannelsList?: string[];
+  advancedOptionsActive?: boolean;
+  onClearAdvancedOptions?: () => void;
 }
 
 export function ControlsPanel({
@@ -60,6 +63,8 @@ export function ControlsPanel({
   channelsManagedExternally = false,
   channelsHelperText,
   selectedChannelsList = [],
+  advancedOptionsActive = false,
+  onClearAdvancedOptions,
 }: ControlsPanelProps) {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
@@ -73,7 +78,7 @@ export function ControlsPanel({
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Basic Controls */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="channels">Channels *</Label>
             {channelsManagedExternally ? (
@@ -113,7 +118,7 @@ export function ControlsPanel({
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="count">Message Count</Label>
+            <Label htmlFor="count">Max msgs to Retrieve</Label>
             <Select 
               value={settings.count.toString()} 
               onValueChange={(value) => onSettingsChange({ count: parseInt(value) })}
@@ -129,22 +134,11 @@ export function ControlsPanel({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Message Order</Label>
-            <div className="flex items-center space-x-2 pt-1">
-              <Switch
-                checked={settings.reverse}
-                onCheckedChange={(reverse) => onSettingsChange({ reverse })}
-              />
-              <span className="text-sm">{settings.reverse ? 'Oldest First' : 'Newest First'}</span>
-            </div>
-          </div>
-
-          <div className="flex items-end space-x-2">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:gap-4 md:col-span-2 xl:col-span-3 md:flex-wrap">
             <Button
               onClick={onFetchHistory}
               disabled={loading}
-              className="bg-pubnub-blue hover:bg-pubnub-blue/90 flex-1"
+              className="bg-red-600 hover:bg-red-700 text-white w-full md:min-w-[180px] md:flex-1"
             >
               {loading ? (
                 <>
@@ -158,6 +152,25 @@ export function ControlsPanel({
                 </>
               )}
             </Button>
+
+            <Button
+              variant="outline"
+              onClick={onGetMessageCounts}
+              disabled={countLoading}
+              className="w-full md:min-w-[180px] md:flex-1"
+            >
+              {countLoading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Counting...
+                </>
+              ) : (
+                <>
+                  <BarChart3 className="w-4 h-4 mr-2" />
+                  Get Message Counts
+                </>
+              )}
+            </Button>
           </div>
         </div>
 
@@ -166,14 +179,28 @@ export function ControlsPanel({
           <Button 
             variant="outline" 
             onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-            className="w-full justify-between"
+            className={cn(
+              "w-full justify-between",
+              advancedOptionsActive && "text-green-600 font-semibold"
+            )}
           >
             Advanced Options
             {showAdvancedOptions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
           
           {showAdvancedOptions && (
-            <div className="mt-4 space-y-4 p-4 bg-gray-50 rounded-lg">
+            <div className="relative mt-4 space-y-4 px-4 pb-4 pt-4 bg-gray-50 rounded-lg">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute top-2 right-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 px-2"
+                onClick={() => onClearAdvancedOptions?.()}
+                disabled={!advancedOptionsActive}
+              >
+                Clear
+              </Button>
+
               {/* Timezone Selector */}
               <div className="space-y-2">
                 <Label htmlFor="timezone">Display Timezone</Label>
@@ -195,64 +222,64 @@ export function ControlsPanel({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="start-timestamp">Start Time (Exclusive)</Label>
-                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                      {selectedTimezone || 'Local'}
-                    </span>
-                  </div>
-                  <Input
-                    id="start-timestamp"
-                    type="datetime-local"
-                    value={startTimestamp}
-                    onChange={(e) => onStartTimestampChange(e.target.value)}
-                    step="1"
-                  />
-                  <Label htmlFor="start-timetoken">Start Timetoken</Label>
-                  <Input
-                    id="start-timetoken"
-                    placeholder="15123456789012345"
-                    value={settings.startTimetoken}
-                    onChange={(e) => onStartTimetokenChange(e.target.value)}
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-gray-500">
-                    Messages after this time/timetoken
-                    <br />
-                    <span className="text-blue-600">Timetoken is stored as UTC</span>
-                  </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="start-timestamp">Start Time (Exclusive)</Label>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    {selectedTimezone || 'Local'}
+                  </span>
                 </div>
-                
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
+                <Input
+                  id="start-timestamp"
+                  type="datetime-local"
+                  value={startTimestamp}
+                  onChange={(e) => onStartTimestampChange(e.target.value)}
+                  step="1"
+                />
+                <Label htmlFor="start-timetoken">Start Timetoken</Label>
+                <Input
+                  id="start-timetoken"
+                  placeholder="15123456789012345"
+                  value={settings.startTimetoken}
+                  onChange={(e) => onStartTimetokenChange(e.target.value)}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-gray-500">
+                  Messages after this time/timetoken
+                  <br />
+                  <span className="text-blue-600">Timetoken is stored as UTC</span>
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
                     <Label htmlFor="end-timestamp">End Time (Inclusive)</Label>
                     <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                      {selectedTimezone || 'Local'}
-                    </span>
-                  </div>
-                  <Input
-                    id="end-timestamp"
-                    type="datetime-local"
-                    value={endTimestamp}
-                    onChange={(e) => onEndTimestampChange(e.target.value)}
-                    step="1"
-                  />
-                  <Label htmlFor="end-timetoken">End Timetoken</Label>
-                  <Input
-                    id="end-timetoken"
-                    placeholder="15123456789012345"
+                    {selectedTimezone || 'Local'}
+                  </span>
+                </div>
+                <Input
+                  id="end-timestamp"
+                  type="datetime-local"
+                  value={endTimestamp}
+                  onChange={(e) => onEndTimestampChange(e.target.value)}
+                  step="1"
+                />
+                <Label htmlFor="end-timetoken">End Timetoken</Label>
+                <Input
+                  id="end-timetoken"
+                  placeholder="15123456789012345"
                     value={settings.endTimetoken}
                     onChange={(e) => onEndTimetokenChange(e.target.value)}
                     className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-gray-500">
-                    Messages up to this time/timetoken
-                    <br />
-                    <span className="text-blue-600">Timetoken is stored as UTC</span>
-                  </p>
-                </div>
+                />
+                <p className="text-xs text-gray-500">
+                  Messages up to this time/timetoken
+                  <br />
+                  <span className="text-blue-600">Timetoken is stored as UTC</span>
+                </p>
               </div>
+            </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="flex items-center space-x-2">
@@ -260,7 +287,7 @@ export function ControlsPanel({
                     checked={settings.includeTimetoken}
                     onCheckedChange={(includeTimetoken) => onSettingsChange({ includeTimetoken })}
                   />
-                  <Label className="text-sm">Include Timetoken</Label>
+                  <Label className="text-xs font-normal text-gray-600">Include Timetoken</Label>
                 </div>
                 
                 <div className="flex items-center space-x-2">
@@ -268,7 +295,7 @@ export function ControlsPanel({
                     checked={settings.includeUUID}
                     onCheckedChange={(includeUUID) => onSettingsChange({ includeUUID })}
                   />
-                  <Label className="text-sm">Include UUID</Label>
+                  <Label className="text-xs font-normal text-gray-600">Include UUID</Label>
                 </div>
                 
                 <div className="flex items-center space-x-2">
@@ -276,7 +303,7 @@ export function ControlsPanel({
                     checked={settings.includeMeta}
                     onCheckedChange={(includeMeta) => onSettingsChange({ includeMeta })}
                   />
-                  <Label className="text-sm">Include Metadata</Label>
+                  <Label className="text-xs font-normal text-gray-600">Include Metadata</Label>
                 </div>
                 
                 <TooltipProvider>
@@ -288,7 +315,7 @@ export function ControlsPanel({
                           onCheckedChange={(includeMessageActions) => onSettingsChange({ includeMessageActions })}
                           disabled={settings.selectedChannels.split(',').length > 1}
                         />
-                        <Label className="text-sm">Message Actions</Label>
+                        <Label className="text-xs font-normal text-gray-600">Message Actions</Label>
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -296,30 +323,6 @@ export function ControlsPanel({
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  onClick={onGetMessageCounts}
-                  disabled={countLoading}
-                >
-                  {countLoading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Counting...
-                    </>
-                  ) : (
-                    <>
-                      <BarChart3 className="w-4 h-4 mr-2" />
-                      Get Message Counts
-                    </>
-                  )}
-                </Button>
-
-                <div className="text-sm text-gray-500">
-                  Use timetokens to fetch specific time ranges
-                </div>
               </div>
             </div>
           )}

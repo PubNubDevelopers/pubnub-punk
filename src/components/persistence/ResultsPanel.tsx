@@ -67,27 +67,13 @@ export function ResultsPanel({
     <div key={`${msg.timetoken}-${index}`} className="bg-gray-50 rounded-lg p-4 border">
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <div className="mb-2 space-y-1">
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <Hash className="w-3 h-3" />
-              <span className="font-mono">Timetoken: {msg.timetoken}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Clock className="w-3 h-3" />
-              <span className="font-mono">{formatTimetoken(msg.timetoken)}</span>
-              {msg.uuid && (
-                <>
-                  <span>•</span>
-                  <span>UUID: {msg.uuid}</span>
-                </>
-              )}
-              {msg.messageType && (
-                <>
-                  <span>•</span>
-                  <span>Type: {msg.messageType}</span>
-                </>
-              )}
-            </div>
+          <div className="mb-2 flex items-center gap-4 pr-6">
+            <span className="flex-1 min-w-0 font-mono text-xs text-gray-500 truncate">
+              {msg.timetoken}
+            </span>
+            <span className="font-mono text-xs text-gray-500 whitespace-nowrap text-right w-36">
+              {formatTimetoken(msg.timetoken)}
+            </span>
           </div>
           
           {showRawData ? (
@@ -121,37 +107,39 @@ export function ResultsPanel({
           )}
         </div>
         
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm">
-              <MoreVertical className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => onCopyToClipboard(JSON.stringify(msg, null, 2), 'Message')}
-            >
-              <Copy className="w-4 h-4 mr-2" />
-              Copy Message
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => onCopyToClipboard(msg.timetoken, 'Timetoken')}
-            >
-              <Clock className="w-4 h-4 mr-2" />
-              Copy Timetoken
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => onDeleteMessage({
-                channel: channelName,
-                timetoken: msg.timetoken
-              })}
-              className="text-red-600"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete Message
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex flex-col items-end justify-end flex-shrink-0 ml-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="mt-6">
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => onCopyToClipboard(JSON.stringify(msg, null, 2), 'Message')}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Copy Message
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onCopyToClipboard(msg.timetoken, 'Timetoken')}
+              >
+                <Clock className="w-4 h-4 mr-2" />
+                Copy Timetoken
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onDeleteMessage({
+                  channel: channelName,
+                  timetoken: msg.timetoken
+                })}
+                className="text-red-600"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Message
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </div>
   );
@@ -159,27 +147,29 @@ export function ResultsPanel({
   return (
     <Card className="flex-1 flex flex-col">
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" />
-            Message History Results
-            {filteredHistories.length > 0 && (
-              <span className="text-sm font-normal text-gray-500">
-                ({filteredHistories.reduce((sum, h) => sum + h.messages.length, 0)} messages)
-              </span>
-            )}
-          </CardTitle>
-          
-          <div className="flex items-center gap-2">
-            <div className="flex items-center space-x-2">
-              <Switch
-                checked={showRawData}
-                onCheckedChange={onShowRawDataChange}
-              />
-              <Label className="text-sm">Raw Data View</Label>
-            </div>
-          
-            {filteredHistories.length > 0 && (
+        <CardTitle className="flex items-center gap-2">
+          <MessageSquare className="w-5 h-5" />
+          Message History Results
+        </CardTitle>
+
+        {filteredHistories.length > 0 && (
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <span className="text-sm font-normal text-gray-500">
+              {(() => {
+                const totalMessages = filteredHistories.reduce((sum, h) => sum + h.messages.length, 0);
+                return `(${totalMessages} message${totalMessages === 1 ? '' : 's'} returned)`;
+              })()}
+            </span>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={showRawData}
+                  onCheckedChange={onShowRawDataChange}
+                />
+                <Label className="text-sm font-normal text-gray-600">Raw Data View</Label>
+              </div>
+            
               <Button
                 variant="outline"
                 size="sm"
@@ -191,9 +181,9 @@ export function ResultsPanel({
                 <Copy className="w-4 h-4 mr-2" />
                 Copy All
               </Button>
-            )}
+            </div>
           </div>
-        </div>
+        )}
         
         {filteredHistories.length > 0 && (
           <div className="flex items-center gap-4">
@@ -206,7 +196,7 @@ export function ResultsPanel({
                 className="pl-10"
               />
             </div>
-            {searchTerm && (
+            {filteredHistories.length > 0 && searchTerm && (
               <span className="text-sm text-gray-500">
                 {filteredHistories.reduce((sum, h) => sum + h.messages.length, 0)} of {channelHistories.reduce((sum, h) => sum + h.messages.length, 0)} messages shown
               </span>
@@ -228,40 +218,31 @@ export function ResultsPanel({
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Information banner about message deletion requirements */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                <div className="space-y-2">
-                  <h4 className="font-medium text-blue-900">Message Deletion Requirements</h4>
-                  <p className="text-sm text-blue-700">
-                    To delete messages from history, your PubNub account must have the <strong>Delete-From-History</strong> feature enabled. 
-                    This can be configured in your PubNub Dashboard under your keyset settings.
-                  </p>
-                  <p className="text-xs text-blue-600">
-                    Without this feature enabled, you'll receive a 403 error when attempting to delete messages.
-                  </p>
-                </div>
-              </div>
-            </div>
-            
             {filteredHistories.map((history) => (
               <div key={history.channel} className="space-y-3">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Hash className="w-4 h-4" />
-                    {history.channel}
-                    <span className="text-sm font-normal text-gray-500">
-                      ({history.messages.length} messages)
-                    </span>
-                  </h3>
-                  
-                  {history.messages.length > 0 && (
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <Clock className="w-4 h-4" />
-                      {formatTimetoken(history.messages[0].timetoken)} - {formatTimetoken(history.messages[history.messages.length - 1].timetoken)}
-                    </div>
-                  )}
+                <div className="border-b pb-2 space-y-1">
+                  <div className="flex items-start justify-between">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Hash className="w-4 h-4" />
+                      {history.channel}
+                    </h3>
+                    
+                    {history.messages.length > 0 && (
+                      <div className="flex flex-col items-end text-xs text-gray-500 gap-1">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3 h-3" />
+                          <span className="font-mono">Oldest msg: {formatTimetoken(history.messages[0].timetoken)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3 h-3 opacity-70" />
+                          <span className="font-mono">Newest msg: {formatTimetoken(history.messages[history.messages.length - 1].timetoken)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <span className="block text-sm font-normal text-gray-500">
+                    ({history.messages.length} messages)
+                  </span>
                 </div>
                 
                 {history.messages.length === 0 ? (
