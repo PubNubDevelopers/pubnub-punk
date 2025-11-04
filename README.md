@@ -1,319 +1,126 @@
 # PubNub Ultimate Ninja Kit
 
-A comprehensive client-side developer toolkit for building, testing, and managing PubNub applications. This modern web application provides professional-grade tools for all PubNub services with advanced features like real-time monitoring, bulk operations, and configuration management.
+The PubNub Ultimate Ninja Kit is a Vite + React + TypeScript workbench for exploring and validating PubNub features. It provides a battery of feature-focused tools—Publish/Subscribe, Presence, File Sharing, Access Manager, Persistence, Channel Groups, and more—behind a single settings-aware shell so you can experiment with real PubNub keys without writing ad-hoc scripts.
 
-## Overview
+## Table of Contents
 
-The PubNub Ultimate Ninja Kit is a complete developer toolset built specifically for PubNub developers and engineers. It provides intuitive interfaces for managing real-time applications, testing functionality, and administering PubNub services without writing code.
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Development Commands](#development-commands)
+- [Testing](#testing)
+- [Project Structure](#project-structure)
+- [Contribution Guidelines](#contribution-guidelines)
+- [Troubleshooting](#troubleshooting)
 
-## ✨ Fully Implemented Features
+## Features
 
-### 🔥 **Pub/Sub (Advanced Real-time Messaging)**
-- **Real-time publish/subscribe** with advanced message filtering
-- **Split-view display** for messages and presence events
-- **Server-side filtering** with expression builder
-- **Message history integration** with cursor management
-- **Advanced configuration** with TTL, metadata, and custom message types
-- **Copy functionality** for messages and presence events
-- **Real-time settings capture** with JSON export
+| Area | Highlights |
+| --- | --- |
+| **Global Settings** | Manage publish/subscribe keys, user ID, SDK version, PAM token, and environment options. Event Engine is enabled by default and can be toggled per session. |
+| **Pub/Sub Tool** | Quick publish editor, live message stream, server-side filters, channel/group management, resend & copy helpers, history catch-up controls. |
+| **Presence v2** | Real-time monitor with Here Now / Where Now, connection status, simulated users (legacy & Event Engine modes), state editor, bulk actions. |
+| **File Sharing** | Drag-and-drop uploads, real-time file events, bulk delete/download, ZIP export, gallery preview, channel history. |
+| **Access Manager** | Create, inspect, and revoke PAM tokens, with guided scopes for channels, groups, and UUIDs. |
+| **Persistence** | Fetch message history with cursor controls, delete ranges, inspect payloads, export snippets. |
+| **Channel Groups** | Create, edit, and delete groups; add/remove channels with batch operations and pager support. |
+| **Test Connection** | One-stop diagnostics for the shared PubNub instance, including SDK version and Event Engine status. |
 
-### 🔐 **Access Manager (PAM)**
-- **Complete token management** system with granular permissions
-- **Token creation wizard** with channel, channel group, and UUID permissions
-- **Pattern-based permissions** with regex support
-- **Token parsing and validation** tools
-- **Token revocation** capabilities
-- **TTL management** and expiration tracking
-- **Permission testing** with real API calls
-- **Enhanced authentication** with proper token handling across all API calls
+Additional utility pages (Stream Generator, Event Workflow, Functions) are stubbed and ready for future expansion.
 
-### 👥 **Presence (Real-time User Monitoring)**
-- **Real-time presence event monitoring** (join, leave, timeout, state-change)
-- **Multi-user simulation** with up to 50 test instances
-- **Here Now and Where Now** API integration
-- **Occupancy tracking** with auto-refresh
-- **User state management** and monitoring
-- **Batch operations** for connecting/disconnecting users
-
-### 📁 **File Sharing (Complete File Management)**
-- **Drag-and-drop file upload** with progress tracking
-- **Bulk file operations** (delete, download)
-- **ZIP archive creation** for multi-file downloads
-- **Advanced search and filtering** across all files
-- **Multi-select operations** with visual feedback
-- **Real-time file notifications** and updates
-- **Gallery mode** for image viewing with thumbnails
-
-### 📱 **Mobile Push Notifications**
-- **Cross-platform support** for iOS (APNs) and Android (FCM)
-- **Device token management** with environments (dev/prod)
-- **Platform-specific notification builders** with rich features
-- **Channel association management** for devices
-- **Debug monitoring** with real-time delivery status
-- **Custom payload support** with JSON editor
-- **Working implementation** with proper authentication handling
-
-### 📚 **PubNub Persistence (Message History)**
-- **Message history retrieval** with advanced filtering
-- **Delete-from-history** operations
-- **Time-based queries** and analytics
-- **Message search and filtering** capabilities
-- **Export functionality** for data analysis
-- **Bulk message operations**
-
-### 📂 **Channel Groups**
-- **Query-based API approach** for improved performance
-- **Complete channel group management** (create, edit, delete)
-- **Channel association management** (add/remove channels)
-- **Real-time synchronization** with PubNub APIs
-- **Bulk channel operations**
-- **Group listing and administration**
-
-### ⚙️ **Settings & Configuration**
-- **Comprehensive PubNub credentials management**
-- **Configuration versioning and history** with PubNub App Context
-- **Auto-save functionality** with backup/restore
-- **Environment-specific settings** management
-- **Configuration migration** tools
-
-### 🎯 **App Context (Objects)**
-- **Complete user, channel, and membership management** interface
-- **Bulk operations** for creating, editing, and deleting objects
-- **Server-side search support** with filtering capabilities
-- **Membership management** with advanced relationship handling
-- **Real-time synchronization** with PubNub Object APIs
-- **Configuration versioning** and persistence integration
-
-## 🚧 Coming Soon
-
-### **Functions**
-Serverless function testing and debugging tools
-
-### **Events & Actions**
-Event-driven automation configuration
-
-### **Analytics (Illuminate & Insights)**
-Real-time and historical analytics dashboards
-
-### **Stream Generator**
-Test data stream generation tools
-
-### **Event Workflow**
-Multi-service workflow testing
-
-## Getting Started
-
-### Prerequisites
-- Node.js (v16 or higher)
-- npm or yarn
-- PubNub account with API keys
-
-### Installation
+## Quick Start
 
 ```bash
-# Clone the repository
-git clone <repository-url>
+# Clone and install
+git clone https://github.com/your-org/pn_devtools.git
 cd pn_devtools
-
-# Install dependencies
 npm install
 
-# Install additional dependencies for file operations
-npm install jszip
-```
-
-### Development
-
-```bash
+# Launch the dev server
 npm run dev
+
+# Visit the app
+# http://localhost:5173/
 ```
 
-The application will be available at `http://localhost:5173/`
+### Prerequisites
 
-### Build
+- Node.js ≥ 18.x (Node 16 is no longer tested).
+- npm ≥ 8 (or compatible package manager).
+- PubNub account with publish/subscribe keys.
 
-```bash
-npm run build
+### Sample Keys
+
+For local QA you can use the shared test keys used throughout the repository:
+
+```
+Publish Key:   pub-c-17c0aef0-b03b-460f-8f93-69fa5d80034a
+Subscribe Key: sub-c-f18d5abb-122f-4ca0-9031-64e002e0fad0
 ```
 
-The built files will be in the `dist/` directory.
+Enter keys on the **Settings** page after the app loads, or store them ahead of time by seeding localStorage with `pubnub_developer_tools_settings`.
 
-### Preview Built Version
+## Configuration
 
-```bash
-npm run preview
+1. Open the app and visit **Settings**.
+2. Provide your publish, subscribe, and (optionally) PAM token.
+3. Confirm the **Event Engine** toggle reflects your desired mode (defaults to **On**). Switching modes automatically restarts the shared PubNub instances.
+4. Choose a JS SDK release from the manifest (auto-updates to the latest unless you explicitly select a version).
+
+Configuration changes auto-save and propagate to every tool.
+
+## Development Commands
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start Vite dev server on <http://localhost:5173>. |
+| `npm run build` | Production bundle to `dist/`. |
+| `npm run preview` | Serve the production bundle locally. |
+| `npm run check` | Type-check with `tsc`. |
+| `npm test` | Run Vitest unit suites. (Playwright specs are archived and disabled by default.) |
+
+## Testing
+
+- **Type Safety:** `npm run check` must pass before shipping.
+- **Vitest:** `npm test` runs JS/TS unit tests. Playwright E2E suites live under `tests/` but are intentionally dormant until revived.
+- **Manual QA:** Toggle Event Engine on/off via Settings and re-run workflows (Pub/Sub publish, Presence simulation, File Sharing events, Access Manager token flows) to validate both transport paths.
+
+## Project Structure
+
+```
+pn_devtools/
+├─ src/
+│  ├─ components/          # Shared UI, pubsub widgets, etc.
+│  ├─ contexts/            # React context providers (PubNub, config)
+│  ├─ hooks/               # Reusable hooks (usePubNub, useToast, ...)
+│  ├─ lib/                 # Storage helpers, SDK loader, instance registry
+│  ├─ pages/               # Feature pages (pubsub, presence, file-sharing...)
+│  ├─ types/               # Shared TypeScript types
+│  └─ App.tsx              # Routes & shell composition
+├─ utils/                  # CLI helpers & integration scripts (Python)
+├─ tests/                  # Legacy Playwright specs (currently inactive)
+├─ architecture_docs/      # Design notes & feature plans
+└─ README.md               # This guide
 ```
 
-## Architecture
+## Contribution Guidelines
 
-### Technology Stack
-- **React 18** with TypeScript for type safety
-- **Vite** for fast development and building
-- **Tailwind CSS** for responsive styling
-- **Radix UI** for accessible component primitives
-- **Wouter** for lightweight routing
-- **PubNub JavaScript SDK** (loaded via CDN)
+- Follow the coding conventions already in place (TypeScript + React hooks).
+- Use conventional commits (e.g., `feat(pubsub): add payload preview`).
+- Document new configuration toggles in the README and UI where appropriate.
+- When touching shared logic, run `npm run check` (required) and `npm test` (where applicable).
+- Coordinate large UX changes by updating the relevant doc under `architecture_docs/`.
 
-### Application Structure
-```
-├── src/
-│   ├── components/         # Reusable UI components
-│   │   ├── ui/            # Base components (Radix UI)
-│   │   ├── config-versions/ # Configuration management UI
-│   │   ├── app-shell.tsx  # Main layout
-│   │   └── sidebar.tsx    # Navigation
-│   ├── pages/             # Feature pages
-│   │   ├── pubsub.tsx     # Pub/Sub tool
-│   │   ├── presence.tsx   # Presence monitoring
-│   │   ├── file-sharing.tsx # File management
-│   │   ├── mobile-push.tsx # Push notifications
-│   │   ├── access-manager.tsx # PAM tools
-│   │   └── settings.tsx   # Configuration
-│   ├── lib/               # Core utilities
-│   │   ├── storage.ts     # Local storage management
-│   ├── contexts/          # React contexts
-│   │   └── config-context.tsx # Page settings management
-│   ├── hooks/             # Custom React hooks
-│   └── types/             # TypeScript definitions
-├── utils/                 # Development utilities
-└── docs/                 # Implementation documentation
-```
+## Troubleshooting
 
-### Storage & Persistence
-- **Local Storage**: Settings and preferences for offline use
-- **PubNub App Context**: Configuration versioning and sharing
-- **PubNub Persistence**: Message history for version control
-- **Real-time Configuration**: All settings captured in JSON format
+| Issue | Resolution |
+| --- | --- |
+| **Stuck on Settings** | Ensure you have valid Pub/Sub keys; the app locks other routes until both are provided. |
+| **No real-time updates** | Confirm Event Engine mode matches the scenario you expect; reload after toggling. Check console for PubNub warnings or network errors. |
+| **Favicon 404** | Expected in dev. Safe to ignore. |
+| **Deprecated config warnings** | SDK 10.2.0 emits messages about `logVerbosity`/`useRandomIVs`; they’re harmless and will be removed on future upgrades. |
+| **Playwright errors** | End-to-end specs are archived. Stick to `npm run dev`, `npm run check`, and `npm test` unless you plan to revive the E2E suite. |
 
-### Design System
-Built with PubNub brand guidelines:
-- **Navy Blue** (`#070f39`) - Primary dark theme
-- **PubNub Red** (`#c71929`) - Action buttons and highlights
-- **Light Blue** (`#528dfa`) - Secondary highlights
-- **Light Grey** (`#f9f9f9`) - Backgrounds
-- **Dark Grey** (`#171717`) - Text
+---
 
-## Key Features
-
-### Advanced Configuration Management
-- **Real-time Settings Capture**: All user inputs automatically saved to JSON
-- **Version History**: Full configuration versioning with PubNub App Context
-- **Auto-restore**: Automatic loading of saved configurations
-- **Backup/Restore**: Complete application state management
-
-### Professional File Management
-- **Enterprise Features**: Bulk operations, ZIP downloads, advanced search
-- **Real-time Updates**: Live file notifications and status updates
-- **Gallery Mode**: Thumbnail view for images with download capabilities
-- **Progress Tracking**: Visual feedback for long-running operations
-
-### Comprehensive Testing Tools
-- **Multi-user Simulation**: Test presence with up to 50 simulated users
-- **Real-time Monitoring**: Live event streams with filtering
-- **Debug Channels**: Specialized debugging for mobile push notifications
-- **API Testing**: Direct integration with all PubNub REST APIs
-
-### Developer Experience
-- **TypeScript Support**: Full type safety throughout the application
-- **Error Handling**: Comprehensive error management with user feedback
-- **Documentation**: Extensive implementation guides and API references
-- **Responsive Design**: Works on desktop, tablet, and mobile devices
-
-## Implementation Guides
-
-### Adding New Tools
-1. Create page component in `src/pages/`
-2. Add route to `App.tsx`
-3. Update sidebar navigation
-4. Implement configuration management pattern
-5. Add comprehensive error handling
-
-### Configuration Pattern
-```typescript
-// Implement page settings for persistence
-const [pageSettings, setPageSettings] = useState({
-  // Feature-specific configuration
-});
-
-// Auto-sync with config context
-useEffect(() => {
-  setConfigPageSettings(pageSettings);
-  console.log('🔧 Page Settings Updated:', pageSettings);
-}, [pageSettings]);
-```
-
-### Error Handling Pattern
-```typescript
-try {
-  // PubNub API calls
-  const result = await pubnub.someOperation();
-  toast({ title: "Success", description: "Operation completed" });
-} catch (error) {
-  console.error('Operation failed:', error);
-  toast({ 
-    title: "Error", 
-    description: "Operation failed", 
-    variant: "destructive" 
-  });
-}
-```
-
-## Testing Utilities
-
-### File Upload Testing
-```bash
-# Use the provided Python script to bulk upload test files
-python utils/upload_test_files.py
-```
-
-### Mobile Push Testing
-- Requires valid APNs certificates or FCM server keys
-- Test with real device tokens for accurate results
-- Use debug channels for delivery monitoring
-
-## Recent Updates
-
-### Latest Features (July 2025)
-- **App Context Implementation**: Full user, channel, and membership management with bulk operations
-- **Enhanced Access Manager**: Improved PAM with better authentication handling across all APIs
-- **Mobile Push Enhancement**: Working implementation with proper cross-platform support
-- **Channel Groups Restructure**: Query-based API approach for better performance
-- **Gallery Mode**: Enhanced file sharing with thumbnail viewing capabilities
-- **Connection Management**: Centralized connection handling for stateless PubNub API calls
-- **Enhanced Presence Tools**: Simplified UI with always-visible advanced options
-- **Configuration Versioning**: Full PubNub App Context integration
-
-### Performance Improvements
-- **Optimized File Loading**: Efficient pagination for large file sets
-- **Real-time Updates**: Minimized API calls with intelligent caching
-- **Memory Management**: Proper cleanup of PubNub instances
-- **Error Resilience**: Graceful degradation and fallback strategies
-
-## Security & Best Practices
-
-### Credential Management
-- **Secure Storage**: API keys encrypted in local storage
-- **No Secret Key Exposure**: Client-side safety measures
-- **PAM Integration**: Proper token-based access control
-
-### Code Quality
-- **TypeScript**: 100% type coverage for reliability
-- **Error Boundaries**: Comprehensive error handling
-- **Memory Management**: Proper cleanup of subscriptions and instances
-- **Performance**: Optimized rendering and API usage
-
-## Contributing
-
-### Development Workflow
-1. **Feature Development**: Follow established patterns
-2. **Configuration**: Implement page settings management
-3. **Documentation**: Update implementation guides
-4. **Testing**: Verify with real PubNub credentials
-
-### Code Standards
-- **TypeScript**: Required for all new code
-- **React Hooks**: Functional components only
-- **Error Handling**: Comprehensive try-catch blocks
-- **User Feedback**: Toast notifications for all operations
-
-This PubNub Ultimate Ninja Kit represents a complete developer toolkit for building and managing real-time applications with PubNub's suite of services.
+Happy streaming! If you run into issues or want to propose new tools, open an issue or pull request with reproduction steps, screenshots, and the commands you ran.
