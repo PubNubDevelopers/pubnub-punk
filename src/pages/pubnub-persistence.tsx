@@ -674,8 +674,8 @@ export default function PubNubPersistencePage() {
   }
 
   return (
-    <div className="p-6 h-full">
-      <div className="h-full flex gap-6">
+    <div className="p-6 h-[calc(100vh-5rem)]">
+      <div className="h-full flex gap-6 min-h-0">
         {/* Channel List Panel */}
         <div className="basis-1/5 min-w-[240px]">
           <Card className="h-full flex flex-col">
@@ -795,7 +795,7 @@ export default function PubNubPersistencePage() {
         </div>
 
         {/* Message History Results Panel */}
-        <div className="basis-2/5 min-w-[320px] flex flex-col">
+        <div className="basis-2/5 min-w-[320px] flex flex-col min-h-0">
           <ResultsPanel
             channelHistories={channelHistories}
             searchTerm={settings.searchTerm}

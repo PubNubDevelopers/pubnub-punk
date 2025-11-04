@@ -221,14 +221,9 @@ export function ControlsPanel({
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="start-timestamp">Start Time (Exclusive)</Label>
-                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                    {selectedTimezone || 'Local'}
-                  </span>
-                </div>
+                <Label htmlFor="start-timestamp">Start Time (Exclusive)</Label>
                 <Input
                   id="start-timestamp"
                   type="datetime-local"
@@ -236,7 +231,7 @@ export function ControlsPanel({
                   onChange={(e) => onStartTimestampChange(e.target.value)}
                   step="1"
                 />
-                <Label htmlFor="start-timetoken">Start Timetoken</Label>
+                <Label htmlFor="start-timetoken" className="pt-1 block">Start Timetoken</Label>
                 <Input
                   id="start-timetoken"
                   placeholder="15123456789012345"
@@ -250,14 +245,9 @@ export function ControlsPanel({
                   <span className="text-blue-600">Timetoken is stored as UTC</span>
                 </p>
               </div>
-              
+
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                    <Label htmlFor="end-timestamp">End Time (Inclusive)</Label>
-                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                    {selectedTimezone || 'Local'}
-                  </span>
-                </div>
+                <Label htmlFor="end-timestamp">End Time (Inclusive)</Label>
                 <Input
                   id="end-timestamp"
                   type="datetime-local"
@@ -265,13 +255,13 @@ export function ControlsPanel({
                   onChange={(e) => onEndTimestampChange(e.target.value)}
                   step="1"
                 />
-                <Label htmlFor="end-timetoken">End Timetoken</Label>
+                <Label htmlFor="end-timetoken" className="pt-1 block">End Timetoken</Label>
                 <Input
                   id="end-timetoken"
                   placeholder="15123456789012345"
-                    value={settings.endTimetoken}
-                    onChange={(e) => onEndTimetokenChange(e.target.value)}
-                    className="font-mono text-sm"
+                  value={settings.endTimetoken}
+                  onChange={(e) => onEndTimetokenChange(e.target.value)}
+                  className="font-mono text-sm"
                 />
                 <p className="text-xs text-gray-500">
                   Messages up to this time/timetoken
@@ -281,39 +271,43 @@ export function ControlsPanel({
               </div>
             </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="flex items-center space-x-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-start space-x-2">
                   <Switch
                     checked={settings.includeTimetoken}
                     onCheckedChange={(includeTimetoken) => onSettingsChange({ includeTimetoken })}
+                    className="mt-0.5"
                   />
                   <Label className="text-xs font-normal text-gray-600">Include Timetoken</Label>
                 </div>
-                
-                <div className="flex items-center space-x-2">
+
+                <div className="flex items-start space-x-2">
                   <Switch
                     checked={settings.includeUUID}
                     onCheckedChange={(includeUUID) => onSettingsChange({ includeUUID })}
+                    className="mt-0.5"
                   />
                   <Label className="text-xs font-normal text-gray-600">Include UUID</Label>
                 </div>
-                
-                <div className="flex items-center space-x-2">
+
+                <div className="flex items-start space-x-2">
                   <Switch
                     checked={settings.includeMeta}
                     onCheckedChange={(includeMeta) => onSettingsChange({ includeMeta })}
+                    className="mt-0.5"
                   />
                   <Label className="text-xs font-normal text-gray-600">Include Metadata</Label>
                 </div>
-                
+
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-start space-x-2">
                         <Switch
                           checked={settings.includeMessageActions}
                           onCheckedChange={(includeMessageActions) => onSettingsChange({ includeMessageActions })}
                           disabled={settings.selectedChannels.split(',').length > 1}
+                          className="mt-0.5"
                         />
                         <Label className="text-xs font-normal text-gray-600">Message Actions</Label>
                       </div>
