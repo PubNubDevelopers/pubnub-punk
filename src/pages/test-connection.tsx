@@ -411,6 +411,12 @@ export default function TestConnectionPage() {
                         {context.settings.environment.heartbeatInterval}s
                       </div>
                     </div>
+                    <div>
+                      <span className="text-gray-500">Event Engine:</span>
+                      <div className="font-mono bg-gray-100 p-1 rounded">
+                        {context.settings.environment.enableEventEngine ? 'Enabled' : 'Disabled'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

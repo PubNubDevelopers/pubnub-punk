@@ -170,6 +170,7 @@ export default function AccessManagerPage() {
           publishKey: settings.credentials.publishKey || 'demo',
           subscribeKey: settings.credentials.subscribeKey || 'demo',
           userId: settings.credentials.userId || 'access-manager-user',
+          enableEventEngine: settings.environment.enableEventEngine,
         };
 
         if (settings.credentials.pamToken) {

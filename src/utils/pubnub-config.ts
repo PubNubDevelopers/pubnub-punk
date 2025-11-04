@@ -18,6 +18,7 @@ export function createPubNubConfig(
     ssl: settings.environment.ssl,
     logVerbosity: settings.environment.logVerbosity,
     heartbeatInterval: settings.environment.heartbeatInterval,
+    enableEventEngine: settings.environment.enableEventEngine,
     ...overrides,
   };
 
@@ -123,6 +124,7 @@ export function areConfigsEquivalent(
     'logVerbosity',
     'heartbeatInterval',
     'authKey',
+    'enableEventEngine',
   ];
 
   return keys.every(key => {
@@ -169,6 +171,7 @@ export function extractConnectionSettings(settings: AppSettings) {
     ssl: settings.environment.ssl,
     logVerbosity: settings.environment.logVerbosity,
     heartbeatInterval: settings.environment.heartbeatInterval,
+    enableEventEngine: settings.environment.enableEventEngine,
   };
 }
 

@@ -46,6 +46,8 @@ interface SimulatedUser {
   userId: string;
   pubnub: any | null;
   subscription: any | null;
+  mode: 'event-engine' | 'legacy';
+  legacyListener?: any | null;
   isConnected: boolean;
   channel: string | null;
   stateDraft: string;
@@ -796,7 +798,7 @@ export default function PresenceV2Page() {
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         userId,
-        enableEventEngine: true,
+        enableEventEngine: settings.environment.enableEventEngine,
       };
 
       if (settings.credentials.pamToken) {
@@ -804,11 +806,19 @@ export default function PresenceV2Page() {
       }
 
       const pubnub = new (window as any).PubNub(config);
-      const channel = pubnub.channel(targetChannel);
-      const subscription = channel.subscription({
-        receivePresenceEvents: false,
-      });
-      subscription.subscribe();
+      const useEventEngine = Boolean(settings.environment.enableEventEngine);
+      let subscription: any | null = null;
+      let legacyListener: any | null = null;
+
+      if (useEventEngine) {
+        const channel = pubnub.channel(targetChannel);
+        subscription = channel.subscription({
+          receivePresenceEvents: false,
+        });
+        subscription.subscribe();
+      } else {
+        pubnub.subscribe({ channels: [targetChannel] });
+      }
 
       setSimulatedUsers((prev) => [
         ...prev,
@@ -817,6 +827,8 @@ export default function PresenceV2Page() {
           userId,
           pubnub,
           subscription,
+          mode: useEventEngine ? 'event-engine' : 'legacy',
+          legacyListener,
           isConnected: true,
           channel: targetChannel,
           stateDraft: '{}',
@@ -987,7 +999,14 @@ export default function PresenceV2Page() {
       }
 
       try {
-        target.subscription?.unsubscribe?.();
+        if ((target.mode ?? 'event-engine') === 'event-engine') {
+          target.subscription?.unsubscribe?.();
+        } else if (target.channel) {
+          target.pubnub?.unsubscribe({ channels: [target.channel] });
+          if (target.legacyListener) {
+            target.pubnub?.removeListener?.(target.legacyListener);
+          }
+        }
       } catch (error) {
         console.warn('Failed to unsubscribe simulated user during removal', error);
       }
@@ -1024,7 +1043,14 @@ export default function PresenceV2Page() {
 
     users.forEach((user) => {
       try {
-        user.subscription?.unsubscribe?.();
+        if ((user.mode ?? 'event-engine') === 'event-engine') {
+          user.subscription?.unsubscribe?.();
+        } else if (user.channel) {
+          user.pubnub?.unsubscribe({ channels: [user.channel] });
+          if (user.legacyListener) {
+            user.pubnub?.removeListener?.(user.legacyListener);
+          }
+        }
       } catch (error) {
         console.warn('Failed to unsubscribe simulated user during bulk removal', error);
       }
@@ -1121,6 +1147,16 @@ export default function PresenceV2Page() {
         await ensurePubNubSdk(settings.sdkVersion);
 
         existing.subscription?.unsubscribe?.();
+        if ((existing.mode ?? 'event-engine') === 'legacy' && existing.channel && existing.pubnub) {
+          try {
+            existing.pubnub.unsubscribe({ channels: [existing.channel] });
+          } catch (unsubscribeError) {
+            console.warn('Failed to unsubscribe legacy simulated user during rename', unsubscribeError);
+          }
+          if (existing.legacyListener) {
+            existing.pubnub.removeListener?.(existing.legacyListener);
+          }
+        }
         existing.pubnub?.removeAllListeners?.();
         existing.pubnub?.destroy?.();
 
@@ -1130,11 +1166,12 @@ export default function PresenceV2Page() {
           throw new Error('PubNub SDK not available');
         }
 
+        const useEventEngine = Boolean(settings.environment.enableEventEngine);
         const config: Record<string, unknown> = {
           publishKey: settings.credentials.publishKey,
           subscribeKey: settings.credentials.subscribeKey,
           userId: nextUserId,
-          enableEventEngine: true,
+          enableEventEngine: useEventEngine,
         };
 
         if (settings.credentials.pamToken) {
@@ -1144,10 +1181,16 @@ export default function PresenceV2Page() {
         const newPubnub = new (window as any).PubNub(config);
 
         let newSubscription: any | null = null;
+        let newLegacyListener: any | null = null;
         if (existing.isConnected && existing.channel) {
-          const channel = newPubnub.channel(existing.channel);
-          newSubscription = channel.subscription({ receivePresenceEvents: false });
-          newSubscription.subscribe();
+          if (useEventEngine) {
+            const channel = newPubnub.channel(existing.channel);
+            newSubscription = channel.subscription({ receivePresenceEvents: false });
+            newSubscription.subscribe();
+          } else {
+            newLegacyListener = null;
+            newPubnub.subscribe({ channels: [existing.channel] });
+          }
         }
 
         setSimulatedUsers((prev) =>
@@ -1158,8 +1201,10 @@ export default function PresenceV2Page() {
                   userId: nextUserId,
                   pubnub: newPubnub,
                   subscription: newSubscription,
-                  isConnected: Boolean(newSubscription),
-                  channel: newSubscription ? existing.channel : null,
+                  legacyListener: newLegacyListener,
+                  mode: useEventEngine ? 'event-engine' : 'legacy',
+                  isConnected: useEventEngine ? Boolean(newSubscription) : Boolean(existing.channel && existing.isConnected),
+                  channel: existing.isConnected ? existing.channel : null,
                 }
               : entry,
           ),
@@ -1202,7 +1247,14 @@ export default function PresenceV2Page() {
 
       if (user.isConnected) {
         try {
-          user.subscription?.unsubscribe?.();
+          if ((user.mode ?? 'event-engine') === 'event-engine') {
+            user.subscription?.unsubscribe?.();
+          } else if (user.channel) {
+            user.pubnub.unsubscribe({ channels: [user.channel] });
+            if (user.legacyListener) {
+              user.pubnub.removeListener?.(user.legacyListener);
+            }
+          }
         } catch (error) {
           console.warn('Failed to unsubscribe simulated user', error);
         }
@@ -1214,6 +1266,7 @@ export default function PresenceV2Page() {
                   ...entry,
                   isConnected: false,
                   subscription: null,
+                  legacyListener: (entry.mode ?? 'event-engine') === 'legacy' ? null : entry.legacyListener,
                   channel: null,
                 }
               : entry,
@@ -1238,28 +1291,44 @@ export default function PresenceV2Page() {
       }
 
       try {
-        const channel = user.pubnub.channel(targetChannel);
-        const subscription = channel.subscription({
-          receivePresenceEvents: false,
-        });
-        subscription.subscribe();
+        if ((user.mode ?? 'event-engine') === 'event-engine') {
+          const channel = user.pubnub.channel(targetChannel);
+          const subscription = channel.subscription({
+            receivePresenceEvents: false,
+          });
+          subscription.subscribe();
 
-        setSimulatedUsers((prev) =>
-          prev.map((entry) =>
-            entry.internalId === internalId
-              ? {
-                  ...entry,
-                  isConnected: true,
-                  subscription,
-                  channel: targetChannel,
-                }
-              : entry,
-          ),
-        );
+          setSimulatedUsers((prev) =>
+            prev.map((entry) =>
+              entry.internalId === internalId
+                ? {
+                    ...entry,
+                    isConnected: true,
+                    subscription,
+                    channel: targetChannel,
+                  }
+                : entry,
+            ),
+          );
+        } else {
+          user.pubnub.subscribe({ channels: [targetChannel] });
+
+          setSimulatedUsers((prev) =>
+            prev.map((entry) =>
+              entry.internalId === internalId
+                ? {
+                    ...entry,
+                    isConnected: true,
+                    channel: targetChannel,
+                  }
+                : entry,
+            ),
+          );
+        }
 
         toast({
           title: 'User connected',
-          description: `${user.userId} joined #${targetChannel}`,
+          description: `${user.userId} joined #${targetChannel}.`,
         });
       } catch (error) {
         console.error('Failed to connect simulated user', error);

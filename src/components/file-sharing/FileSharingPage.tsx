@@ -854,26 +854,54 @@ export default function FileSharingPage() {
   useEffect(() => {
     if (!pubnub || !selectedChannel) return;
 
-    const subscription = pubnub.channel(selectedChannel).subscription();
-    
-    subscription.onFile = (fileEvent: any) => {
-      console.log('File event received:', fileEvent);
-      
-      toast({
-        title: "New file shared",
-        description: `${fileEvent.file?.name || 'A file'} was uploaded to ${fileEvent.channel}`,
-      });
-      
-      if (fileEvent.channel === selectedChannel) {
-        loadFiles(fileEvent.channel);
-      }
-    };
+    const settings = storage.getSettings();
+    const useEventEngine = Boolean(settings.environment.enableEventEngine);
 
-    subscription.subscribe();
+    if (useEventEngine && typeof pubnub.channel === 'function') {
+      const subscription = pubnub.channel(selectedChannel).subscription();
 
-    return () => {
-      subscription.unsubscribe();
-    };
+      subscription.onFile = (fileEvent: any) => {
+        console.log('File event received:', fileEvent);
+
+        toast({
+          title: "New file shared",
+          description: `${fileEvent.file?.name || 'A file'} was uploaded to ${fileEvent.channel}`,
+        });
+
+        if (fileEvent.channel === selectedChannel) {
+          loadFiles(fileEvent.channel);
+        }
+      };
+
+      subscription.subscribe();
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    } else {
+      const listener = {
+        file: (fileEvent: any) => {
+          console.log('File event received:', fileEvent);
+
+          toast({
+            title: "New file shared",
+            description: `${fileEvent.file?.name || 'A file'} was uploaded to ${fileEvent.channel}`,
+          });
+
+          if (fileEvent.channel === selectedChannel) {
+            loadFiles(fileEvent.channel);
+          }
+        }
+      };
+
+      pubnub.addListener(listener);
+      pubnub.subscribe({ channels: [selectedChannel] });
+
+      return () => {
+        pubnub.unsubscribe({ channels: [selectedChannel] });
+        pubnub.removeListener(listener);
+      };
+    }
   }, [selectedChannel, pubnub, toast, loadFiles]);
 
   // Load files when channel changes

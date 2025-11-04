@@ -12,6 +12,7 @@ export interface EnvironmentSettings {
   ssl: boolean;
   logVerbosity: 'debug' | 'info' | 'error' | 'none';
   heartbeatInterval: number;
+  enableEventEngine: boolean;
 }
 
 export interface StoragePreferences {

@@ -281,10 +281,7 @@ export class PersistenceAPI {
         })
       : Promise.resolve<MessageCountsResponse | null>(null);
 
-    const [startResponse, endResponse] = await Promise.all<[MessageCountsResponse, MessageCountsResponse | null]>([
-      startRequest,
-      endRequest,
-    ]);
+    const [startResponse, endResponse] = await Promise.all([startRequest, endRequest] as const);
 
     const counts: Record<string, number> = {};
 

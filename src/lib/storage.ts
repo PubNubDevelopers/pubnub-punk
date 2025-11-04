@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     ssl: true,
     logVerbosity: 'info',
     heartbeatInterval: 300,
+    enableEventEngine: true,
   },
   storage: {
     storeMessageHistory: false,
@@ -35,16 +36,22 @@ export const storage = {
       if (stored) {
         const parsed = JSON.parse(stored);
         // Merge with defaults to ensure all fields exist, removing any deprecated fields
+        const cleanedEnvironment = {
+          ...DEFAULT_SETTINGS.environment,
+          ...parsed.environment,
+        };
+
         const cleanedStorage = {
           ...DEFAULT_SETTINGS.storage,
           ...parsed.storage
         };
         // Remove autoSave if it exists (deprecated field)
         delete (cleanedStorage as any).autoSave;
-        
+
         return {
           ...DEFAULT_SETTINGS,
           ...parsed,
+          environment: cleanedEnvironment,
           storage: cleanedStorage
         };
       }
@@ -56,7 +63,16 @@ export const storage = {
 
   saveSettings(settings: AppSettings): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+      const payload: AppSettings = {
+        ...settings,
+        environment: {
+          ...DEFAULT_SETTINGS.environment,
+          ...settings.environment,
+          enableEventEngine: settings.environment.enableEventEngine ?? false,
+        },
+      };
+
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(payload));
     } catch (error) {
       console.error('Error saving settings to localStorage:', error);
     }

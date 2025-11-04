@@ -61,6 +61,8 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
   const subscriptionRef = useRef<any>(null);
   const listenersAddedRef = useRef(false);
   const initialSubscriptionMadeRef = useRef(false);
+  const legacyListenerRef = useRef<any | null>(null);
+  const legacySubscribeMetaRef = useRef<{ channels: string[]; channelGroups: string[]; withPresence: boolean } | null>(null);
 
   const handleMessage = useCallback((messageEvent: any) => {
     console.log('Received message:', messageEvent);
@@ -156,7 +158,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
     try {
       // Clean up any existing subscription first
       if (subscriptionRef.current) {
-        subscriptionRef.current.unsubscribe();
+        subscriptionRef.current.unsubscribe?.();
         subscriptionRef.current = null;
       }
 
@@ -175,12 +177,14 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
       // Create new PubNub instance for this subscription
       await ensurePubNubSdk(settings.sdkVersion);
       const heartbeatInterval = withPresence ? heartbeat : 0;
+      const useEventEngine = Boolean(settings.environment.enableEventEngine);
       const pubnubConfig: any = {
         publishKey: settings.credentials.publishKey,
         subscribeKey: settings.credentials.subscribeKey,
         userId: settings.credentials.userId || 'pubsub-subscription-user',
         heartbeatInterval,
-        restore: restoreOnReconnect
+        restore: restoreOnReconnect,
+        enableEventEngine: useEventEngine,
       };
 
       const pubnubInstance = new (window as any).PubNub(pubnubConfig);
@@ -202,57 +206,86 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
         }
       }
 
-      // Build subscription options
-      const subscriptionOptions: any = {
-        receivePresenceEvents
-      };
-      if (withPresence) {
-        subscriptionOptions.withPresence = true;
-      }
-
-      if (cursor?.timetoken && cursor.timetoken.trim()) {
-        subscriptionOptions.cursor = {
-          timetoken: cursor.timetoken
+      if (useEventEngine) {
+        const subscriptionOptions: any = {
+          receivePresenceEvents
         };
-        
-        if (cursor.region && cursor.region.trim()) {
-          subscriptionOptions.cursor.region = parseInt(cursor.region);
+        if (withPresence) {
+          subscriptionOptions.withPresence = true;
         }
-      }
 
-      // Create subscription set
-      let subscriptionSet;
-      if (channelList.length > 0 && channelGroupList.length > 0) {
-        subscriptionSet = pubnubInstance.subscriptionSet({
-          channels: channelList,
-          channelGroups: channelGroupList,
-          subscriptionOptions
-        });
-      } else if (channelList.length > 0) {
-        subscriptionSet = pubnubInstance.subscriptionSet({
-          channels: channelList,
-          subscriptionOptions
-        });
+        if (cursor?.timetoken && cursor.timetoken.trim()) {
+          subscriptionOptions.cursor = {
+            timetoken: cursor.timetoken
+          };
+          
+          if (cursor.region && cursor.region.trim()) {
+            subscriptionOptions.cursor.region = parseInt(cursor.region);
+          }
+        }
+
+        let subscriptionSet;
+        if (channelList.length > 0 && channelGroupList.length > 0) {
+          subscriptionSet = pubnubInstance.subscriptionSet({
+            channels: channelList,
+            channelGroups: channelGroupList,
+            subscriptionOptions
+          });
+        } else if (channelList.length > 0) {
+          subscriptionSet = pubnubInstance.subscriptionSet({
+            channels: channelList,
+            subscriptionOptions
+          });
+        } else {
+          subscriptionSet = pubnubInstance.subscriptionSet({
+            channelGroups: channelGroupList,
+            subscriptionOptions
+          });
+        }
+
+        if (!listenersAddedRef.current) {
+          subscriptionSet.addListener({
+            message: handleMessage,
+            presence: handlePresenceEvent,
+            status: handleStatus
+          });
+          listenersAddedRef.current = true;
+        }
+
+        subscriptionSet.subscribe();
+        subscriptionRef.current = { type: 'event-engine', subscription: subscriptionSet };
       } else {
-        subscriptionSet = pubnubInstance.subscriptionSet({
-          channelGroups: channelGroupList,
-          subscriptionOptions
-        });
-      }
-
-      // Add listeners
-      if (!listenersAddedRef.current) {
-        subscriptionSet.addListener({
+        const legacyListener = {
           message: handleMessage,
-          presence: handlePresenceEvent,
+          presence: receivePresenceEvents ? handlePresenceEvent : undefined,
           status: handleStatus
-        });
-        listenersAddedRef.current = true;
+        };
+        legacyListenerRef.current = legacyListener;
+        pubnubInstance.addListener(legacyListener);
+
+        const subscribeParams: any = {};
+        if (channelList.length > 0) {
+          subscribeParams.channels = channelList;
+        }
+        if (channelGroupList.length > 0) {
+          subscribeParams.channelGroups = channelGroupList;
+        }
+        if ((receivePresenceEvents || withPresence) && (channelList.length > 0 || channelGroupList.length > 0)) {
+          subscribeParams.withPresence = true;
+        }
+        if (cursor?.timetoken && cursor.timetoken.trim()) {
+          subscribeParams.timetoken = cursor.timetoken.trim();
+        }
+
+        pubnubInstance.subscribe(subscribeParams);
+        legacySubscribeMetaRef.current = {
+          channels: channelList,
+          channelGroups: channelGroupList,
+          withPresence: Boolean(subscribeParams.withPresence)
+        };
+        subscriptionRef.current = { type: 'legacy' };
       }
 
-      // Subscribe
-      subscriptionSet.subscribe();
-      subscriptionRef.current = subscriptionSet;
       setIsSubscribed(true);
       setError(null);
       initialSubscriptionMadeRef.current = true;
@@ -270,18 +303,37 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
 
   const unsubscribe = useCallback(() => {
     if (subscriptionRef.current) {
-      subscriptionRef.current.unsubscribe();
+      if (subscriptionRef.current.type === 'event-engine') {
+        subscriptionRef.current.subscription?.unsubscribe?.();
+      } else if (subscriptionRef.current.type === 'legacy') {
+        if (pubnubInstanceRef.current) {
+          const meta = legacySubscribeMetaRef.current;
+          if (meta) {
+            pubnubInstanceRef.current.unsubscribe({
+              channels: meta.channels.length ? meta.channels : undefined,
+              channelGroups: meta.channelGroups.length ? meta.channelGroups : undefined,
+            });
+          } else {
+            pubnubInstanceRef.current.unsubscribeAll?.();
+          }
+        }
+      }
       subscriptionRef.current = null;
     }
     
     if (pubnubInstanceRef.current) {
-      pubnubInstanceRef.current.removeAllListeners();
+      if (legacyListenerRef.current) {
+        pubnubInstanceRef.current.removeListener?.(legacyListenerRef.current);
+        legacyListenerRef.current = null;
+      }
+      pubnubInstanceRef.current.removeAllListeners?.();
       pubnubInstanceRef.current.destroy?.();
       pubnubInstanceRef.current = null;
     }
     
     listenersAddedRef.current = false;
     initialSubscriptionMadeRef.current = false;
+    legacySubscribeMetaRef.current = null;
     setIsSubscribed(false);
     setError(null);
     
@@ -317,10 +369,26 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
   useEffect(() => {
     return () => {
       if (subscriptionRef.current) {
-        subscriptionRef.current.unsubscribe();
+        if (subscriptionRef.current.type === 'event-engine') {
+          subscriptionRef.current.subscription?.unsubscribe?.();
+        } else if (subscriptionRef.current.type === 'legacy' && pubnubInstanceRef.current) {
+          const meta = legacySubscribeMetaRef.current;
+          if (meta) {
+            pubnubInstanceRef.current.unsubscribe({
+              channels: meta.channels.length ? meta.channels : undefined,
+              channelGroups: meta.channelGroups.length ? meta.channelGroups : undefined,
+            });
+          } else {
+            pubnubInstanceRef.current.unsubscribeAll?.();
+          }
+        }
       }
       if (pubnubInstanceRef.current) {
-        pubnubInstanceRef.current.removeAllListeners();
+        if (legacyListenerRef.current) {
+          pubnubInstanceRef.current.removeListener?.(legacyListenerRef.current);
+          legacyListenerRef.current = null;
+        }
+        pubnubInstanceRef.current.removeAllListeners?.();
         pubnubInstanceRef.current.destroy?.();
       }
     };

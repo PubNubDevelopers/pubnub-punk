@@ -485,8 +485,8 @@ export default function PubNubPersistencePage() {
     setCountLoading(true);
     try {
       const rangeTokens = {
-        startToken: settings.startTimetoken || undefined,
-        endToken: settings.endTimetoken || undefined,
+        startTimetoken: settings.startTimetoken || undefined,
+        endTimetoken: settings.endTimetoken || undefined,
       };
 
       const counts = await persistenceAPI.getMessageCounts(channels, rangeTokens);
@@ -494,8 +494,8 @@ export default function PubNubPersistencePage() {
       const derivedRange = {
         start: startTimestamp || undefined,
         end: endTimestamp || undefined,
-        startTimetoken: rangeTokens.startToken,
-        endTimetoken: rangeTokens.endToken,
+        startTimetoken: rangeTokens.startTimetoken,
+        endTimetoken: rangeTokens.endTimetoken,
       };
       setMessageCountRange(derivedRange);
       setShowMessageCountDialog(true);

@@ -99,6 +99,7 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
         ssl: settings.environment.ssl,
         logVerbosity: settings.environment.logVerbosity,
         heartbeatInterval: settings.environment.heartbeatInterval,
+        enableEventEngine: settings.environment.enableEventEngine,
       };
 
       if (settings.credentials.pamToken) {
@@ -118,6 +119,7 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
         userId: pubnubConfig.userId,
         origin: pubnubConfig.origin,
         ssl: pubnubConfig.ssl,
+        eventEngine: pubnubConfig.enableEventEngine ? 'enabled' : 'legacy'
       });
 
       return instance;
@@ -221,7 +223,8 @@ export function usePubNub(options: PubNubHookOptions = {}): PubNubHookResult {
       currentSettings.environment.customOrigin !== previousSettings.environment.customOrigin ||
       currentSettings.environment.ssl !== previousSettings.environment.ssl ||
       currentSettings.environment.logVerbosity !== previousSettings.environment.logVerbosity ||
-      currentSettings.environment.heartbeatInterval !== previousSettings.environment.heartbeatInterval;
+      currentSettings.environment.heartbeatInterval !== previousSettings.environment.heartbeatInterval ||
+      currentSettings.environment.enableEventEngine !== previousSettings.environment.enableEventEngine;
     const sdkChanged = currentSettings.sdkVersion !== previousSettings.sdkVersion;
 
     if (credentialsChanged || environmentChanged || sdkChanged) {

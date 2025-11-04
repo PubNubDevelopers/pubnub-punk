@@ -121,6 +121,7 @@ export function PubNubProvider({ children }: PubNubProviderProps): JSX.Element {
         ssl: currentSettings.environment.ssl,
         logVerbosity: currentSettings.environment.logVerbosity,
         heartbeatInterval: currentSettings.environment.heartbeatInterval,
+        enableEventEngine: currentSettings.environment.enableEventEngine,
       };
 
       // Add optional configurations
@@ -154,6 +155,7 @@ export function PubNubProvider({ children }: PubNubProviderProps): JSX.Element {
       console.log(`✅ Created custom PubNub instance ${instanceId}:`, {
         userId: pubnubConfig.userId,
         origin: pubnubConfig.origin,
+        eventEngine: pubnubConfig.enableEventEngine ? 'enabled' : 'legacy',
       });
 
       return instance;
@@ -253,7 +255,8 @@ export function PubNubProvider({ children }: PubNubProviderProps): JSX.Element {
         previousSettings.credentials.subscribeKey !== settings.credentials.subscribeKey ||
         previousSettings.credentials.pamToken !== settings.credentials.pamToken ||
         previousSettings.environment.origin !== settings.environment.origin ||
-        previousSettings.environment.customOrigin !== settings.environment.customOrigin) {
+        previousSettings.environment.customOrigin !== settings.environment.customOrigin ||
+        previousSettings.environment.enableEventEngine !== settings.environment.enableEventEngine) {
       console.log('🔧 Critical settings changed, refreshing all connections...');
       refreshConnections();
     }

@@ -106,6 +106,7 @@ export class InstanceRegistry {
       oldSettings.environment.origin !== newSettings.environment.origin ||
       oldSettings.environment.customOrigin !== newSettings.environment.customOrigin ||
       oldSettings.environment.ssl !== newSettings.environment.ssl ||
+      oldSettings.environment.enableEventEngine !== newSettings.environment.enableEventEngine ||
       oldSettings.sdkVersion !== newSettings.sdkVersion
     );
   }
@@ -121,6 +122,7 @@ export class InstanceRegistry {
       settings.environment.origin,
       settings.environment.customOrigin || '',
       settings.environment.ssl ? 'ssl' : 'no-ssl',
+      settings.environment.enableEventEngine ? 'event-engine' : 'legacy',
       settings.sdkVersion || ''
     ];
     

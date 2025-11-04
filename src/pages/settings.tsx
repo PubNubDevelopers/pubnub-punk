@@ -28,6 +28,7 @@ const settingsSchema = z.object({
   ssl: z.boolean(),
   logVerbosity: z.enum(['debug', 'info', 'error', 'none']),
   heartbeatInterval: z.number().min(1).max(3600),
+  eventEngineEnabled: z.boolean(),
   storeMessageHistory: z.boolean(),
   autoSaveToPubNub: z.boolean(),
   saveVersionHistory: z.boolean(),
@@ -58,6 +59,7 @@ const FIELD_DEFINITIONS = {
   ssl: { section: 'environment', type: 'boolean', default: true },
   logVerbosity: { section: 'environment', type: 'string', default: 'info' },
   heartbeatInterval: { section: 'environment', type: 'number', default: 300 },
+  eventEngineEnabled: { section: 'environment', type: 'boolean', default: true },
   storeMessageHistory: { section: 'storage', type: 'boolean', default: false },
   autoSaveToPubNub: { section: 'storage', type: 'boolean', default: true },
   saveVersionHistory: { section: 'storage', type: 'boolean', default: true },
@@ -252,6 +254,7 @@ export default function SettingsPage() {
       ssl: settings.environment.ssl,
       logVerbosity: settings.environment.logVerbosity,
       heartbeatInterval: settings.environment.heartbeatInterval,
+      eventEngineEnabled: settings.environment.enableEventEngine ?? false,
       storeMessageHistory: settings.storage.storeMessageHistory || false,
       autoSaveToPubNub: settings.storage.autoSaveToPubNub ?? true,
       saveVersionHistory: settings.storage.saveVersionHistory ?? true,
@@ -305,6 +308,7 @@ export default function SettingsPage() {
       ssl: settings.environment.ssl,
       logVerbosity: settings.environment.logVerbosity,
       heartbeatInterval: settings.environment.heartbeatInterval,
+      eventEngineEnabled: settings.environment.enableEventEngine ?? false,
       storeMessageHistory: settings.storage.storeMessageHistory || false,
       autoSaveToPubNub: settings.storage.autoSaveToPubNub ?? true,
       saveVersionHistory: settings.storage.saveVersionHistory ?? true,
@@ -403,6 +407,7 @@ export default function SettingsPage() {
     watchedValues.ssl,
     watchedValues.logVerbosity,
     watchedValues.heartbeatInterval,
+    watchedValues.eventEngineEnabled,
     watchedValues.storeMessageHistory,
     watchedValues.autoSaveToPubNub,
     watchedValues.saveVersionHistory,
@@ -448,6 +453,7 @@ export default function SettingsPage() {
         ssl: watchedValues.ssl ?? true,
         logVerbosity: watchedValues.logVerbosity || 'info',
         heartbeatInterval: watchedValues.heartbeatInterval || 300,
+        enableEventEngine: watchedValues.eventEngineEnabled ?? false,
       },
       storage: {
         storeMessageHistory: watchedValues.storeMessageHistory || false,
@@ -480,6 +486,7 @@ export default function SettingsPage() {
     watchedValues.ssl,
     watchedValues.logVerbosity,
     watchedValues.heartbeatInterval,
+    watchedValues.eventEngineEnabled,
     watchedValues.storeMessageHistory,
     watchedValues.autoSaveToPubNub,
     watchedValues.saveVersionHistory,
@@ -860,6 +867,26 @@ export default function SettingsPage() {
                             onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
                           />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="eventEngineEnabled"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2">
+                        <div className="flex items-center justify-between rounded-md border border-gray-200 p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel>Enable Event Engine</FormLabel>
+                            <FormDescription className="text-xs text-gray-500">
+                              Toggle the new PubNub transport. Turn off to stay on the legacy subscribe model.
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}

@@ -279,6 +279,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
                 JS SDK: {activeSdkVersion}
               </span>
+              <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                Event Engine: {settings?.environment?.enableEventEngine ? 'On' : 'Off'}
+              </span>
               {isOutdatedVersion && (
                 <Link href="/">
                   <a

@@ -8,6 +8,7 @@ export interface PubNubConfig {
   ssl?: boolean;
   logVerbosity?: 'debug' | 'info' | 'error' | 'none';
   heartbeatInterval?: number;
+  enableEventEngine?: boolean;
 }
 
 export interface PubNubInstance {
