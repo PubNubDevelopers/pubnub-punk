@@ -49,14 +49,6 @@ npm run dev
 - npm ≥ 8 (or compatible package manager).
 - PubNub account with publish/subscribe keys.
 
-### Sample Keys
-
-For local QA you can use the shared test keys used throughout the repository:
-
-```
-Publish Key:   pub-c-17c0aef0-b03b-460f-8f93-69fa5d80034a
-Subscribe Key: sub-c-f18d5abb-122f-4ca0-9031-64e002e0fad0
-```
 
 Enter keys on the **Settings** page after the app loads, or store them ahead of time by seeding localStorage with `pubnub_developer_tools_settings`.
 
