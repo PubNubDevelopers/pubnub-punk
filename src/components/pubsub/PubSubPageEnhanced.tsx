@@ -212,7 +212,6 @@ export default function PubSubPageEnhanced() {
     cursor: subscribeData.cursor,
     heartbeat: subscribeData.heartbeat,
     restoreOnReconnect: subscribeData.restoreOnReconnect,
-    authToken: subscribeData.authToken,
     filters: subscribeFilters,
     filterLogic,
     onError: (error) => {

@@ -10,7 +10,6 @@ export const FIELD_DEFINITIONS: FieldDefinitions = {
   'publish.ttl': { section: 'publish', field: 'ttl', type: 'string', default: '' },
   'publish.customMessageType': { section: 'publish', field: 'customMessageType', type: 'string', default: 'text-message' },
   'publish.meta': { section: 'publish', field: 'meta', type: 'string', default: '' },
-  'publish.authToken': { section: 'publish', field: 'authToken', type: 'string', default: '' },
   
   // Subscribe Panel
   'subscribe.channels': { section: 'subscribe', field: 'channels', type: 'string', default: 'hello_world' },
@@ -21,7 +20,6 @@ export const FIELD_DEFINITIONS: FieldDefinitions = {
   'subscribe.withPresence': { section: 'subscribe', field: 'withPresence', type: 'boolean', default: false },
   'subscribe.heartbeat': { section: 'subscribe', field: 'heartbeat', type: 'number', default: 300 },
   'subscribe.restoreOnReconnect': { section: 'subscribe', field: 'restoreOnReconnect', type: 'boolean', default: true },
-  'subscribe.authToken': { section: 'subscribe', field: 'authToken', type: 'string', default: '' },
   
   // UI State
   'ui.showAdvanced': { section: 'ui', field: 'showAdvanced', type: 'boolean', default: false },

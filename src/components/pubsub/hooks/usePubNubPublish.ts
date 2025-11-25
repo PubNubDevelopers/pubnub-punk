@@ -141,38 +141,9 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
     try {
       console.log(`Publishing (attempt ${attemptNumber}/${maxRetries}):`, publishParams);
 
-      // Handle PAM auth token if provided
-      let originalToken: string | null = null;
-      const hasAuthToken = publishData.authToken && publishData.authToken.trim();
+      const publishResult = await pubnub.publish(publishParams);
 
-      if (hasAuthToken) {
-        // Store original token to restore later
-        originalToken = pubnub.getToken ? pubnub.getToken() : null;
-
-        // Set the auth token for this publish operation
-        if (pubnub.setToken) {
-          console.log('Setting PAM token for publish operation');
-          pubnub.setToken(publishData.authToken.trim());
-        } else {
-          console.warn('PubNub SDK version does not support setToken(). The auth token cannot be applied for this publish.');
-        }
-      }
-
-      let publishResult;
-      try {
-        publishResult = await pubnub.publish(publishParams);
-        console.log('Publish successful:', publishResult);
-      } finally {
-        // Always restore original token, whether publish succeeded or failed
-        if (hasAuthToken && pubnub.setToken) {
-          if (originalToken) {
-            pubnub.setToken(originalToken);
-          } else {
-            // Clear token if there wasn't one before
-            pubnub.setToken(null);
-          }
-        }
-      }
+      console.log('Publish successful:', publishResult);
 
       // Success - update status
       setPublishStatus({

@@ -16,7 +16,6 @@ interface UsePubNubSubscriptionOptions {
   };
   heartbeat?: number;
   restoreOnReconnect?: boolean;
-  authToken?: string;
   filters?: FilterCondition[];
   filterLogic?: '&&' | '||';
   onMessage?: (message: MessageData) => void;
@@ -45,7 +44,6 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
     cursor,
     heartbeat = 300,
     restoreOnReconnect = true,
-    authToken,
     filters = [],
     filterLogic = '&&',
     onMessage,
@@ -211,10 +209,10 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
         enableEventEngine: useEventEngine,
       };
 
-      // Add auth token if provided
-      if (authToken && authToken.trim()) {
-        console.log('Using PAM auth token for subscription');
-        pubnubConfig.authKey = authToken.trim();
+      // Add PAM auth token from settings if available
+      if (settings.credentials.pamToken) {
+        console.log('Using PAM auth token from Settings for subscription');
+        pubnubConfig.authKey = settings.credentials.pamToken;
       }
 
       const pubnubInstance = new (window as any).PubNub(pubnubConfig);
@@ -329,7 +327,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
       onError?.(err instanceof Error ? err : new Error(errorMsg));
       return false;
     }
-  }, [channels, channelGroups, receivePresenceEvents, withPresence, cursor, heartbeat, restoreOnReconnect, authToken, filters, filterLogic, handleMessage, handlePresenceEvent, handleStatus, onError, isSubscribed]);
+  }, [channels, channelGroups, receivePresenceEvents, withPresence, cursor, heartbeat, restoreOnReconnect, filters, filterLogic, handleMessage, handlePresenceEvent, handleStatus, onError, isSubscribed]);
 
   const unsubscribe = useCallback(() => {
     if (subscriptionRef.current) {
@@ -393,7 +391,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
       return () => clearTimeout(timeout);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channels, channelGroups, receivePresenceEvents, withPresence, authToken, filters, filterLogic, heartbeat, restoreOnReconnect, cursor?.timetoken, cursor?.region]);
+  }, [channels, channelGroups, receivePresenceEvents, withPresence, filters, filterLogic, heartbeat, restoreOnReconnect, cursor?.timetoken, cursor?.region]);
 
   // Cleanup on unmount
   useEffect(() => {

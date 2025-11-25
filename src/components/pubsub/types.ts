@@ -16,7 +16,6 @@ export interface PublishFormData {
   ttl: string;
   customMessageType: string;
   meta: string;
-  authToken: string;
 }
 
 export interface SubscribeFormData {
@@ -30,7 +29,6 @@ export interface SubscribeFormData {
   withPresence: boolean;
   heartbeat: number;
   restoreOnReconnect: boolean;
-  authToken: string;
 }
 
 export interface UIState {
