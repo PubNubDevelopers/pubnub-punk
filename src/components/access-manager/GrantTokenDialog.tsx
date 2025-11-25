@@ -217,14 +217,20 @@ export function GrantTokenDialog({
   };
 
   const validateForm = () => {
-    const hasResources = grantForm.channels.length > 0 || 
-                        grantForm.channelGroups.length > 0 || 
+    // Validate TTL is required and within range
+    const isTtlValid = grantForm.ttl &&
+                       typeof grantForm.ttl === 'number' &&
+                       grantForm.ttl >= 1 &&
+                       grantForm.ttl <= 43200;
+
+    const hasResources = grantForm.channels.length > 0 ||
+                        grantForm.channelGroups.length > 0 ||
                         grantForm.uuids.length > 0;
-    const hasPatterns = grantForm.channelPatterns.length > 0 || 
-                       grantForm.channelGroupPatterns.length > 0 || 
+    const hasPatterns = grantForm.channelPatterns.length > 0 ||
+                       grantForm.channelGroupPatterns.length > 0 ||
                        grantForm.uuidPatterns.length > 0;
-    
-    return hasResources || hasPatterns;
+
+    return isTtlValid && (hasResources || hasPatterns);
   };
 
   return (
@@ -238,10 +244,38 @@ export function GrantTokenDialog({
             type="number"
             min="1"
             max="43200"
-            value={grantForm.ttl}
-            onChange={(e) => setGrantForm(prev => ({ ...prev, ttl: parseInt(e.target.value) || 60 }))}
+            value={grantForm.ttl || ''}
+            onChange={(e) => {
+              const value = e.target.value;
+              // Allow empty string while typing
+              if (value === '') {
+                setGrantForm(prev => ({ ...prev, ttl: '' as any }));
+                return;
+              }
+
+              const numValue = parseInt(value, 10);
+              // Only update if it's a valid number
+              if (!isNaN(numValue)) {
+                // Clamp value between 1 and 43200
+                const clampedValue = Math.max(1, Math.min(43200, numValue));
+                setGrantForm(prev => ({ ...prev, ttl: clampedValue }));
+              }
+            }}
+            onBlur={(e) => {
+              // On blur, ensure we have a valid value
+              const value = e.target.value;
+              if (value === '' || isNaN(parseInt(value, 10))) {
+                setGrantForm(prev => ({ ...prev, ttl: 1 }));
+              }
+            }}
+            className={!grantForm.ttl || grantForm.ttl < 1 || grantForm.ttl > 43200 ? 'border-orange-300' : ''}
           />
-          <p className="text-xs text-gray-500 mt-1">Min: 1, Max: 43,200 (30 days)</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Required. Min: 1, Max: 43,200 (30 days)
+            {grantForm.ttl && grantForm.ttl > 43200 && (
+              <span className="text-orange-600 ml-2">⚠ Value will be clamped to 43,200</span>
+            )}
+          </p>
         </div>
         <div>
           <Label htmlFor="authorizedUserId">Authorized User ID (optional)</Label>
@@ -697,9 +731,19 @@ export function GrantTokenDialog({
             <AlertCircle className="h-4 w-4" />
             <span className="font-medium">Validation Required</span>
           </div>
-          <p className="text-sm text-orange-700 mt-1">
-            You must specify permissions for at least one resource (channels, channel groups, or UUIDs) or pattern.
-          </p>
+          <div className="text-sm text-orange-700 mt-1 space-y-1">
+            {(!grantForm.ttl || grantForm.ttl < 1 || grantForm.ttl > 43200) && (
+              <p>• TTL must be between 1 and 43,200 minutes (required)</p>
+            )}
+            {(grantForm.channels.length === 0 &&
+              grantForm.channelGroups.length === 0 &&
+              grantForm.uuids.length === 0 &&
+              grantForm.channelPatterns.length === 0 &&
+              grantForm.channelGroupPatterns.length === 0 &&
+              grantForm.uuidPatterns.length === 0) && (
+              <p>• You must specify permissions for at least one resource (channels, channel groups, or UUIDs) or pattern</p>
+            )}
+          </div>
         </div>
       )}
 

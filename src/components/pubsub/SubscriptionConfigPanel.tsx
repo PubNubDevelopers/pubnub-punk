@@ -132,10 +132,12 @@ export default function SubscriptionConfigPanel({
               withPresence={subscribeData.withPresence}
               restoreOnReconnect={subscribeData.restoreOnReconnect}
               heartbeat={subscribeData.heartbeat}
+              authToken={subscribeData.authToken}
               onCursorChange={handleCursorChange}
               onWithPresenceChange={(value) => onSubscribeDataChange('withPresence', value)}
               onRestoreOnReconnectChange={(value) => onSubscribeDataChange('restoreOnReconnect', value)}
               onHeartbeatChange={(value) => onSubscribeDataChange('heartbeat', value)}
+              onAuthTokenChange={(value) => onSubscribeDataChange('authToken', value)}
             />
           </Tabs>
         </CardContent>

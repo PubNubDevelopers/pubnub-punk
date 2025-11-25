@@ -16,6 +16,7 @@ interface UsePubNubSubscriptionOptions {
   };
   heartbeat?: number;
   restoreOnReconnect?: boolean;
+  authToken?: string;
   filters?: FilterCondition[];
   filterLogic?: '&&' | '||';
   onMessage?: (message: MessageData) => void;
@@ -44,6 +45,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
     cursor,
     heartbeat = 300,
     restoreOnReconnect = true,
+    authToken,
     filters = [],
     filterLogic = '&&',
     onMessage,
@@ -119,11 +121,33 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
 
   const handleStatus = useCallback((statusEvent: any) => {
     console.log('Status event:', statusEvent);
-    
-    if (statusEvent.category === 'PNConnectedCategory') {
+
+    // Check for access denied / forbidden errors (403)
+    if (statusEvent.category === 'PNAccessDeniedCategory' ||
+        statusEvent.statusCode === 403 ||
+        statusEvent.status === 403) {
+      console.error('Access denied (403) - PAM token may be invalid or missing required permissions');
+
+      const errorMsg = 'Access Forbidden (403): You do not have permission to subscribe to these channels. ' +
+                      'Please check your PAM token has read permissions for the specified channels.';
+      setError(errorMsg);
+      setIsSubscribed(false);
+
+      // Unsubscribe to clean up
+      if (subscriptionRef.current) {
+        if (subscriptionRef.current.type === 'event-engine') {
+          subscriptionRef.current.subscription?.unsubscribe?.();
+        }
+        subscriptionRef.current = null;
+      }
+
+      onError?.(new Error(errorMsg));
+    } else if (statusEvent.category === 'PNConnectedCategory') {
       console.log('Connected to PubNub');
+      setError(null);
     } else if (statusEvent.category === 'PNReconnectedCategory') {
       console.log('Reconnected to PubNub');
+      setError(null);
     } else if (statusEvent.category === 'PNDisconnectedCategory') {
       console.log('Disconnected from PubNub');
     } else if (statusEvent.category === 'PNNetworkDownCategory') {
@@ -133,7 +157,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
     }
 
     onStatusChange?.(statusEvent);
-  }, [onStatusChange]);
+  }, [onStatusChange, onError]);
 
   const subscribe = useCallback(async (): Promise<boolean> => {
     const settings = storage.getSettings();
@@ -186,6 +210,12 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
         restore: restoreOnReconnect,
         enableEventEngine: useEventEngine,
       };
+
+      // Add auth token if provided
+      if (authToken && authToken.trim()) {
+        console.log('Using PAM auth token for subscription');
+        pubnubConfig.authKey = authToken.trim();
+      }
 
       const pubnubInstance = new (window as any).PubNub(pubnubConfig);
       if (typeof pubnubInstance.setHeartbeatInterval === 'function') {
@@ -299,7 +329,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
       onError?.(err instanceof Error ? err : new Error(errorMsg));
       return false;
     }
-  }, [channels, channelGroups, receivePresenceEvents, withPresence, cursor, heartbeat, restoreOnReconnect, filters, filterLogic, handleMessage, handlePresenceEvent, handleStatus, onError, isSubscribed]);
+  }, [channels, channelGroups, receivePresenceEvents, withPresence, cursor, heartbeat, restoreOnReconnect, authToken, filters, filterLogic, handleMessage, handlePresenceEvent, handleStatus, onError, isSubscribed]);
 
   const unsubscribe = useCallback(() => {
     if (subscriptionRef.current) {
@@ -359,11 +389,11 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
           subscribe();
         }
       }, 100);
-      
+
       return () => clearTimeout(timeout);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channels, channelGroups, receivePresenceEvents, withPresence, filters, filterLogic, heartbeat, restoreOnReconnect, cursor?.timetoken, cursor?.region]);
+  }, [channels, channelGroups, receivePresenceEvents, withPresence, authToken, filters, filterLogic, heartbeat, restoreOnReconnect, cursor?.timetoken, cursor?.region]);
 
   // Cleanup on unmount
   useEffect(() => {

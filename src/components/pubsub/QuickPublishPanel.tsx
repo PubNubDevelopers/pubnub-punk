@@ -351,6 +351,22 @@ export function QuickPublishPanel({
                 rows={4}
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quick-publish-editor-authtoken">
+                PAM Auth Token (Optional)
+              </Label>
+              <Input
+                id="quick-publish-editor-authtoken"
+                value={publishData.authToken}
+                onChange={(e) => onPublishDataChange('authToken', e.target.value)}
+                placeholder="Enter PAM token for this publish operation"
+                type="password"
+              />
+              <p className="text-xs text-gray-500">
+                If Access Manager (PAM) is enabled, provide an auth token with publish permissions for this channel.
+              </p>
+            </div>
           </div>
           <DialogFooter className="flex justify-end gap-2">
             <Button variant="outline" onClick={closeEditor}>

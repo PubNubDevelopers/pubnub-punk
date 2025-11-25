@@ -11,10 +11,12 @@ interface AdvancedTabProps {
   withPresence: boolean;
   restoreOnReconnect: boolean;
   heartbeat: number;
+  authToken: string;
   onCursorChange: (field: 'timetoken' | 'region', value: string) => void;
   onWithPresenceChange: (value: boolean) => void;
   onRestoreOnReconnectChange: (value: boolean) => void;
   onHeartbeatChange: (value: number) => void;
+  onAuthTokenChange: (value: string) => void;
 }
 
 export default function AdvancedTab({
@@ -22,10 +24,12 @@ export default function AdvancedTab({
   withPresence,
   restoreOnReconnect,
   heartbeat,
+  authToken,
   onCursorChange,
   onWithPresenceChange,
   onRestoreOnReconnectChange,
   onHeartbeatChange,
+  onAuthTokenChange,
 }: AdvancedTabProps) {
   return (
     <TabsContent value="advanced" className="mt-4 space-y-4">
@@ -82,12 +86,27 @@ export default function AdvancedTab({
         
         <div>
           <Label>Heartbeat Interval (seconds)</Label>
-          <Input 
+          <Input
             value={heartbeat}
             onChange={(e) => onHeartbeatChange(parseInt(e.target.value) || 300)}
             type="number"
             className="mt-1 w-24"
           />
+        </div>
+
+        <div>
+          <Label htmlFor="subscribe-auth-token">PAM Auth Token (Optional)</Label>
+          <Input
+            id="subscribe-auth-token"
+            value={authToken}
+            onChange={(e) => onAuthTokenChange(e.target.value)}
+            placeholder="Enter PAM token for subscribe operation"
+            type="password"
+            className="mt-1"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            If Access Manager (PAM) is enabled, provide an auth token with read permissions for these channels.
+          </p>
         </div>
       </div>
     </TabsContent>

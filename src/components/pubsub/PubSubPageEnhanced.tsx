@@ -212,6 +212,7 @@ export default function PubSubPageEnhanced() {
     cursor: subscribeData.cursor,
     heartbeat: subscribeData.heartbeat,
     restoreOnReconnect: subscribeData.restoreOnReconnect,
+    authToken: subscribeData.authToken,
     filters: subscribeFilters,
     filterLogic,
     onError: (error) => {
@@ -223,7 +224,14 @@ export default function PubSubPageEnhanced() {
     },
     onStatusChange: (status) => {
       setLastSubscriptionStatus(status);
-      if (status.category === 'PNReconnectedCategory') {
+      if (status.category === 'PNConnectedCategory') {
+        toast({
+          title: "Subscribed",
+          description: "Connected to channels and groups",
+        });
+        setNeedsReconnect(false);
+        setIsConfigDrawerOpen(false);
+      } else if (status.category === 'PNReconnectedCategory') {
         toast({
           title: "Reconnected",
           description: "Successfully reconnected to PubNub",
@@ -232,6 +240,12 @@ export default function PubSubPageEnhanced() {
         toast({
           title: "Network Down",
           description: "Lost connection to PubNub",
+          variant: "destructive",
+        });
+      } else if (status.category === 'PNAccessDeniedCategory' || status.statusCode === 403 || status.status === 403) {
+        toast({
+          title: "Access Forbidden (403)",
+          description: "You do not have permission to subscribe to these channels. Check your PAM token has read permissions.",
           variant: "destructive",
         });
       }
@@ -536,13 +550,15 @@ export default function PubSubPageEnhanced() {
 
   const handleSubscribe = useCallback(async () => {
     const didSubscribe = await subscribe();
-    if (didSubscribe) {
+    // Success toast is now shown in onStatusChange callback when PNConnectedCategory is received
+    // This prevents showing success message when there's a 403 error
+    if (!didSubscribe) {
+      // Only show error if subscribe() itself failed (not 403 which is handled in status callback)
       toast({
-        title: "Subscribed",
-        description: `Connected to channels and groups`,
+        title: "Subscription Failed",
+        description: "Failed to initiate subscription. Check your configuration.",
+        variant: "destructive",
       });
-      setNeedsReconnect(false);
-      setIsConfigDrawerOpen(false);
     }
     return didSubscribe;
   }, [subscribe, toast]);
