@@ -8,28 +8,28 @@ interface MessageItemProps {
   isCompact?: boolean;
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ 
-  message, 
-  showRawData, 
-  isCompact = false 
+const MessageItem: React.FC<MessageItemProps> = ({
+  message,
+  showRawData,
+  isCompact = false
 }) => {
   const containerClass = showRawData
-    ? 'pb-2 border-b border-gray-200 last:border-b-0'
-    : isCompact 
-      ? 'bg-white p-2 rounded border shadow-sm'
-      : 'bg-white p-3 rounded border shadow-sm';
-    
+    ? 'pb-2 border-b border-gray-200 last:border-b-0 overflow-hidden'
+    : isCompact
+      ? 'bg-white p-2 rounded border shadow-sm overflow-hidden'
+      : 'bg-white p-3 rounded border shadow-sm overflow-hidden';
+
   const channelBadgeClass = showRawData
     ? 'text-xs font-mono text-gray-500'
     : isCompact
       ? 'text-xs font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded'
       : 'text-xs font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded';
-    
+
   const preClass = showRawData
-    ? 'text-xs font-mono text-gray-700 whitespace-pre-wrap break-words max-w-full'
+    ? 'text-xs font-mono text-gray-700 whitespace-pre-wrap break-words overflow-hidden'
     : isCompact
-      ? 'text-xs font-mono bg-gray-100 p-2 rounded whitespace-pre-wrap break-words overflow-auto max-w-full'
-      : 'text-xs font-mono bg-gray-100 p-3 rounded whitespace-pre-wrap break-words overflow-auto max-w-full';
+      ? 'text-xs font-mono bg-gray-100 p-2 rounded whitespace-pre-wrap break-words overflow-x-auto overflow-y-hidden'
+      : 'text-xs font-mono bg-gray-100 p-3 rounded whitespace-pre-wrap break-words overflow-x-auto overflow-y-hidden';
 
   return (
     <div className={containerClass}>
