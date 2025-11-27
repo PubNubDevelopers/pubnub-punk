@@ -1,5 +1,8 @@
 import { useEffect } from "react";
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, useLocation, Router } from "wouter";
+
+// Base path for the application - must match vite.config.ts base
+export const BASE_PATH = "/docs/console";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
@@ -72,7 +75,7 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
   },
 };
 
-function Router() {
+function AppRouter() {
   const [location, navigate] = useLocation();
   const { settings } = usePubNubContext();
   const { toast } = useToast();
@@ -131,14 +134,16 @@ function Router() {
 
 function App() {
   return (
-    <TooltipProvider>
-      <PubNubProvider>
-        <ConfigProvider>
-          <Toaster />
-          <Router />
-        </ConfigProvider>
-      </PubNubProvider>
-    </TooltipProvider>
+    <Router base={BASE_PATH}>
+      <TooltipProvider>
+        <PubNubProvider>
+          <ConfigProvider>
+            <Toaster />
+            <AppRouter />
+          </ConfigProvider>
+        </PubNubProvider>
+      </TooltipProvider>
+    </Router>
   );
 }
 
