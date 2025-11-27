@@ -9,8 +9,7 @@ import {
   Settings,
   Key,
   RefreshCw,
-  AlertCircle,
-  RotateCcw
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,18 +26,14 @@ interface GrantTokenDialogProps {
   onGrant: () => void;
   isGranting: boolean;
   onCancel: () => void;
-  curlCommand?: string;
-  onCreateAnother: () => void;
 }
 
-export function GrantTokenDialog({ 
-  grantForm, 
-  setGrantForm, 
-  onGrant, 
+export function GrantTokenDialog({
+  grantForm,
+  setGrantForm,
+  onGrant,
   isGranting,
-  onCancel,
-  curlCommand,
-  onCreateAnother
+  onCancel
 }: GrantTokenDialogProps) {
   const [activeTab, setActiveTab] = useState<'channels' | 'groups' | 'uuids' | 'patterns' | 'meta'>('channels');
   const { toast } = useToast();
@@ -749,36 +744,22 @@ export function GrantTokenDialog({
 
 
       <DialogFooter>
-        {curlCommand ? (
-          <>
-            <Button variant="outline" onClick={onCancel}>
-              Close
-            </Button>
-            <Button onClick={onCreateAnother} variant="outline">
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Create Another
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button onClick={onGrant} disabled={isGranting || !validateForm()}>
-              {isGranting ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Key className="h-4 w-4 mr-2" />
-                  Create Token
-                </>
-              )}
-            </Button>
-          </>
-        )}
+        <Button variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button onClick={onGrant} disabled={isGranting || !validateForm()}>
+          {isGranting ? (
+            <>
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            <>
+              <Key className="h-4 w-4 mr-2" />
+              Grant Token
+            </>
+          )}
+        </Button>
       </DialogFooter>
     </div>
   );

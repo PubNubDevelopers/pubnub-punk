@@ -174,22 +174,22 @@ export async function generateRevokeTokenCurl(
   // Generate current Unix timestamp - PubNub requires this to be within ±60 seconds of NTP time
   const timestamp = Math.floor(Date.now() / 1000);
   const uri = `/v3/pam/${subscribeKey}/revoke`;
-  
+
   const queryParams: Record<string, string> = {
     timestamp: timestamp.toString(),
     uuid: 'access-manager-admin'
   };
-  
+
   const requestBody = {
     token: token
   };
-  
+
   const body = JSON.stringify(requestBody);
-  
+
   // Generate signature for authentication
   const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, sessionSecretKey);
   queryParams.signature = signature;
-  
+
   // Build query string manually to avoid URL encoding the signature
   const queryString = Object.keys(queryParams)
     .sort()
@@ -202,12 +202,184 @@ export async function generateRevokeTokenCurl(
       }
     })
     .join('&');
-  
+
   // Escape single quotes in the body for shell safety
   const escapedBody = body.replace(/'/g, "'\"'\"'");
-  
+
   return `curl -L 'https://ps.pndsn.com${uri}?${queryString}' \\
   -H 'Content-Type: application/json' \\
   -H 'Accept: text/javascript' \\
   --data-raw '${escapedBody}'`;
+}
+
+// Helper function to build query string from params
+function buildQueryString(queryParams: Record<string, string>): string {
+  return Object.keys(queryParams)
+    .sort()
+    .map(key => {
+      if (key === 'signature') {
+        // Don't URL encode the signature
+        return `${key}=${queryParams[key]}`;
+      } else {
+        return `${key}=${encodeURIComponent(queryParams[key])}`;
+      }
+    })
+    .join('&');
+}
+
+// Helper function to build curl command from pre-computed params
+function buildCurlCommand(uri: string, queryString: string, body: string): string {
+  const escapedBody = body.replace(/'/g, "'\"'\"'");
+  return `curl -L 'https://ps.pndsn.com${uri}?${queryString}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: text/javascript' \\
+  --data-raw '${escapedBody}'`;
+}
+
+// Helper function to build the grant request body
+function buildGrantRequestBody(grantRequest: GrantRequest): any {
+  const requestBody: any = {
+    ttl: grantRequest.ttl,
+    permissions: {}
+  };
+
+  // Add resources with converted permissions
+  if (grantRequest.resources && Object.keys(grantRequest.resources).length > 0) {
+    requestBody.permissions.resources = {};
+
+    if (grantRequest.resources.channels) {
+      requestBody.permissions.resources.channels = convertPermissionsToBitmask(grantRequest.resources.channels);
+    }
+    if (grantRequest.resources.groups) {
+      requestBody.permissions.resources.channelGroups = convertPermissionsToBitmask(grantRequest.resources.groups);
+    }
+    if (grantRequest.resources.uuids) {
+      requestBody.permissions.resources.uuids = convertPermissionsToBitmask(grantRequest.resources.uuids);
+    }
+  }
+
+  // Add patterns with converted permissions
+  if (grantRequest.patterns && Object.keys(grantRequest.patterns).length > 0) {
+    requestBody.permissions.patterns = {};
+
+    if (grantRequest.patterns.channels) {
+      requestBody.permissions.patterns.channels = convertPermissionsToBitmask(grantRequest.patterns.channels);
+    }
+    if (grantRequest.patterns.groups) {
+      requestBody.permissions.patterns.channelGroups = convertPermissionsToBitmask(grantRequest.patterns.groups);
+    }
+    if (grantRequest.patterns.uuids) {
+      requestBody.permissions.patterns.uuids = convertPermissionsToBitmask(grantRequest.patterns.uuids);
+    }
+  }
+
+  // Add meta
+  if (grantRequest.meta && Object.keys(grantRequest.meta).length > 0) {
+    requestBody.permissions.meta = grantRequest.meta;
+  }
+
+  // Add authorized UUID
+  if (grantRequest.authorized_uuid) {
+    requestBody.permissions.uuid = grantRequest.authorized_uuid;
+  }
+
+  return requestBody;
+}
+
+// Execute grant token request via HTTP
+export async function executeGrantTokenRequest(
+  subscribeKey: string,
+  publishKey: string,
+  sessionSecretKey: string,
+  grantRequest: GrantRequest
+): Promise<{ token: string; curlCommand: string }> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const uri = `/v3/pam/${subscribeKey}/grant`;
+
+  const queryParams: Record<string, string> = {
+    timestamp: timestamp.toString(),
+    uuid: 'access-manager-admin'
+  };
+
+  const requestBody = buildGrantRequestBody(grantRequest);
+  const body = JSON.stringify(requestBody, null, 2);
+
+  // Generate signature for authentication
+  const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, sessionSecretKey);
+  queryParams.signature = signature;
+
+  const queryString = buildQueryString(queryParams);
+
+  // Execute the HTTP request
+  const response = await fetch(`https://ps.pndsn.com${uri}?${queryString}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/javascript'
+    },
+    body
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || result.status >= 400) {
+    const errorMessage = result.error?.message || result.message || `HTTP ${response.status}: ${response.statusText}`;
+    throw new Error(errorMessage);
+  }
+
+  const curlCommand = buildCurlCommand(uri, queryString, body);
+
+  return {
+    token: result.data.token,
+    curlCommand
+  };
+}
+
+// Execute revoke token request via HTTP
+export async function executeRevokeTokenRequest(
+  subscribeKey: string,
+  publishKey: string,
+  sessionSecretKey: string,
+  token: string
+): Promise<{ success: boolean; curlCommand: string }> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const uri = `/v3/pam/${subscribeKey}/revoke`;
+
+  const queryParams: Record<string, string> = {
+    timestamp: timestamp.toString(),
+    uuid: 'access-manager-admin'
+  };
+
+  const requestBody = { token };
+  const body = JSON.stringify(requestBody);
+
+  // Generate signature for authentication
+  const signature = await generateSignature(subscribeKey, publishKey, 'POST', uri, queryParams, body, sessionSecretKey);
+  queryParams.signature = signature;
+
+  const queryString = buildQueryString(queryParams);
+
+  // Execute the HTTP request
+  const response = await fetch(`https://ps.pndsn.com${uri}?${queryString}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/javascript'
+    },
+    body
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || result.status >= 400) {
+    const errorMessage = result.error?.message || result.message || `HTTP ${response.status}: ${response.statusText}`;
+    throw new Error(errorMessage);
+  }
+
+  const curlCommand = buildCurlCommand(uri, queryString, body);
+
+  return {
+    success: true,
+    curlCommand
+  };
 }

@@ -56,9 +56,9 @@ import type {
 } from '@/types/access-manager';
 
 // Import API functions
-import { 
-  generateGrantTokenCurl, 
-  generateRevokeTokenCurl 
+import {
+  executeGrantTokenRequest,
+  executeRevokeTokenRequest
 } from '@/lib/access-manager/api';
 
 // Import utility functions
@@ -92,7 +92,10 @@ export default function AccessManagerPage() {
   const [isGranting, setIsGranting] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
-  
+
+  // Generated token state
+  const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+
   // Panel states
   const [createTokenExpanded, setCreateTokenExpanded] = useState(false);
   
@@ -224,27 +227,30 @@ export default function AccessManagerPage() {
     setIsRevoking(true);
     try {
       // Check if we have real keys (not demo keys)
-      if (!currentSettings.credentials.publishKey || !currentSettings.credentials.subscribeKey || 
+      if (!currentSettings.credentials.publishKey || !currentSettings.credentials.subscribeKey ||
           currentSettings.credentials.publishKey === 'demo' || currentSettings.credentials.subscribeKey === 'demo') {
         throw new Error('Real PubNub keys are required for Access Manager operations. Demo keys do not support PAM functionality.');
       }
 
-      // Generate curl command for manual execution
-      const curlCommand = await generateRevokeTokenCurl(
+      // Execute revoke token via HTTP request
+      const { curlCommand } = await executeRevokeTokenRequest(
         currentSettings.credentials.subscribeKey,
         currentSettings.credentials.publishKey,
         currentSecretKey,
         revokeTokenInput.trim()
       );
-      
+
       // Store the curl command for display in the UI
       setRevokeTokenCurl(curlCommand);
-      
-      // Show success message with instructions
+
+      // Clear the input after successful revocation
+      setRevokeTokenInput('');
+
+      // Show success message
       toast({
-        title: 'Curl command generated',
-        description: 'Run the curl command above to revoke the token',
-        duration: 8000,
+        title: 'Token Revoked Successfully',
+        description: 'The token has been permanently revoked via HTTP request.',
+        duration: 5000,
       });
       
     } catch (error) {
@@ -329,96 +335,119 @@ export default function AccessManagerPage() {
       }
 
       // Build the grant request from the form
-      const grantRequest: GrantRequest = {
+      const grantRequest: any = {
         ttl: grantForm.ttl,
-        authorized_uuid: grantForm.authorizedUserId,
-        resources: {},
-        patterns: {},
         meta: Object.keys(grantForm.meta).length > 0 ? grantForm.meta : undefined,
       };
 
-      // Convert form arrays to resource objects
+      // Only add authorized_uuid if it's provided (note: snake_case for SDK)
+      if (grantForm.authorizedUserId?.trim()) {
+        grantRequest.authorized_uuid = grantForm.authorizedUserId.trim();
+      }
+
+      // Convert form arrays to resource objects - only add resources if there are any
+      const resources: any = {};
       if (grantForm.channels.length > 0) {
-        grantRequest.resources!.channels = {};
+        resources.channels = {};
         grantForm.channels.forEach(channel => {
           if (channel.name) {
-            grantRequest.resources!.channels![channel.name] = channel.permissions;
+            resources.channels[channel.name] = channel.permissions;
           }
         });
       }
 
       if (grantForm.channelGroups.length > 0) {
-        grantRequest.resources!.groups = {};
+        resources.groups = {};
         grantForm.channelGroups.forEach(group => {
           if (group.name) {
-            grantRequest.resources!.groups![group.name] = group.permissions;
+            resources.groups[group.name] = group.permissions;
           }
         });
       }
 
       if (grantForm.uuids.length > 0) {
-        grantRequest.resources!.uuids = {};
+        resources.uuids = {};
         grantForm.uuids.forEach(uuid => {
           if (uuid.name) {
-            grantRequest.resources!.uuids![uuid.name] = uuid.permissions;
+            resources.uuids[uuid.name] = uuid.permissions;
           }
         });
       }
 
-      // Convert pattern arrays to pattern objects
+      // Only add resources if at least one type is defined
+      if (Object.keys(resources).length > 0) {
+        grantRequest.resources = resources;
+      }
+
+      // Convert pattern arrays to pattern objects - only add patterns if there are any
+      const patterns: any = {};
       if (grantForm.channelPatterns.length > 0) {
-        grantRequest.patterns!.channels = {};
+        patterns.channels = {};
         grantForm.channelPatterns.forEach(pattern => {
           if (pattern.pattern) {
-            grantRequest.patterns!.channels![pattern.pattern] = pattern.permissions;
+            patterns.channels[pattern.pattern] = pattern.permissions;
           }
         });
       }
 
       if (grantForm.channelGroupPatterns.length > 0) {
-        grantRequest.patterns!.groups = {};
+        patterns.groups = {};
         grantForm.channelGroupPatterns.forEach(pattern => {
           if (pattern.pattern) {
-            grantRequest.patterns!.groups![pattern.pattern] = pattern.permissions;
+            patterns.groups[pattern.pattern] = pattern.permissions;
           }
         });
       }
 
       if (grantForm.uuidPatterns.length > 0) {
-        grantRequest.patterns!.uuids = {};
+        patterns.uuids = {};
         grantForm.uuidPatterns.forEach(pattern => {
           if (pattern.pattern) {
-            grantRequest.patterns!.uuids![pattern.pattern] = pattern.permissions;
+            patterns.uuids[pattern.pattern] = pattern.permissions;
           }
         });
       }
 
-      
-      // Generate the curl command for manual execution
-      const curlCommand = await generateGrantTokenCurl(
+      // Only add patterns if at least one type is defined
+      if (Object.keys(patterns).length > 0) {
+        grantRequest.patterns = patterns;
+      }
+
+      // Validate secret key format (should start with 'sec-c-')
+      if (!currentSecretKey.startsWith('sec-c-')) {
+        throw new Error('Invalid secret key format. Secret keys should start with "sec-c-"');
+      }
+
+      // Execute grant token via HTTP request
+      console.log('Granting token via HTTP with request:', JSON.stringify(grantRequest, null, 2));
+      const { token, curlCommand } = await executeGrantTokenRequest(
         currentSettings.credentials.subscribeKey,
         currentSettings.credentials.publishKey,
         currentSecretKey,
         grantRequest
       );
-      
-      
-      // Store the curl command for display in the UI
       setGrantTokenCurl(curlCommand);
-      
-      // Show success message with instructions
+      console.log('Token granted successfully via HTTP:', token);
+
+      // Store the generated token for display
+      setGeneratedToken(token);
+
+      // Show success message
       toast({
-        title: 'Curl command generated',
-        description: 'Run the curl command above to grant the token',
-        duration: 8000,
+        title: 'Token Generated Successfully',
+        description: 'Your PAM token has been created. Copy it below.',
+        duration: 5000,
       });
-      
-      // Don't close the dialog so user can see and copy the curl command
-      
+
+      // Clear the form after successful grant
+      setGrantForm(DEFAULT_GRANT_FORM);
+
     } catch (error) {
+      console.error('Grant token error:', error);
+      const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
       toast({
         title: 'Grant token failed',
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -489,48 +518,58 @@ export default function AccessManagerPage() {
         </div>
       )}
 
-      {/* Grant Curl Command Display */}
-      {grantTokenCurl && (
+      {/* Generated Token Display */}
+      {generatedToken && (
         <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-green-600" />
-              <h3 className="font-semibold text-green-800">Run this curl command to grant the token</h3>
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <h3 className="font-semibold text-green-800">Token Generated Successfully</h3>
             </div>
             <div className="flex gap-2">
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => copyToClipboard(grantTokenCurl, 'Curl command')}
+                onClick={() => {
+                  copyToClipboard(generatedToken, 'Token');
+                  toast({
+                    title: 'Copied',
+                    description: 'Token copied to clipboard',
+                  });
+                }}
               >
                 <Copy className="h-4 w-4 mr-2" />
-                Copy
+                Copy Token
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setGrantTokenCurl('')}
+                onClick={() => {
+                  setGeneratedToken(null);
+                  setGrantTokenCurl('');
+                }}
               >
                 <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
-          <pre className="bg-white p-3 rounded border border-green-200 overflow-x-auto text-sm">
-            {grantTokenCurl}
-          </pre>
-          <p className="text-sm text-green-700 mt-2">
-            After running the command, the token will be created in your PubNub Access Manager.
+          <div className="bg-white p-3 rounded border border-green-200 font-mono text-xs break-all overflow-x-auto">
+            {generatedToken}
+          </div>
+          <p className="text-sm text-green-700 mt-3">
+            This token can be used to authenticate requests with the specified permissions.
+            Store it securely - you can copy it now or paste it in Settings → PAM Token field.
           </p>
         </div>
       )}
 
       {/* Revoke Curl Command Display */}
       {revokeTokenCurl && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-red-600" />
-              <h3 className="font-semibold text-red-800">Run this curl command to revoke the token</h3>
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <h3 className="font-semibold text-green-800">Token Revoked - curl Command Used</h3>
             </div>
             <div className="flex gap-2">
               <Button
@@ -550,11 +589,11 @@ export default function AccessManagerPage() {
               </Button>
             </div>
           </div>
-          <pre className="bg-white p-3 rounded border border-red-200 overflow-x-auto text-sm">
+          <pre className="bg-white p-3 rounded border border-green-200 overflow-x-auto text-sm">
             {revokeTokenCurl}
           </pre>
-          <p className="text-sm text-red-700 mt-2">
-            After running the command, the token will be permanently revoked.
+          <p className="text-sm text-green-700 mt-2">
+            This curl command was used to revoke the token via HTTP request.
           </p>
         </div>
       )}
@@ -590,18 +629,9 @@ export default function AccessManagerPage() {
                       setGrantForm={setGrantForm}
                       onGrant={grantToken}
                       isGranting={isGranting}
-                      curlCommand={grantTokenCurl}
-                      onCreateAnother={() => {
-                        setGrantTokenCurl('');
-                        setGrantForm(DEFAULT_GRANT_FORM);
-                        toast({
-                          title: 'Ready for new token',
-                          description: 'Form has been reset. Configure permissions for your next token.',
-                        });
-                      }}
                       onCancel={() => {
                         setCreateTokenExpanded(false);
-                        setGrantTokenCurl('');
+                        setGeneratedToken(null);
                         setGrantForm(DEFAULT_GRANT_FORM);
                       }}
                     />

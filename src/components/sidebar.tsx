@@ -65,14 +65,14 @@ const navigationConfig: (NavItem | NavCategory)[] = [
       { id: 'access-manager', label: 'Access Manager', icon: Shield, path: '/access-manager' },
     ],
   },
-  {
-    label: 'Advanced Tools',
-    items: [
-      { id: 'test-connection', label: 'Test PN Connection', icon: Wifi, path: '/test-connection' },
-      { id: 'stream-generator', label: 'Stream Generator', icon: Activity, path: '/stream-generator', comingSoon: true },
-      { id: 'event-workflow', label: 'Event Workflow', icon: GitBranch, path: '/event-workflow', comingSoon: true },
-    ],
-  },
+  // {
+  //   label: 'Advanced Tools',
+  //   items: [
+  //     { id: 'test-connection', label: 'Test PN Connection', icon: Wifi, path: '/test-connection' },
+  //     { id: 'stream-generator', label: 'Stream Generator', icon: Activity, path: '/stream-generator', comingSoon: true },
+  //     { id: 'event-workflow', label: 'Event Workflow', icon: GitBranch, path: '/event-workflow', comingSoon: true },
+  //   ],
+  // },
 ];
 
 interface SidebarProps {
