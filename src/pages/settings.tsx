@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Key, Globe, Save, Info } from 'lucide-react';
-import { BASE_PATH } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -202,6 +202,7 @@ const createDefaultPageSettings = () => {
 };
 
 export default function SettingsPage() {
+  const [location] = useLocation();
   const [settings, setSettings] = useState<AppSettings>(() => storage.getSettings());
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false);
   const [queryParamsApplied, setQueryParamsApplied] = useState(false);
@@ -359,7 +360,7 @@ export default function SettingsPage() {
       });
 
       // Clean up URL by removing query params (optional - keeps URL clean)
-      window.history.replaceState({}, '', `${BASE_PATH}/`);
+      window.history.replaceState({}, '', window.location.pathname);
     }
 
     setQueryParamsApplied(true);

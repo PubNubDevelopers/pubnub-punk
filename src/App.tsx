@@ -1,7 +1,5 @@
 import { useEffect } from "react";
 import { Switch, Route, useLocation, Router } from "wouter";
-
-// Base path for the application - must match vite.config.ts base
 export const BASE_PATH = "/docs/console";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -135,14 +133,14 @@ function AppRouter() {
 function App() {
   return (
     <Router base={BASE_PATH}>
-      <TooltipProvider>
-        <PubNubProvider>
-          <ConfigProvider>
-            <Toaster />
-            <AppRouter />
-          </ConfigProvider>
-        </PubNubProvider>
-      </TooltipProvider>
+    <TooltipProvider>
+      <PubNubProvider>
+        <ConfigProvider>
+          <Toaster />
+          <AppRouter />
+        </ConfigProvider>
+      </PubNubProvider>
+    </TooltipProvider>
     </Router>
   );
 }
