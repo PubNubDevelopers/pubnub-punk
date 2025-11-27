@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, useLocation, Router } from "wouter";
+export const BASE_PATH = "/docs/console";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
@@ -72,7 +73,7 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
   },
 };
 
-function Router() {
+function AppRouter() {
   const [location, navigate] = useLocation();
   const { settings } = usePubNubContext();
   const { toast } = useToast();
@@ -131,14 +132,16 @@ function Router() {
 
 function App() {
   return (
+    <Router base={BASE_PATH}>
     <TooltipProvider>
       <PubNubProvider>
         <ConfigProvider>
           <Toaster />
-          <Router />
+          <AppRouter />
         </ConfigProvider>
       </PubNubProvider>
     </TooltipProvider>
+    </Router>
   );
 }
 
