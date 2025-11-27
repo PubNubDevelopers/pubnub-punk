@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -201,8 +202,10 @@ const createDefaultPageSettings = () => {
 };
 
 export default function SettingsPage() {
+  const [location] = useLocation();
   const [settings, setSettings] = useState<AppSettings>(() => storage.getSettings());
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false);
+  const [queryParamsApplied, setQueryParamsApplied] = useState(false);
   const { toast } = useToast();
   const { setPageSettings: setConfigPageSettings, setConfigType } = useConfig();
   const { updateSettings: updatePubNubSettings } = usePubNubContext();
@@ -316,6 +319,52 @@ export default function SettingsPage() {
       sdkVersion: settings.sdkVersion || '10.1.0',
     },
   });
+
+  // Parse query parameters and pre-fill form fields
+  useEffect(() => {
+    if (queryParamsApplied) return;
+
+    // Parse query string from URL
+    const queryString = window.location.search;
+    if (!queryString) {
+      setQueryParamsApplied(true);
+      return;
+    }
+
+    const params = new URLSearchParams(queryString);
+    const publishKey = params.get('publishKey') || params.get('pubKey');
+    const subscribeKey = params.get('subscribeKey') || params.get('subKey');
+    const userId = params.get('userId');
+
+    let appliedCount = 0;
+
+    if (publishKey) {
+      form.setValue('publishKey', publishKey, { shouldDirty: true, shouldTouch: true });
+      appliedCount++;
+    }
+
+    if (subscribeKey) {
+      form.setValue('subscribeKey', subscribeKey, { shouldDirty: true, shouldTouch: true });
+      appliedCount++;
+    }
+
+    if (userId) {
+      form.setValue('userId', userId, { shouldDirty: true, shouldTouch: true });
+      appliedCount++;
+    }
+
+    if (appliedCount > 0) {
+      toast({
+        title: 'Settings Pre-filled',
+        description: `${appliedCount} field(s) populated from URL parameters`,
+      });
+
+      // Clean up URL by removing query params (optional - keeps URL clean)
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
+    setQueryParamsApplied(true);
+  }, [queryParamsApplied, form, toast]);
 
   // Auto-upgrade to latest SDK version if user hasn't explicitly selected one
   useEffect(() => {
