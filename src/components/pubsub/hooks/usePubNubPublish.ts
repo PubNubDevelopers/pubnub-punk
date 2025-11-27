@@ -140,11 +140,11 @@ export function usePubNubPublish(options: UsePubNubPublishOptions): UsePubNubPub
 
     try {
       console.log(`Publishing (attempt ${attemptNumber}/${maxRetries}):`, publishParams);
-      
+
       const publishResult = await pubnub.publish(publishParams);
-      
+
       console.log('Publish successful:', publishResult);
-      
+
       // Success - update status
       setPublishStatus({
         isVisible: true,

@@ -119,11 +119,33 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
 
   const handleStatus = useCallback((statusEvent: any) => {
     console.log('Status event:', statusEvent);
-    
-    if (statusEvent.category === 'PNConnectedCategory') {
+
+    // Check for access denied / forbidden errors (403)
+    if (statusEvent.category === 'PNAccessDeniedCategory' ||
+        statusEvent.statusCode === 403 ||
+        statusEvent.status === 403) {
+      console.error('Access denied (403) - PAM token may be invalid or missing required permissions');
+
+      const errorMsg = 'Access Forbidden (403): You do not have permission to subscribe to these channels. ' +
+                      'Please check your PAM token has read permissions for the specified channels.';
+      setError(errorMsg);
+      setIsSubscribed(false);
+
+      // Unsubscribe to clean up
+      if (subscriptionRef.current) {
+        if (subscriptionRef.current.type === 'event-engine') {
+          subscriptionRef.current.subscription?.unsubscribe?.();
+        }
+        subscriptionRef.current = null;
+      }
+
+      onError?.(new Error(errorMsg));
+    } else if (statusEvent.category === 'PNConnectedCategory') {
       console.log('Connected to PubNub');
+      setError(null);
     } else if (statusEvent.category === 'PNReconnectedCategory') {
       console.log('Reconnected to PubNub');
+      setError(null);
     } else if (statusEvent.category === 'PNDisconnectedCategory') {
       console.log('Disconnected from PubNub');
     } else if (statusEvent.category === 'PNNetworkDownCategory') {
@@ -133,7 +155,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
     }
 
     onStatusChange?.(statusEvent);
-  }, [onStatusChange]);
+  }, [onStatusChange, onError]);
 
   const subscribe = useCallback(async (): Promise<boolean> => {
     const settings = storage.getSettings();
@@ -186,6 +208,12 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
         restore: restoreOnReconnect,
         enableEventEngine: useEventEngine,
       };
+
+      // Add PAM auth token from settings if available
+      if (settings.credentials.pamToken) {
+        console.log('Using PAM auth token from Settings for subscription');
+        pubnubConfig.authKey = settings.credentials.pamToken;
+      }
 
       const pubnubInstance = new (window as any).PubNub(pubnubConfig);
       if (typeof pubnubInstance.setHeartbeatInterval === 'function') {
@@ -359,7 +387,7 @@ export function usePubNubSubscription(options: UsePubNubSubscriptionOptions): Us
           subscribe();
         }
       }, 100);
-      
+
       return () => clearTimeout(timeout);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -9,6 +9,7 @@ vite.config.ts.*
 utils/.env
 .github
 *.archived
+.idea
 
 # Python
 __pycache__/

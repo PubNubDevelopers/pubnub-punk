@@ -91,7 +91,7 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
   }, [presenceEvents, autoScrollPresence]);
 
   return (
-    <Card className={cn("mb-6", className)}>
+    <Card className={cn("mb-6 flex flex-col", className)}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center">
@@ -166,19 +166,19 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="relative">
+      <CardContent className="flex flex-col flex-1 min-h-0">
+        <div className="relative flex flex-col flex-1 min-h-0">
           {receivePresenceEvents ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
+              <div className="flex flex-col space-y-2 min-h-0">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium text-gray-700">Messages</h4>
                   <span className="text-xs text-gray-500">{messages.length} received</span>
                 </div>
-                <div 
+                <div
                   ref={messagesContainerRef}
                   onScroll={handleScroll}
-                  className="bg-gray-50 rounded-lg p-4 h-64 overflow-y-auto border-2 border-dashed border-gray-200 relative"
+                  className="bg-gray-50 rounded-lg p-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden border-2 border-dashed border-gray-200 relative"
                 >
                   {messages.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-center">
@@ -212,15 +212,15 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="flex flex-col space-y-2 min-h-0">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium text-gray-700">Presence Events</h4>
                   <span className="text-xs text-gray-500">{presenceEvents.length} events</span>
                 </div>
-                <div 
+                <div
                   ref={presenceContainerRef}
                   onScroll={handlePresenceScroll}
-                  className="bg-green-50 rounded-lg p-4 h-64 overflow-y-auto border-2 border-dashed border-green-200 relative"
+                  className="bg-green-50 rounded-lg p-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden border-2 border-dashed border-green-200 relative"
                 >
                   {presenceEvents.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-center">
@@ -264,10 +264,10 @@ const LiveMessagesPanel: React.FC<LiveMessagesPanelProps> = ({
               </div>
             </div>
           ) : (
-            <div 
+            <div
               ref={messagesContainerRef}
               onScroll={handleScroll}
-              className="bg-gray-50 rounded-lg p-4 h-64 overflow-y-auto border-2 border-dashed border-gray-200 relative"
+              className="bg-gray-50 rounded-lg p-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden border-2 border-dashed border-gray-200 relative"
             >
               {messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-center">

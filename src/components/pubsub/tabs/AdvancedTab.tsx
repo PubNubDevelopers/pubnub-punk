@@ -82,7 +82,7 @@ export default function AdvancedTab({
         
         <div>
           <Label>Heartbeat Interval (seconds)</Label>
-          <Input 
+          <Input
             value={heartbeat}
             onChange={(e) => onHeartbeatChange(parseInt(e.target.value) || 300)}
             type="number"
