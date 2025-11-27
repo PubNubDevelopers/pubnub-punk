@@ -1,0 +1,16 @@
+[build]
+  base = "/"
+  command = "npm run build"
+  publish = "dist"
+
+# Redirect all routes under /docs/console/ to index.html for SPA routing
+[[redirects]]
+  from = "/docs/console/*"
+  to = "/docs/console/index.html"
+  status = 200
+
+# Redirect root to /docs/console/
+[[redirects]]
+  from = "/"
+  to = "/docs/console/"
+  status = 302
