@@ -1,6 +1,28 @@
-import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'wouter';
+import { useState, useEffect, useCallback } from 'react';
 import { EasterEgg } from './easter-egg';
+
+// Custom hook for hash-based routing (must match App.tsx)
+const useHashLocation = (): [string, (to: string) => void] => {
+  const [location, setLocation] = useState(() =>
+    window.location.hash.replace(/^#/, "") || "/"
+  );
+
+  useEffect(() => {
+    const handler = () => {
+      const hash = window.location.hash.replace(/^#/, "") || "/";
+      setLocation(hash);
+    };
+
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
+
+  const navigate = useCallback((to: string) => {
+    window.location.hash = to;
+  }, []);
+
+  return [location, navigate];
+};
 import {
   Settings,
   MessageCircle,
@@ -81,7 +103,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const [location, navigate] = useLocation();
+  const [location, navigate] = useHashLocation();
   const [showEasterEgg, setShowEasterEgg] = useState(false);
   const { settings } = usePubNubContext();
   const activeSdkVersion = settings?.sdkVersion || '10.1.0';
@@ -172,7 +194,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     }
     
     return (
-      <Link key={item.id} href={item.path}>
+      <div key={item.id}>
         <Button
           variant="ghost"
           className={`w-full justify-start space-x-3 px-4 py-2.5 h-auto font-medium transition-all duration-200 ${
@@ -183,6 +205,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             color: active ? 'white' : 'rgba(255, 255, 255, 0.8)'
           }}
           onClick={() => {
+            navigate(item.path);
             if (window.innerWidth < 768) {
               onClose();
             }
@@ -191,7 +214,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           <Icon className="w-5 h-5" style={{ color: active ? 'white' : 'rgba(255, 255, 255, 0.6)' }} />
           <span>{item.label}</span>
         </Button>
-      </Link>
+      </div>
     );
   };
 
@@ -283,20 +306,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 Event Engine: {settings?.environment?.enableEventEngine ? 'On' : 'Off'}
               </span>
               {isOutdatedVersion && (
-                <Link href="/">
-                  <a
-                    onClick={(e) => {
-                      e.preventDefault();
-                      navigate('/');
-                      onClose();
-                    }}
-                    className="flex items-center gap-1 text-xs text-yellow-400 hover:text-yellow-300 transition-colors cursor-pointer"
-                    title={`Newer version available: ${latestVersion}`}
-                  >
-                    <AlertTriangle className="w-3 h-3" />
-                    <span>Update available</span>
-                  </a>
-                </Link>
+                <button
+                  onClick={() => {
+                    navigate('/');
+                    onClose();
+                  }}
+                  className="flex items-center gap-1 text-xs text-yellow-400 hover:text-yellow-300 transition-colors cursor-pointer"
+                  title={`Newer version available: ${latestVersion}`}
+                >
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>Update available</span>
+                </button>
               )}
             </div>
           </div>
