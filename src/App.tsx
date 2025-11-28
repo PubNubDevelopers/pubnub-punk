@@ -85,6 +85,17 @@ function AppRouter() {
   const configKey = lockedToSettings ? '/' : location;
   const config = pageConfig[configKey] || { title: '404', subtitle: 'Page not found' };
 
+  // Handle 404 redirects from sessionStorage (set by 404.html)
+  useEffect(() => {
+    const redirectPath = sessionStorage.getItem('spa_redirect');
+    if (redirectPath) {
+      sessionStorage.removeItem('spa_redirect');
+      // Extract the path relative to base (remove /docs/console prefix)
+      const relativePath = redirectPath.replace(BASE_PATH, '') || '/';
+      navigate(relativePath);
+    }
+  }, [navigate]);
+
   useEffect(() => {
     if (lockedToSettings) {
       navigate('/');
