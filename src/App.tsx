@@ -1,6 +1,29 @@
-import { useEffect } from "react";
-import { Switch, Route, useLocation, Router } from "wouter";
+import { useEffect, useState, useCallback } from "react";
+import { Switch, Route, Router } from "wouter";
 export const BASE_PATH = "/docs/console";
+
+// Custom hook for hash-based routing
+const useHashLocation = (): [string, (to: string) => void] => {
+  const [location, setLocation] = useState(() =>
+    window.location.hash.replace(/^#/, "") || "/"
+  );
+
+  useEffect(() => {
+    const handler = () => {
+      const hash = window.location.hash.replace(/^#/, "") || "/";
+      setLocation(hash);
+    };
+
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
+
+  const navigate = useCallback((to: string) => {
+    window.location.hash = to;
+  }, []);
+
+  return [location, navigate];
+};
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app-shell";
@@ -74,7 +97,7 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
 };
 
 function AppRouter() {
-  const [location, navigate] = useLocation();
+  const [location, navigate] = useHashLocation();
   const { settings } = usePubNubContext();
   const { toast } = useToast();
 
@@ -84,17 +107,6 @@ function AppRouter() {
   const lockedToSettings = !hasRequiredKeys && location !== '/';
   const configKey = lockedToSettings ? '/' : location;
   const config = pageConfig[configKey] || { title: '404', subtitle: 'Page not found' };
-
-  // Handle 404 redirects from sessionStorage (set by 404.html)
-  useEffect(() => {
-    const redirectPath = sessionStorage.getItem('spa_redirect');
-    if (redirectPath) {
-      sessionStorage.removeItem('spa_redirect');
-      // Extract the path relative to base (remove /docs/console prefix)
-      const relativePath = redirectPath.replace(BASE_PATH, '') || '/';
-      navigate(relativePath);
-    }
-  }, [navigate]);
 
   useEffect(() => {
     if (lockedToSettings) {
@@ -143,15 +155,15 @@ function AppRouter() {
 
 function App() {
   return (
-    <Router base={BASE_PATH}>
-    <TooltipProvider>
-      <PubNubProvider>
-        <ConfigProvider>
-          <Toaster />
-          <AppRouter />
-        </ConfigProvider>
-      </PubNubProvider>
-    </TooltipProvider>
+    <Router hook={useHashLocation}>
+      <TooltipProvider>
+        <PubNubProvider>
+          <ConfigProvider>
+            <Toaster />
+            <AppRouter />
+          </ConfigProvider>
+        </PubNubProvider>
+      </TooltipProvider>
     </Router>
   );
 }

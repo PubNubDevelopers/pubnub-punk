@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -202,7 +201,6 @@ const createDefaultPageSettings = () => {
 };
 
 export default function SettingsPage() {
-  const [location] = useLocation();
   const [settings, setSettings] = useState<AppSettings>(() => storage.getSettings());
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false);
   const [queryParamsApplied, setQueryParamsApplied] = useState(false);
@@ -360,7 +358,7 @@ export default function SettingsPage() {
       });
 
       // Clean up URL by removing query params (optional - keeps URL clean)
-      window.history.replaceState({}, '', window.location.pathname);
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
     }
 
     setQueryParamsApplied(true);
