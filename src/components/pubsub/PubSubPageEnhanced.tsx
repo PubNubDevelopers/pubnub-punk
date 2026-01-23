@@ -106,6 +106,10 @@ export default function PubSubPageEnhanced() {
   const [showRawMessageData, setShowRawMessageData] = useState(false);
   const [hasAutoConnected, setHasAutoConnected] = useState(false);
   const [hasSentWelcomeMessage, setHasSentWelcomeMessage] = useState(false);
+  const [queryParamsProcessed, setQueryParamsProcessed] = useState(false);
+  const [channelFromQuery, setChannelFromQuery] = useState<string | null>(null);
+  const [shouldAutoConnectFromQuery, setShouldAutoConnectFromQuery] = useState(false);
+  const [hasRefreshedAfterAutoConnect, setHasRefreshedAfterAutoConnect] = useState(false);
   const [isConfigDrawerOpen, setIsConfigDrawerOpen] = useState(false);
   const [configDrawerInitialTab, setConfigDrawerInitialTab] = useState<'channels' | 'groups' | 'filters' | 'advanced'>('channels');
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -344,9 +348,73 @@ export default function PubSubPageEnhanced() {
     }
   }, []);
 
+  // Process query parameters on mount (before config loading)
+  useEffect(() => {
+    if (queryParamsProcessed) return;
+
+    const queryString = window.location.search;
+    if (!queryString) {
+      setQueryParamsProcessed(true);
+      return;
+    }
+
+    const params = new URLSearchParams(queryString);
+    const publishKey = params.get('publishKey') || params.get('pubKey');
+    const subscribeKey = params.get('subscribeKey') || params.get('subKey');
+    const channel = params.get('channel');
+
+    let appliedCount = 0;
+    const appliedItems: string[] = [];
+
+    // Update global settings if keys provided
+    if (publishKey || subscribeKey) {
+      const currentSettings = storage.getSettings();
+      const newSettings = {
+        ...currentSettings,
+        credentials: {
+          ...currentSettings.credentials,
+          ...(publishKey && { publishKey }),
+          ...(subscribeKey && { subscribeKey }),
+        }
+      };
+
+      storage.saveSettings(newSettings);
+
+      if (publishKey) {
+        appliedItems.push('Publish Key');
+        appliedCount++;
+      }
+      if (subscribeKey) {
+        appliedItems.push('Subscribe Key');
+        appliedCount++;
+      }
+    }
+
+    // Store channel for later application (after config loads)
+    if (channel && channel.trim()) {
+      const trimmedChannel = channel.trim();
+      setChannelFromQuery(trimmedChannel);
+      appliedItems.push(`Channel: ${trimmedChannel}`);
+      appliedCount++;
+      setShouldAutoConnectFromQuery(true);
+    }
+
+    if (appliedCount > 0) {
+      toast({
+        title: 'Settings Applied from URL',
+        description: appliedItems.join(', '),
+      });
+
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+    }
+
+    setQueryParamsProcessed(true);
+  }, [queryParamsProcessed, toast]);
+
   // Load config from storage on mount
   useEffect(() => {
-    if (!isConfigLoaded) {
+    if (!isConfigLoaded && queryParamsProcessed) {
       try {
         // First check if there's config from context (from another page)
         if (contextPageSettings && contextPageSettings.publish) {
@@ -377,7 +445,7 @@ export default function PubSubPageEnhanced() {
       setIsConfigLoaded(true);
       setConfigType('pubsub');
     }
-  }, [isConfigLoaded, contextPageSettings, restoreFromConfig, toast, setConfigType]);
+  }, [isConfigLoaded, queryParamsProcessed, contextPageSettings, restoreFromConfig, toast, setConfigType]);
 
   useEffect(() => {
     const storedHistory = storage.getItem<PublishHistoryEntry[]>(STORAGE_KEYS.PUBLISH_HISTORY);
@@ -385,6 +453,25 @@ export default function PubSubPageEnhanced() {
       setPublishHistory(storedHistory);
     }
   }, []);
+
+  // Apply channel from query params after config is loaded
+  useEffect(() => {
+    if (isConfigLoaded && channelFromQuery && !hasAutoConnected) {
+      // Update subscription channels
+      setSubscribeData(prev => ({
+        ...prev,
+        channels: channelFromQuery
+      }));
+
+      // Update quick-publish channel
+      setPublishData(prev => ({
+        ...prev,
+        channel: channelFromQuery
+      }));
+
+      console.log(`📍 Applied channel from query params: ${channelFromQuery}`);
+    }
+  }, [isConfigLoaded, channelFromQuery, hasAutoConnected]);
 
   // Debounced save function
   const saveConfig = useMemo(
@@ -440,7 +527,8 @@ export default function PubSubPageEnhanced() {
     const trimmedChannels = subscribeData.channels?.trim() || '';
     const trimmedGroups = subscribeData.channelGroups?.trim() || '';
     const shouldAutoConnect =
-      trimmedChannels === DEFAULT_CHANNEL && trimmedGroups.length === 0;
+      (trimmedChannels === DEFAULT_CHANNEL && trimmedGroups.length === 0) ||
+      (shouldAutoConnectFromQuery && trimmedChannels && trimmedGroups.length === 0);
 
     if (!shouldAutoConnect) {
       setHasAutoConnected(true);
@@ -451,12 +539,15 @@ export default function PubSubPageEnhanced() {
       setHasAutoConnected(true);
       const success = await subscribe();
       if (success) {
+        const channelToShow = shouldAutoConnectFromQuery ? trimmedChannels : DEFAULT_CHANNEL;
         toast({
-          title: `Connected to ${DEFAULT_CHANNEL}`,
-          description: 'You can change channels in Advanced settings.',
+          title: `Connected to ${channelToShow}`,
+          description: shouldAutoConnectFromQuery
+            ? 'Auto-connected from URL parameters'
+            : 'You can change channels in Advanced settings.',
         });
 
-        if (!hasSentWelcomeMessage) {
+        if (!shouldAutoConnectFromQuery && !hasSentWelcomeMessage) {
           try {
             await publish({
               ...publishData,
@@ -471,6 +562,16 @@ export default function PubSubPageEnhanced() {
           } finally {
             setHasSentWelcomeMessage(true);
           }
+        }
+
+        // Refresh page after successful auto-connect from URL parameters
+        if (shouldAutoConnectFromQuery && !hasRefreshedAfterAutoConnect) {
+          console.log('🔄 Refreshing page after successful auto-connect from URL parameters');
+          setHasRefreshedAfterAutoConnect(true);
+          // Use setTimeout to ensure all state updates and toasts are processed
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
         }
       }
     })();
@@ -487,6 +588,8 @@ export default function PubSubPageEnhanced() {
     toast,
     hasAutoConnected,
     pubnubReady,
+    shouldAutoConnectFromQuery,
+    hasRefreshedAfterAutoConnect,
   ]);
 
   // Scroll handlers

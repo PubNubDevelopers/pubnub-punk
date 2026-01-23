@@ -44,6 +44,7 @@ import EventWorkflowPage from "@/pages/event-workflow";
 import TestConnectionPage from "@/pages/test-connection";
 import NotFound from "@/pages/not-found";
 import { useToast } from "@/hooks/use-toast";
+import { storage } from "@/lib/storage";
 
 const pageConfig: Record<string, { title: string; subtitle: string }> = {
   '/': {
@@ -98,13 +99,74 @@ const pageConfig: Record<string, { title: string; subtitle: string }> = {
 
 function AppRouter() {
   const [location, navigate] = useHashLocation();
-  const { settings } = usePubNubContext();
+  const { settings, updateSettings } = usePubNubContext();
   const { toast } = useToast();
+  const [queryParamsProcessed, setQueryParamsProcessed] = useState(false);
+
+  // Check for credentials in URL immediately (during render, not in useEffect)
+  const [hadCredentialsInQuery] = useState(() => {
+    const queryString = window.location.search;
+    if (!queryString) return false;
+
+    const params = new URLSearchParams(queryString);
+    const publishKey = params.get('publishKey') || params.get('pubKey');
+    const subscribeKey = params.get('subscribeKey') || params.get('subKey');
+
+    return Boolean(publishKey && subscribeKey);
+  });
+
+  // Process query parameters on mount (before credential validation)
+  useEffect(() => {
+    if (queryParamsProcessed) return;
+
+    const queryString = window.location.search;
+    if (!queryString) {
+      setQueryParamsProcessed(true);
+      return;
+    }
+
+    const params = new URLSearchParams(queryString);
+    const publishKey = params.get('publishKey') || params.get('pubKey');
+    const subscribeKey = params.get('subscribeKey') || params.get('subKey');
+
+    // Update global settings if keys provided
+    if (publishKey || subscribeKey) {
+      const newSettings = {
+        ...settings,
+        credentials: {
+          ...settings.credentials,
+          ...(publishKey && { publishKey }),
+          ...(subscribeKey && { subscribeKey }),
+        }
+      };
+
+      updateSettings(newSettings);
+
+      // Show toast notification
+      const channel = params.get('channel');
+      const appliedItems: string[] = [];
+      if (publishKey) appliedItems.push('Publish Key');
+      if (subscribeKey) appliedItems.push('Subscribe Key');
+      if (channel) appliedItems.push(`Channel: ${channel}`);
+
+      toast({
+        title: 'Settings Applied from URL',
+        description: appliedItems.join(', '),
+      });
+
+      // Note: Channel handling is done in PubSubPageEnhanced
+      // We only process keys here to unblock navigation
+    }
+
+    setQueryParamsProcessed(true);
+  }, [queryParamsProcessed, toast]); // Added toast to dependencies
 
   const publishKey = settings?.credentials?.publishKey?.trim();
   const subscribeKey = settings?.credentials?.subscribeKey?.trim();
   const hasRequiredKeys = Boolean(publishKey && subscribeKey);
-  const lockedToSettings = !hasRequiredKeys && location !== '/';
+
+  // Don't redirect if keys exist, keys were in query params, or on Settings page
+  const lockedToSettings = !hasRequiredKeys && !hadCredentialsInQuery && location !== '/';
   const configKey = lockedToSettings ? '/' : location;
   const config = pageConfig[configKey] || { title: '404', subtitle: 'Page not found' };
 
