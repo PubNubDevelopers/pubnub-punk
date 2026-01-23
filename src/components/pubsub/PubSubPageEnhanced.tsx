@@ -109,6 +109,7 @@ export default function PubSubPageEnhanced() {
   const [queryParamsProcessed, setQueryParamsProcessed] = useState(false);
   const [channelFromQuery, setChannelFromQuery] = useState<string | null>(null);
   const [shouldAutoConnectFromQuery, setShouldAutoConnectFromQuery] = useState(false);
+  const [hasRefreshedAfterAutoConnect, setHasRefreshedAfterAutoConnect] = useState(false);
   const [isConfigDrawerOpen, setIsConfigDrawerOpen] = useState(false);
   const [configDrawerInitialTab, setConfigDrawerInitialTab] = useState<'channels' | 'groups' | 'filters' | 'advanced'>('channels');
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -562,6 +563,16 @@ export default function PubSubPageEnhanced() {
             setHasSentWelcomeMessage(true);
           }
         }
+
+        // Refresh page after successful auto-connect from URL parameters
+        if (shouldAutoConnectFromQuery && !hasRefreshedAfterAutoConnect) {
+          console.log('🔄 Refreshing page after successful auto-connect from URL parameters');
+          setHasRefreshedAfterAutoConnect(true);
+          // Use setTimeout to ensure all state updates and toasts are processed
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        }
       }
     })();
   }, [
@@ -578,6 +589,7 @@ export default function PubSubPageEnhanced() {
     hasAutoConnected,
     pubnubReady,
     shouldAutoConnectFromQuery,
+    hasRefreshedAfterAutoConnect,
   ]);
 
   // Scroll handlers
