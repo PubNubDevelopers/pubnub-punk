@@ -41,7 +41,7 @@ const settingsSchema = z.object({
   }
   return true;
 }, {
-  message: "PAM token is required when PubNub Access Manager is enabled",
+  message: "Access Manager token is required when PubNub Access Manager is enabled",
   path: ["pamToken"],
 });
 
@@ -757,7 +757,7 @@ export default function SettingsPage() {
                         return (
                           <FormItem>
                             <FormLabel>
-                              PAM Token{!isPamEnabled && ' (Optional)'}
+                              Access Manager Token{!isPamEnabled && ' (Optional)'}
                               {isPamEnabled && <span className="text-red-500 ml-1">*</span>}
                             </FormLabel>
                             <FormControl>
@@ -925,7 +925,7 @@ export default function SettingsPage() {
                       <FormItem className="md:col-span-2">
                         <div className="flex items-center justify-between rounded-md border border-gray-200 p-4">
                           <div className="space-y-0.5">
-                            <FormLabel>Enable Event Engine</FormLabel>
+                            <FormLabel>Enable Standardized Subscribe Loop</FormLabel>
                             <FormDescription className="text-xs text-gray-500">
                               Toggle the new PubNub transport. Turn off to stay on the legacy subscribe model.
                             </FormDescription>
