@@ -788,7 +788,7 @@ export default function SettingsPage() {
                     render={({ field }) => (
                       <FormItem className="flex items-center justify-between">
                         <div className="space-y-0.5">
-                          <FormLabel>PubNub Access Manager (PAM) Enabled</FormLabel>
+                          <FormLabel>PubNub Access Manager Enabled</FormLabel>
                           <FormDescription className="text-xs text-gray-500">
                             Toggle this on if your PubNub application has Access Manager enabled. This affects how Channel Groups and other features handle security.
                           </FormDescription>
